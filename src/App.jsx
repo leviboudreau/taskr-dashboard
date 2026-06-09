@@ -315,20 +315,66 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
 }
 
 // ─── Projects Strip ───────────────────────────────────────────────────────────
-function ProjectsStrip({ projects, activeProject, onSelect }) {
-  if (!projects.length) return null
+function ProjectsStrip({ projects, activeProject, onSelect, onAdd, onDelete }) {
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  const handleAdd = () => {
+    const name = newName.trim()
+    if (!name) { setAdding(false); return }
+    onAdd(name)
+    setNewName('')
+    setAdding(false)
+  }
+
   return (
-    <div style={{ display:'flex', gap:6, marginBottom:12, overflowX:'auto', paddingBottom:2 }}>
-      {[{ id: null, name: 'All', color: '' }, ...projects].map(p => {
+    <div style={{ display:'flex', gap:6, marginBottom:12, alignItems:'center', flexWrap:'wrap', paddingBottom:2, borderBottom:'0.5px solid #f0f0f0', paddingBottom:8 }}>
+      <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', flexShrink:0 }}>Projects</span>
+
+      {/* All pill — always present */}
+      <button onClick={() => onSelect(null)}
+        style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:activeProject===null?'1.5px solid #111':'0.5px solid #e5e5e5', background:activeProject===null?'#111':'white', color:activeProject===null?'white':'#888', fontWeight:activeProject===null?500:400 }}>
+        All
+      </button>
+
+      {/* Project pills */}
+      {projects.map(p => {
         const active = activeProject === p.id
-        const hex = p.color || '#999'
+        const bg = flagBg(p.color) || '#f7f7f5'
+        const bdr = flagBorder(p.color) || '#ddd'
+        const tc = flagBorder(p.color) || '#555'
         return (
-          <button key={p.id ?? 'all'} onClick={() => onSelect(p.id)}
-            style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:active?`1.5px solid ${p.id?hex:'#111'}`:'0.5px solid #e5e5e5', background:active?(p.id?flagBg(p.color)||'#f0f0f0':'#111'):'white', color:active?(p.id?flagBorder(p.color)||'#333':'white'):'#888', fontWeight:active?500:400, whiteSpace:'nowrap' }}>
-            {p.name}
-          </button>
+          <div key={p.id} style={{ position:'relative', display:'inline-flex', alignItems:'center' }}
+            onMouseEnter={e => { const x = e.currentTarget.querySelector('.del-btn'); if (x) x.style.opacity='1' }}
+            onMouseLeave={e => { const x = e.currentTarget.querySelector('.del-btn'); if (x) x.style.opacity='0' }}>
+            <button onClick={() => onSelect(p.id)}
+              style={{ flexShrink:0, fontSize:12, padding:'4px 12px', paddingRight:active?12:20, borderRadius:16, cursor:'pointer', border:active?`1.5px solid ${tc}`:'0.5px solid #e5e5e5', background:active?bg:'white', color:active?tc:'#888', fontWeight:active?500:400, whiteSpace:'nowrap' }}>
+              {p.name}
+            </button>
+            <button className="del-btn" onClick={e => { e.stopPropagation(); onDelete(p.id) }}
+              style={{ position:'absolute', right:4, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:9, color:'#bbb', lineHeight:1, opacity:0, transition:'opacity 0.1s', padding:'2px' }}>
+              ✕
+            </button>
+          </div>
         )
       })}
+
+      {/* Inline add form or + button */}
+      {adding ? (
+        <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+          <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewName('') } }}
+            placeholder="Project name..."
+            style={{ fontSize:12, padding:'4px 10px', borderRadius:16, border:'1.5px solid #111', outline:'none', width:140, fontFamily:'inherit' }} />
+          <button onClick={handleAdd} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:12, padding:'4px 10px', cursor:'pointer' }}>Add</button>
+          <button onClick={() => { setAdding(false); setNewName('') }} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:12, padding:'4px 10px', cursor:'pointer', color:'#888' }}>Cancel</button>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)}
+          style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:'0.5px dashed #ccc', background:'white', color:'#aaa' }}>
+          + Project
+        </button>
+      )}
     </div>
   )
 }
@@ -954,15 +1000,16 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData, error: projectsError }, { data: calData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
-      supabase.from('projects').select('*').order('sort_order', { ascending: true }),
+      supabase.from('projects').select('*'),
       supabase.from('calendar_events').select('*').order('created_at', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) setDomains(domainsData.map(d => d.name))
-    if (projectsData) setProjects(projectsData)
+    console.log('[TASKr] projects query →', { data: projectsData, error: projectsError })
+    setProjects(projectsData || [])
     if (calData) setCalEvents(calData)
     setLoading(false)
   }, [])
@@ -999,6 +1046,18 @@ export default function App() {
   const deleteTask = async id => {
     await supabase.from('tasks').delete().eq('id', id)
     setForm(null); await loadData()
+  }
+
+  const addProject = async name => {
+    const { error } = await supabase.from('projects').insert({ name })
+    if (error) console.error('[TASKr] addProject error', error)
+    await loadData()
+  }
+
+  const deleteProject = async id => {
+    await supabase.from('projects').delete().eq('id', id)
+    if (activeProject === id) setActiveProject(null)
+    await loadData()
   }
 
   const moveTask = async (id, newStatus) => {
@@ -1121,7 +1180,7 @@ export default function App() {
           <TodayStrip tasks={projectFilteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} />
 
           {/* Projects strip */}
-          <ProjectsStrip projects={projects} activeProject={activeProject} onSelect={setActiveProject} />
+          <ProjectsStrip projects={projects} activeProject={activeProject} onSelect={setActiveProject} onAdd={addProject} onDelete={deleteProject} />
 
           {/* ── Domain grouped view ── */}
           {viewMode === 'domain' && (
