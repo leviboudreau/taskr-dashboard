@@ -49,6 +49,7 @@ const RECURRENCE_TYPES = [
   { key: 'biweekly', label: 'Every 2 weeks' },
   { key: 'monthly_date', label: 'Monthly by date' },
   { key: 'monthly_dow', label: 'Monthly by weekday' },
+  { key: 'monthly_biz_day', label: 'Monthly by Nth business day' },
 ]
 const DOW_NUM = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
 const CAL_START_HOUR = 6
@@ -139,6 +140,20 @@ function expandRecurring(ev, rangeStart, rangeEnd) {
       if (d.getMonth() === cur.getMonth()) addOcc(adjustForBizDay(d, adj))
       cur.setMonth(cur.getMonth()+1)
     }
+  } else if (ev.recurrence_type === 'monthly_biz_day') {
+    const n = rd.biz_day || 1
+    const cur = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1)
+    const endMo = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1)
+    while (cur <= endMo) {
+      let count = 0
+      const d = new Date(cur.getFullYear(), cur.getMonth(), 1)
+      const lastDay = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate()
+      while (d.getDate() <= lastDay) {
+        if (d.getDay() !== 0 && d.getDay() !== 6) { count++; if (count === n) { addOcc(new Date(d)); break } }
+        d.setDate(d.getDate() + 1)
+      }
+      cur.setMonth(cur.getMonth() + 1)
+    }
   } else if (ev.recurrence_type === 'monthly_dow') {
     const dow = DOW_NUM[rd.dow] ?? 1, week = rd.week||1
     const cur = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1)
@@ -223,7 +238,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
         onDragEnd={onDragEnd}
         onDragOver={onDragOver ? e => { e.preventDefault(); onDragOver(task.id) } : undefined}
         onClick={() => onEdit(task)}
-        style={{ background:bg||'white', border:border?`1px solid ${border}`:'0.5px solid #e5e5e5', borderRadius:8, padding:compact?'8px 10px':'10px 12px', marginBottom:8, userSelect:'none', opacity:dragging?0.4:1, cursor:'grab', width:'100%' }}
+        style={{ background:bg||'white', border:border?`1px solid ${border}`:'0.5px solid #e5e5e5', borderRadius:8, padding:compact?'8px 10px':'10px 12px', marginBottom:8, userSelect:'none', opacity:dragging?0.4:1, cursor:'grab', width:'100%', boxSizing:'border-box' }}
         onMouseEnter={e => { if (!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if (!border) e.currentTarget.style.borderColor='#e5e5e5' }}
       >
@@ -234,7 +249,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
             {task.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
           </div>
         </div>
-        <div style={{ fontSize:13, fontWeight:500, color:done?'#999':'#111', textDecoration:done?'line-through':'none', marginBottom:4, lineHeight:1.4 }}>{task.title}</div>
+        <div style={{ fontSize:13, fontWeight:500, color:done?'#999':'#111', textDecoration:done?'line-through':'none', marginBottom:4, lineHeight:1.4, overflowWrap:'break-word', wordBreak:'break-word' }}>{task.title}</div>
         <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', marginBottom:!compact&&(hasNotes||showOwners||hasSubtasks)?6:0 }}>
           {task.due && <Badge type="due">{task.due}</Badge>}
           {done && <Badge type="done">Done</Badge>}
@@ -328,7 +343,7 @@ function ProjectsStrip({ projects, activeProject, onSelect, onAdd, onDelete }) {
   }
 
   return (
-    <div style={{ display:'flex', gap:6, marginBottom:12, alignItems:'center', flexWrap:'wrap', paddingBottom:2, borderBottom:'0.5px solid #f0f0f0', paddingBottom:8 }}>
+    <div style={{ display:'flex', gap:6, marginBottom:12, alignItems:'center', flexWrap:'wrap', paddingBottom:8, borderBottom:'0.5px solid #f0f0f0' }}>
       <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', flexShrink:0 }}>Projects</span>
 
       {/* All pill — always present */}
@@ -607,6 +622,14 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
             </div>
           )}
 
+          {f.recurrence_type === 'monthly_biz_day' && (
+            <div style={{ maxWidth:160 }}>
+              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Business day of month</label>
+              <input type="number" min={1} max={23} value={rd.biz_day||1} onChange={e => setRd('biz_day', Math.min(23, Math.max(1, parseInt(e.target.value)||1)))}
+                style={{ width:'100%', fontSize:13 }} />
+            </div>
+          )}
+
           {f.recurrence_type && (
             <div style={{ marginTop:8 }}>
               <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Recurrence ends (optional)</label>
@@ -772,9 +795,22 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
 
   const evsByDay = {}
   expanded.forEach(ev => {
-    const ds = ev.start_date
-    if (!evsByDay[ds]) evsByDay[ds] = []
-    evsByDay[ds].push(ev)
+    const evStart = fromISODate(ev.start_date)
+    const evEnd = ev.end_date ? fromISODate(ev.end_date) : evStart
+    if (evEnd > evStart) {
+      // Multi-day: add to every spanned day
+      let cur = new Date(evStart)
+      while (cur <= evEnd) {
+        const ds = toISODate(cur)
+        if (!evsByDay[ds]) evsByDay[ds] = []
+        evsByDay[ds].push({ ...ev, _spanStart: ev.start_date, _spanEnd: toISODate(evEnd), _spanDay: ds })
+        cur.setDate(cur.getDate() + 1)
+      }
+    } else {
+      const ds = ev.start_date
+      if (!evsByDay[ds]) evsByDay[ds] = []
+      evsByDay[ds].push(ev)
+    }
   })
 
   return (
@@ -800,11 +836,26 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
               {visible.map((ev, ei) => {
                 const bg = ev.type==='travel'?'#FAEEDA':(flagBg(ev.color)||'#E6F1FB')
                 const bdr = ev.type==='travel'?'#FAC775':(flagBorder(ev.color)||'#85B7EB')
+                const isMulti = !!ev._spanDay
+                const isStart = !isMulti || ev._spanDay === ev._spanStart
+                const isEnd = !isMulti || ev._spanDay === ev._spanEnd
+                const isSun = d.getDay() === 0
+                const showLabel = isStart || isSun
                 return (
                   <div key={ei} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
-                    style={{ fontSize:10, padding:'1px 5px', borderRadius:3, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background:bg, border:`0.5px solid ${bdr}`, color:'#333', cursor:'pointer' }}>
-                    {ev.type==='travel'&&'✈ '}{ev.start_time&&!ev.all_day?`${fmtTime(ev.start_time)} `:''}
-                    {ev.title}
+                    style={{
+                      fontSize:10, marginBottom:2, cursor:'pointer', overflow:'hidden',
+                      textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333',
+                      background:bg,
+                      border:`0.5px solid ${bdr}`,
+                      borderLeft: isMulti && !isStart && !isSun ? 'none' : undefined,
+                      borderRight: isMulti && !isEnd ? 'none' : undefined,
+                      borderRadius: isMulti ? (isStart||isSun) && !isEnd ? '3px 0 0 3px' : !isStart&&!isSun && isEnd ? '0 3px 3px 0' : isStart&&isEnd ? 3 : 0 : 3,
+                      padding: '1px 5px',
+                      marginLeft: isMulti && !isStart && !isSun ? -4 : 0,
+                      marginRight: isMulti && !isEnd ? -4 : 0,
+                    }}>
+                    {showLabel && (ev.type==='travel' ? '✈ ' : '')}{showLabel && (ev.start_time&&!ev.all_day ? `${fmtTime(ev.start_time)} ` : '')}{showLabel ? ev.title : ' '}
                   </div>
                 )
               })}
@@ -818,9 +869,74 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
 }
 
 // ─── Calendar Tab ─────────────────────────────────────────────────────────────
+function CalendarYearView({ events, year, onDayClick, onEventClick }) {
+  const todayStr = today()
+  const yearStart = new Date(year, 0, 1)
+  const yearEnd = new Date(year, 11, 31)
+  const expanded = getEventsForRange(events, yearStart, yearEnd)
+
+  const evsByDay = {}
+  expanded.forEach(ev => {
+    const evStart = fromISODate(ev.start_date)
+    const evEnd = ev.end_date ? fromISODate(ev.end_date) : evStart
+    let cur = new Date(evStart)
+    while (cur <= evEnd) {
+      const ds = toISODate(cur)
+      if (!evsByDay[ds]) evsByDay[ds] = []
+      if (!evsByDay[ds].some(e => e.id === ev.id)) evsByDay[ds].push(ev)
+      if (evStart.getTime() === evEnd.getTime()) break
+      cur.setDate(cur.getDate() + 1)
+    }
+  })
+
+  return (
+    <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden', background:'white' }}>
+      <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:720 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'30px repeat(12, 1fr)', minWidth:560 }}>
+          {/* Corner */}
+          <div style={{ position:'sticky', top:0, left:0, zIndex:3, background:'white', borderBottom:'0.5px solid #e5e5e5', borderRight:'0.5px solid #f0f0f0' }} />
+          {/* Month headers */}
+          {MONTH_NAMES.map((mn, m) => (
+            <div key={m} style={{ position:'sticky', top:0, zIndex:2, background:'white', textAlign:'center', fontSize:10, fontWeight:500, color:'#888', padding:'7px 0 5px', borderBottom:'0.5px solid #e5e5e5', borderLeft:'0.5px solid #f0f0f0', textTransform:'uppercase', letterSpacing:'0.04em' }}>
+              {mn.slice(0, 3)}
+            </div>
+          ))}
+          {/* Day rows */}
+          {Array.from({ length: 31 }, (_, i) => i + 1).flatMap(day => [
+            <div key={`lbl-${day}`} style={{ position:'sticky', left:0, zIndex:1, background:'white', borderRight:'0.5px solid #f0f0f0', borderTop:'0.5px solid #f5f5f5', height:22, display:'flex', alignItems:'center', justifyContent:'flex-end', paddingRight:5, fontSize:10, color:'#bbb', fontVariantNumeric:'tabular-nums' }}>
+              {day}
+            </div>,
+            ...Array.from({ length: 12 }, (_, m) => {
+              const maxDay = new Date(year, m + 1, 0).getDate()
+              const ds = `${year}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+              const isToday = ds === todayStr
+              if (day > maxDay) return (
+                <div key={`${m}-${day}`} style={{ background:'#fafafa', borderTop:'0.5px solid #f5f5f5', borderLeft:'0.5px solid #f0f0f0', height:22 }} />
+              )
+              const cellEvs = evsByDay[ds] || []
+              return (
+                <div key={`${m}-${day}`} onClick={() => onDayClick(fromISODate(ds))}
+                  style={{ height:22, borderTop:'0.5px solid #f5f5f5', borderLeft:'0.5px solid #f0f0f0', background:isToday?'#EEF4FF':'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:2, padding:'0 3px' }}
+                  onMouseEnter={e => { if (!isToday) e.currentTarget.style.background='#fafafa' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = isToday ? '#EEF4FF' : 'transparent' }}>
+                  {cellEvs.slice(0, 5).map((ev, i) => (
+                    <div key={i} onClick={e => { e.stopPropagation(); onEventClick(ev) }} title={ev.title}
+                      style={{ width:5, height:5, borderRadius:'50%', background:flagBorder(ev.color)||(ev.type==='travel'?'#FAC775':'#85B7EB'), flexShrink:0, cursor:'pointer' }} />
+                  ))}
+                  {cellEvs.length > 5 && <div style={{ fontSize:7, color:'#aaa', lineHeight:1 }}>+{cellEvs.length-5}</div>}
+                </div>
+              )
+            })
+          ])}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CalendarTab({ events, onSave, onDelete }) {
-  const [calView, setCalView] = useState('week')
-  const [calDate, setCalDate] = useState(() => startOfWeek(new Date()))
+  const [calView, setCalView] = useState('month')
+  const [calDate, setCalDate] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1) })
   const [eventForm, setEventForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
 
@@ -831,15 +947,22 @@ function CalendarTab({ events, onSave, onDelete }) {
     setCalDate(d => {
       const nd = new Date(d)
       if (calView === 'week') nd.setDate(nd.getDate() + dir * 7)
+      else if (calView === 'year') nd.setFullYear(nd.getFullYear() + dir)
       else nd.setMonth(nd.getMonth() + dir)
       return nd
     })
   }
 
-  const goToday = () => setCalDate(calView === 'week' ? startOfWeek(new Date()) : new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+  const goToday = () => {
+    const n = new Date()
+    if (calView === 'week') setCalDate(startOfWeek(n))
+    else if (calView === 'year') setCalDate(new Date(n.getFullYear(), 0, 1))
+    else setCalDate(new Date(n.getFullYear(), n.getMonth(), 1))
+  }
 
   const headerLabel = calView === 'week'
     ? (() => { const wd = getWeekDates(calDate); return `${wd[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${wd[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}` })()
+    : calView === 'year' ? String(year)
     : `${MONTH_NAMES[month]} ${year}`
 
   const handleDayClick = d => setEventForm({ ...CAL_EMPTY, start_date: toISODate(d) })
@@ -860,8 +983,15 @@ function CalendarTab({ events, onSave, onDelete }) {
       owners: data.owners||['Levi'], color: data.color||'',
       description: data.description||'', location: data.location||'',
     }
-    if (isEdit && eventForm?.id) await supabase.from('calendar_events').update(payload).eq('id', eventForm.id)
-    else await supabase.from('calendar_events').insert(payload)
+    let err
+    if (isEdit && eventForm?.id) {
+      const r = await supabase.from('calendar_events').update(payload).eq('id', eventForm.id)
+      err = r.error
+    } else {
+      const r = await supabase.from('calendar_events').insert(payload)
+      err = r.error
+    }
+    if (err) { alert(`Save failed: ${err.message}`); return }
     setEventForm(null); setIsEdit(false); onSave()
   }
 
@@ -882,8 +1012,8 @@ function CalendarTab({ events, onSave, onDelete }) {
         </div>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
           <div style={{ display:'flex', background:'#f7f7f5', borderRadius:8, border:'0.5px solid #e5e5e5', overflow:'hidden' }}>
-            {['week','month'].map(v => (
-              <button key={v} onClick={() => setCalView(v)} style={{ fontSize:12, padding:'5px 12px', border:'none', background:calView===v?'white':'transparent', color:calView===v?'#111':'#888', fontWeight:calView===v?500:400, cursor:'pointer', borderRight:v==='week'?'0.5px solid #e5e5e5':undefined }}>
+            {['week','month','year'].map((v, i, arr) => (
+              <button key={v} onClick={() => setCalView(v)} style={{ fontSize:12, padding:'5px 12px', border:'none', background:calView===v?'white':'transparent', color:calView===v?'#111':'#888', fontWeight:calView===v?500:400, cursor:'pointer', borderRight:i<arr.length-1?'0.5px solid #e5e5e5':undefined }}>
                 {v.charAt(0).toUpperCase()+v.slice(1)}
               </button>
             ))}
@@ -894,7 +1024,9 @@ function CalendarTab({ events, onSave, onDelete }) {
 
       {calView === 'week'
         ? <CalendarWeekView events={events} weekStart={calDate} onDayClick={handleDayClick} onEventClick={handleEventClick} />
-        : <CalendarMonthView events={events} year={year} month={month} onDayClick={handleDayClick} onEventClick={handleEventClick} />}
+        : calView === 'month'
+        ? <CalendarMonthView events={events} year={year} month={month} onDayClick={handleDayClick} onEventClick={handleEventClick} />
+        : <CalendarYearView events={events} year={year} onDayClick={handleDayClick} onEventClick={handleEventClick} />}
 
       {eventForm !== null && (
         <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} />
