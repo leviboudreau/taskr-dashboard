@@ -242,12 +242,10 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
         onMouseEnter={e => { if (!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if (!border) e.currentTarget.style.borderColor='#e5e5e5' }}
       >
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:3, gap:4, minHeight:18 }}>
-          <div>{task.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #85B7EB' }}>{task.domain}</span>}</div>
-          <div style={{ display:'flex', gap:3, flexShrink:0 }}>
-            {task.substatus && (() => { const ss = subStyle(task.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
-            {task.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
-          </div>
+        <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:3, marginBottom:3 }}>
+          {task.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:6, border:'0.5px solid #85B7EB', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.domain}</span>}
+          {task.substatus && (() => { const ss = subStyle(task.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
+          {task.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
         </div>
         <div style={{ fontSize:13, fontWeight:500, color:done?'#999':'#111', textDecoration:done?'line-through':'none', marginBottom:4, lineHeight:1.4, overflowWrap:'break-word', wordBreak:'break-word' }}>{task.title}</div>
         <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', marginBottom:!compact&&(hasNotes||showOwners||hasSubtasks)?6:0 }}>
@@ -390,6 +388,132 @@ function ProjectsStrip({ projects, activeProject, onSelect, onAdd, onDelete }) {
           + Project
         </button>
       )}
+    </div>
+  )
+}
+
+// ─── Escalations Strip ───────────────────────────────────────────────────────
+function EscalationsStrip({ escalations, activeEscalation, onSelect, onAdd, onDelete }) {
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const handleAdd = async () => { if (!newName.trim()) return; await onAdd(newName.trim()); setNewName(''); setAdding(false) }
+  return (
+    <div style={{ paddingBottom:8, borderBottom:'0.5px solid #f0f0f0', marginBottom:12 }}>
+      <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+        <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', flexShrink:0 }}>Escalations</span>
+        <button onClick={() => onSelect(null)} style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:activeEscalation===null?'1.5px solid #c0392b':'0.5px solid #e5e5e5', background:activeEscalation===null?'#c0392b':'white', color:activeEscalation===null?'white':'#888', fontWeight:activeEscalation===null?500:400 }}>
+          All
+        </button>
+        {escalations.map(e => {
+          const active = activeEscalation === e.id
+          return (
+            <div key={e.id} style={{ position:'relative', display:'inline-flex', alignItems:'center' }}
+              onMouseEnter={el => { const d = el.currentTarget.querySelector('.edel'); if(d) d.style.opacity='1' }}
+              onMouseLeave={el => { const d = el.currentTarget.querySelector('.edel'); if(d) d.style.opacity='0' }}>
+              <button onClick={() => onSelect(active ? null : e.id)}
+                style={{ flexShrink:0, fontSize:12, padding:'4px 12px', paddingRight:active?12:20, borderRadius:16, cursor:'pointer', border:active?'1.5px solid #c0392b':'0.5px solid #e5e5e5', background:active?'#fff0ef':'white', color:active?'#c0392b':'#888', fontWeight:active?500:400, whiteSpace:'nowrap' }}>
+                {e.title}
+              </button>
+              <button className="edel" onClick={ev => { ev.stopPropagation(); onDelete(e.id) }}
+                style={{ position:'absolute', right:4, top:'50%', transform:'translateY(-50%)', fontSize:9, color:'#aaa', background:'none', border:'none', cursor:'pointer', opacity:0, padding:0, lineHeight:1 }}>✕</button>
+            </div>
+          )
+        })}
+        {adding ? (
+          <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+            <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewName('') } }}
+              placeholder="Escalation name..."
+              style={{ fontSize:12, padding:'4px 10px', borderRadius:16, border:'1.5px solid #c0392b', outline:'none', width:160, fontFamily:'inherit' }} />
+            <button onClick={handleAdd} style={{ fontSize:11, background:'#c0392b', color:'white', border:'none', borderRadius:12, padding:'4px 10px', cursor:'pointer' }}>Add</button>
+            <button onClick={() => { setAdding(false); setNewName('') }} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:12, padding:'4px 10px', cursor:'pointer', color:'#888' }}>Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:'0.5px dashed #f5b8b4', background:'white', color:'#e88' }}>
+            + Escalation
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Notes Tab ───────────────────────────────────────────────────────────────
+function NotesTab({ notes, onSave, onDelete }) {
+  const [selectedId, setSelectedId] = useState(null)
+  const [draft, setDraft] = useState(null)
+  const [dirty, setDirty] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (notes.length > 0 && !selectedId) {
+      setSelectedId(notes[0].id)
+      setDraft({ title: notes[0].title, body: notes[0].body || '' })
+    }
+  }, [notes])
+
+  const handleSelect = n => {
+    if (dirty) onSave(draft, selectedId)
+    setSelectedId(n.id); setDraft({ title: n.title, body: n.body || '' }); setDirty(false)
+  }
+
+  const handleSave = async () => { if (draft && selectedId) { await onSave(draft, selectedId); setDirty(false) } }
+
+  const handleNew = () => onSave({ title: `Note — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`, body: '' }, null)
+
+  const handleCopy = () => {
+    if (!draft) return
+    navigator.clipboard.writeText(`${draft.title}\n\n${draft.body}`)
+    setCopied(true); setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div style={{ display:'flex', gap:16, height:'calc(100vh - 220px)', minHeight:400 }}>
+      <div style={{ width:220, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ padding:'10px 12px', borderBottom:'0.5px solid #f0f0f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>All Notes</span>
+          <button onClick={handleNew} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>+ New</button>
+        </div>
+        <div style={{ flex:1, overflowY:'auto' }}>
+          {notes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>No notes yet.<br/>Click + New to start.</div>}
+          {notes.map(n => (
+            <div key={n.id} onClick={() => handleSelect(n)}
+              style={{ padding:'10px 12px', cursor:'pointer', borderBottom:'0.5px solid #f5f5f5', background:selectedId===n.id?'#f5f5f3':'transparent' }}
+              onMouseEnter={e => { if (selectedId!==n.id) e.currentTarget.style.background='#fafafa' }}
+              onMouseLeave={e => { if (selectedId!==n.id) e.currentTarget.style.background='transparent' }}>
+              <div style={{ fontSize:12, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
+              <div style={{ fontSize:10, color:'#bbb', marginTop:2 }}>{new Date(n.updated_at||n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ flex:1, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {!draft ? (
+          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
+            <div style={{ fontSize:36 }}>📝</div>
+            <div style={{ fontSize:13, color:'#bbb' }}>Select a note or create a new one</div>
+            <button onClick={handleNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:'pointer' }}>+ New Note</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ padding:'10px 14px', borderBottom:'0.5px solid #f0f0f0', display:'flex', alignItems:'center', gap:8 }}>
+              <input value={draft.title} onChange={e => { setDraft(p => ({...p, title:e.target.value})); setDirty(true) }}
+                style={{ flex:1, fontSize:15, fontWeight:600, border:'none', outline:'none', color:'#111', background:'transparent' }}
+                placeholder="Note title..." />
+              <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'4px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
+                  {copied ? '✓ Copied' : '📋 Copy'}
+                </button>
+                {dirty && <button onClick={handleSave} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Save</button>}
+                {selectedId && <button onClick={async () => { await onDelete(selectedId); setSelectedId(null); setDraft(null); setDirty(false) }} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Delete</button>}
+              </div>
+            </div>
+            <textarea value={draft.body} onChange={e => { setDraft(p => ({...p, body:e.target.value})); setDirty(true) }}
+              placeholder="Start writing... Copy to clipboard and paste into Claude to update your tasks."
+              style={{ flex:1, border:'none', outline:'none', padding:'14px 16px', fontSize:13, fontFamily:'inherit', resize:'none', lineHeight:1.7, color:'#333' }} />
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -1066,9 +1190,9 @@ function CalendarTab({ events, onSave, onDelete }) {
           <span style={{ fontSize:15, fontWeight:500, color:'#111', marginLeft:4 }}>{headerLabel}</span>
         </div>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-          <div style={{ display:'flex', background:'#f7f7f5', borderRadius:8, border:'0.5px solid #e5e5e5', overflow:'hidden' }}>
-            {['week','month','year'].map((v, i, arr) => (
-              <button key={v} onClick={() => setCalView(v)} style={{ fontSize:12, padding:'5px 12px', border:'none', background:calView===v?'white':'transparent', color:calView===v?'#111':'#888', fontWeight:calView===v?500:400, cursor:'pointer', borderRight:i<arr.length-1?'0.5px solid #e5e5e5':undefined }}>
+          <div style={{ display:'flex', background:'#efefed', borderRadius:8, padding:2, gap:1 }}>
+            {['week','month','year'].map(v => (
+              <button key={v} onClick={() => setCalView(v)} style={{ fontSize:12, padding:'5px 12px', border:'none', background:calView===v?'white':'transparent', color:calView===v?'#111':'#888', fontWeight:calView===v?500:400, cursor:'pointer', borderRadius:6, boxShadow:calView===v?'0 1px 2px rgba(0,0,0,0.08)':'none' }}>
                 {v.charAt(0).toUpperCase()+v.slice(1)}
               </button>
             ))}
@@ -1165,9 +1289,12 @@ export default function App() {
   const [tasks, setTasks] = useState([])
   const [domains, setDomains] = useState([])
   const [projects, setProjects] = useState([])
+  const [escalations, setEscalations] = useState([])
+  const [notes, setNotes] = useState([])
   const [calEvents, setCalEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('tasks')
+  const [activeEscalation, setActiveEscalation] = useState(null)
   const [form, setForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
   const [draggingId, setDraggingId] = useState(null)
@@ -1187,17 +1314,20 @@ export default function App() {
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData, error: projectsError }, { data: calData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*'),
       supabase.from('calendar_events').select('*').order('created_at', { ascending: true }),
+      supabase.from('escalations').select('*').order('created_at', { ascending: true }),
+      supabase.from('notes').select('*').order('updated_at', { ascending: false }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) setDomains(domainsData.map(d => d.name))
-    console.log('[TASKr] projects query →', { data: projectsData, error: projectsError })
     setProjects(projectsData || [])
     if (calData) setCalEvents(calData)
+    setEscalations(escalationsData || [])
+    setNotes(notesData || [])
     setLoading(false)
   }, [])
 
@@ -1245,6 +1375,29 @@ export default function App() {
     await supabase.from('projects').delete().eq('id', id)
     if (activeProject === id) setActiveProject(null)
     await loadData()
+  }
+
+  const addEscalation = async title => {
+    await supabase.from('escalations').insert({ title })
+    await loadData(true)
+  }
+
+  const deleteEscalation = async id => {
+    await supabase.from('escalations').delete().eq('id', id)
+    if (activeEscalation === id) setActiveEscalation(null)
+    await loadData(true)
+  }
+
+  const saveNote = async (data, id) => {
+    const payload = { title: data.title, body: data.body || '', updated_at: new Date().toISOString() }
+    if (id) await supabase.from('notes').update(payload).eq('id', id)
+    else await supabase.from('notes').insert(payload)
+    await loadData(true)
+  }
+
+  const deleteNote = async id => {
+    await supabase.from('notes').delete().eq('id', id)
+    await loadData(true)
   }
 
   const moveTask = async (id, newStatus) => {
@@ -1324,15 +1477,17 @@ export default function App() {
       <WorldClock />
 
       {/* Tabs */}
-      <div style={{ display:'flex', gap:2, marginBottom:'1.25rem', borderBottom:'0.5px solid #e5e5e5' }}>
+      <div style={{ display:'flex', gap:3, marginBottom:'1.25rem', background:'#f2f2f0', borderRadius:12, padding:4, width:'fit-content' }}>
         {[
-          { key:'tasks', label:'Task board' },
-          { key:'calendar', label:'Calendar' },
-          { key:'team', label:'Team' },
-          { key:'trash', label:`Trash${tasks.filter(t=>t.status==='canceled').length>0?` (${tasks.filter(t=>t.status==='canceled').length})`:''}`},
+          { key:'tasks', label:'📋 Tasks' },
+          { key:'calendar', label:'📅 Calendar' },
+          { key:'team', label:'👥 Team' },
+          { key:'notes', label:'📝 Notes' },
+          { key:'trash', label:`🗑️ Trash${tasks.filter(t=>t.status==='canceled').length>0?` (${tasks.filter(t=>t.status==='canceled').length})`:''}`},
           { key:'settings', label:'⚙️ Settings' },
         ].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{ fontSize:13, padding:'6px 14px 8px', cursor:'pointer', background:'none', border:'none', borderBottom:tab===t.key?'2px solid #111':'2px solid transparent', color:tab===t.key?'#111':'#888', fontWeight:tab===t.key?500:400, marginBottom:-1 }}>
+          <button key={t.key} onClick={() => setTab(t.key)}
+            style={{ fontSize:13, padding:'6px 14px', cursor:'pointer', background:tab===t.key?'white':'transparent', border:'none', borderRadius:8, color:tab===t.key?'#111':'#777', fontWeight:tab===t.key?500:400, boxShadow:tab===t.key?'0 1px 3px rgba(0,0,0,0.09)':'none', whiteSpace:'nowrap' }}>
             {t.label}
           </button>
         ))}
@@ -1353,9 +1508,9 @@ export default function App() {
             </div>
             <div style={{ display:'flex', gap:6, alignItems:'center' }}>
               {/* View mode */}
-              <div style={{ display:'flex', background:'#f7f7f5', borderRadius:8, border:'0.5px solid #e5e5e5', overflow:'hidden' }}>
-                {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }].map((v, i, arr) => (
-                  <button key={v.k} onClick={() => setViewMode(v.k)} style={{ fontSize:11, padding:'4px 10px', border:'none', background:viewMode===v.k?'white':'transparent', color:viewMode===v.k?'#111':'#888', fontWeight:viewMode===v.k?500:400, cursor:'pointer', borderRight:i<arr.length-1?'0.5px solid #e5e5e5':undefined }}>
+              <div style={{ display:'flex', background:'#efefed', borderRadius:8, padding:2, gap:1 }}>
+                {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }].map(v => (
+                  <button key={v.k} onClick={() => setViewMode(v.k)} style={{ fontSize:11, padding:'4px 10px', border:'none', background:viewMode===v.k?'white':'transparent', color:viewMode===v.k?'#111':'#888', fontWeight:viewMode===v.k?500:400, cursor:'pointer', borderRadius:6, boxShadow:viewMode===v.k?'0 1px 2px rgba(0,0,0,0.08)':'none' }}>
                     {v.l}
                   </button>
                 ))}
@@ -1368,6 +1523,9 @@ export default function App() {
 
           {/* Projects strip */}
           <ProjectsStrip projects={projects} activeProject={activeProject} onSelect={setActiveProject} onAdd={addProject} onDelete={deleteProject} />
+
+          {/* Escalations strip */}
+          <EscalationsStrip escalations={escalations} activeEscalation={activeEscalation} onSelect={setActiveEscalation} onAdd={addEscalation} onDelete={deleteEscalation} />
 
           {/* ── Domain grouped view ── */}
           {viewMode === 'domain' && (
@@ -1461,6 +1619,11 @@ export default function App() {
       {/* ── Calendar ── */}
       {tab === 'calendar' && (
         <CalendarTab events={calEvents} onSave={() => loadData(true)} onDelete={() => loadData(true)} />
+      )}
+
+      {/* ── Notes ── */}
+      {tab === 'notes' && (
+        <NotesTab notes={notes} onSave={saveNote} onDelete={deleteNote} />
       )}
 
       {/* ── Team Board ── */}
