@@ -793,38 +793,86 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
   const rangeStart = dates[0], rangeEnd = dates[41]
   const expanded = getEventsForRange(events, rangeStart, rangeEnd)
 
-  const evsByDay = {}
-  expanded.forEach(ev => {
-    const evStart = fromISODate(ev.start_date)
-    const evEnd = ev.end_date ? fromISODate(ev.end_date) : evStart
-    if (evEnd > evStart) {
-      // Multi-day: add to every spanned day
-      let cur = new Date(evStart)
-      while (cur <= evEnd) {
-        const ds = toISODate(cur)
-        if (!evsByDay[ds]) evsByDay[ds] = []
-        evsByDay[ds].push({ ...ev, _spanStart: ev.start_date, _spanEnd: toISODate(evEnd), _spanDay: ds })
-        cur.setDate(cur.getDate() + 1)
+  // Separate multi-day (span > 1 day) from single-day
+  const multiDay = expanded.filter(ev => ev.end_date && fromISODate(ev.end_date) > fromISODate(ev.start_date))
+  const singleDay = expanded.filter(ev => !ev.end_date || fromISODate(ev.end_date) <= fromISODate(ev.start_date))
+
+  // O(1) date-to-grid-index lookup
+  const dateIdx = {}
+  dates.forEach((d, i) => { dateIdx[toISODate(d)] = i })
+
+  // Assign lanes per week row so ribbons stay horizontally aligned.
+  // laneMap[ev.id][weekRow] = lane number
+  const laneMap = {}
+  const maxLanePerWeek = new Array(6).fill(-1)
+  for (let wi = 0; wi < 6; wi++) {
+    const wS = dates[wi * 7], wE = dates[wi * 7 + 6]
+    const weekEvs = multiDay
+      .filter(ev => fromISODate(ev.end_date) >= wS && fromISODate(ev.start_date) <= wE)
+      .sort((a, b) => {
+        const aS = fromISODate(a.start_date), bS = fromISODate(b.start_date)
+        const aClip = aS < wS ? wS : aS, bClip = bS < wS ? wS : bS
+        if (aClip < bClip) return -1
+        if (aClip > bClip) return 1
+        return (fromISODate(b.end_date) - fromISODate(b.start_date)) - (fromISODate(a.end_date) - fromISODate(a.start_date))
+      })
+    const laneEnds = []
+    weekEvs.forEach(ev => {
+      const evS = fromISODate(ev.start_date), evE = fromISODate(ev.end_date)
+      const clipS = evS < wS ? wS : evS
+      let lane = 0
+      while (lane < laneEnds.length && laneEnds[lane] >= clipS) lane++
+      if (!laneMap[ev.id]) laneMap[ev.id] = {}
+      laneMap[ev.id][wi] = lane
+      laneEnds[lane] = evE > wE ? wE : evE
+      if (lane > maxLanePerWeek[wi]) maxLanePerWeek[wi] = lane
+    })
+  }
+
+  // Build per-day multi-day lookup with lane assignments
+  const multiByDay = {}
+  multiDay.forEach(ev => {
+    const evS = fromISODate(ev.start_date), evE = fromISODate(ev.end_date)
+    let cur = new Date(evS)
+    while (cur <= evE) {
+      const ds = toISODate(cur)
+      if (dateIdx[ds] !== undefined) {
+        const lane = laneMap[ev.id]?.[Math.floor(dateIdx[ds] / 7)] ?? 0
+        if (!multiByDay[ds]) multiByDay[ds] = []
+        multiByDay[ds].push({ ...ev, _lane: lane, _spanStart: ev.start_date, _spanEnd: toISODate(evE), _spanDay: ds })
       }
-    } else {
-      const ds = ev.start_date
-      if (!evsByDay[ds]) evsByDay[ds] = []
-      evsByDay[ds].push(ev)
+      cur.setDate(cur.getDate() + 1)
     }
   })
 
+  // Build per-day single-day lookup, all-day/no-time first then by start_time
+  const singleByDay = {}
+  singleDay.forEach(ev => {
+    if (!singleByDay[ev.start_date]) singleByDay[ev.start_date] = []
+    singleByDay[ev.start_date].push(ev)
+  })
+  Object.values(singleByDay).forEach(arr => arr.sort((a, b) => {
+    if (!a.start_time && b.start_time) return -1
+    if (a.start_time && !b.start_time) return 1
+    return (a.start_time||'').localeCompare(b.start_time||'')
+  }))
+
   return (
     <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden', background:'white' }}>
-      {/* DOW headers */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'0.5px solid #e5e5e5' }}>
         {DOW_SHORT.map(d => <div key={d} style={{ textAlign:'center', fontSize:10, color:'#aaa', padding:'8px 0', textTransform:'uppercase' }}>{d}</div>)}
       </div>
-      {/* Day cells */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)' }}>
         {dates.map((d, i) => {
           const ds = toISODate(d), isToday = ds === todayStr, inMonth = d.getMonth() === month
-          const dayEvs = evsByDay[ds] || []
-          const visible = dayEvs.slice(0, 3), overflow = dayEvs.length - 3
+          const wi = Math.floor(i / 7)
+          const laneCount = maxLanePerWeek[wi] + 1
+          const dayMulti = multiByDay[ds] || []
+          const byLane = {}
+          dayMulti.forEach(ev => { byLane[ev._lane] = ev })
+          const singles = singleByDay[ds] || []
+          const singlesSlots = Math.max(0, 3 - laneCount)
+          const overflow = Math.max(0, singles.length - singlesSlots)
           return (
             <div key={i} onClick={() => onDayClick(d)}
               style={{ minHeight:80, padding:'6px 4px 4px', borderTop:i>=7?'0.5px solid #f0f0f0':undefined, borderLeft:i%7!==0?'0.5px solid #f0f0f0':undefined, cursor:'pointer', background:'transparent' }}
@@ -833,32 +881,38 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
               <div style={{ width:22, height:22, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:12, marginBottom:3, background:isToday?'#111':'transparent', color:isToday?'white':inMonth?'#111':'#ccc', fontWeight:isToday?500:400 }}>
                 {d.getDate()}
               </div>
-              {visible.map((ev, ei) => {
+              {Array.from({ length: laneCount }, (_, li) => {
+                const ev = byLane[li]
+                if (!ev) return <div key={`sp-${li}`} style={{ height:20, marginBottom:2 }} />
                 const bg = ev.type==='travel'?'#FAEEDA':(flagBg(ev.color)||'#E6F1FB')
                 const bdr = ev.type==='travel'?'#FAC775':(flagBorder(ev.color)||'#85B7EB')
-                const isMulti = !!ev._spanDay
-                const isStart = !isMulti || ev._spanDay === ev._spanStart
-                const isEnd = !isMulti || ev._spanDay === ev._spanEnd
+                const isStart = ev._spanDay === ev._spanStart
+                const isEnd = ev._spanDay === ev._spanEnd
                 const isSun = d.getDay() === 0
                 const showLabel = isStart || isSun
                 return (
-                  <div key={ei} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
+                  <div key={`ln-${li}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
                     style={{
                       fontSize:10, marginBottom:2, cursor:'pointer', overflow:'hidden',
                       textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333',
-                      background:bg,
-                      border:`0.5px solid ${bdr}`,
-                      borderLeft: isMulti && !isStart && !isSun ? 'none' : undefined,
-                      borderRight: isMulti && !isEnd ? 'none' : undefined,
-                      borderRadius: isMulti ? (isStart||isSun) && !isEnd ? '3px 0 0 3px' : !isStart&&!isSun && isEnd ? '0 3px 3px 0' : isStart&&isEnd ? 3 : 0 : 3,
+                      background:bg, border:`0.5px solid ${bdr}`,
+                      borderLeft: !isStart && !isSun ? 'none' : undefined,
+                      borderRight: !isEnd ? 'none' : undefined,
+                      borderRadius: (isStart||isSun) && !isEnd ? '3px 0 0 3px' : !isStart&&!isSun && isEnd ? '0 3px 3px 0' : isStart&&isEnd ? 3 : 0,
                       padding: '1px 5px',
-                      marginLeft: isMulti && !isStart && !isSun ? -4 : 0,
-                      marginRight: isMulti && !isEnd ? -4 : 0,
+                      marginLeft: !isStart && !isSun ? -4 : 0,
+                      marginRight: !isEnd ? -4 : 0,
                     }}>
-                    {showLabel && (ev.type==='travel' ? '✈ ' : '')}{showLabel && (ev.start_time&&!ev.all_day ? `${fmtTime(ev.start_time)} ` : '')}{showLabel ? ev.title : ' '}
+                    {showLabel ? (ev.type==='travel'?'✈ ':'')+( ev.start_time&&!ev.all_day?`${fmtTime(ev.start_time)} `:'')+ev.title : ' '}
                   </div>
                 )
               })}
+              {singles.slice(0, singlesSlots).map((ev, ei) => (
+                <div key={`s-${ei}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
+                  style={{ fontSize:10, padding:'1px 5px', borderRadius:3, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background:flagBg(ev.color)||'#E6F1FB', border:`0.5px solid ${flagBorder(ev.color)||'#85B7EB'}`, color:'#333', cursor:'pointer' }}>
+                  {ev.start_time?`${fmtTime(ev.start_time)} `:''}{ev.title}
+                </div>
+              ))}
               {overflow > 0 && <div style={{ fontSize:9, color:'#888', paddingLeft:4 }}>+{overflow} more</div>}
             </div>
           )
@@ -867,6 +921,7 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
     </div>
   )
 }
+
 
 // ─── Calendar Tab ─────────────────────────────────────────────────────────────
 function CalendarYearView({ events, year, onDayClick, onEventClick }) {
@@ -1130,8 +1185,8 @@ export default function App() {
     return () => window.removeEventListener('resize', handler)
   }, [])
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     const [{ data: tasksData }, { data: domainsData }, { data: projectsData, error: projectsError }, { data: calData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
@@ -1405,7 +1460,7 @@ export default function App() {
 
       {/* ── Calendar ── */}
       {tab === 'calendar' && (
-        <CalendarTab events={calEvents} onSave={loadData} onDelete={loadData} />
+        <CalendarTab events={calEvents} onSave={() => loadData(true)} onDelete={() => loadData(true)} />
       )}
 
       {/* ── Team Board ── */}
