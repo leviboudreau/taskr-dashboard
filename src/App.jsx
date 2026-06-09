@@ -327,111 +327,143 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
   )
 }
 
-// ─── Projects Strip ───────────────────────────────────────────────────────────
-function ProjectsStrip({ projects, activeProject, onSelect, onAdd, onDelete }) {
-  const [adding, setAdding] = useState(false)
-  const [newName, setNewName] = useState('')
-
-  const handleAdd = () => {
-    const name = newName.trim()
-    if (!name) { setAdding(false); return }
-    onAdd(name)
-    setNewName('')
-    setAdding(false)
-  }
-
+// ─── Project Card ─────────────────────────────────────────────────────────────
+function ProjectCard({ project, taskCount, active, onSelect, onDelete, onAddTask }) {
+  const bg = flagBg(project.color), border = flagBorder(project.color)
+  const activeBorder = border || '#378ADD'
+  const activeBg = bg || '#f0f7ff'
   return (
-    <div style={{ display:'flex', gap:6, marginBottom:12, alignItems:'center', flexWrap:'wrap', paddingBottom:8, borderBottom:'0.5px solid #f0f0f0' }}>
-      <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', flexShrink:0 }}>Projects</span>
-
-      {/* All pill — always present */}
-      <button onClick={() => onSelect(null)}
-        style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:activeProject===null?'1.5px solid #111':'0.5px solid #e5e5e5', background:activeProject===null?'#111':'white', color:activeProject===null?'white':'#888', fontWeight:activeProject===null?500:400 }}>
-        All
-      </button>
-
-      {/* Project pills */}
-      {projects.map(p => {
-        const active = activeProject === p.id
-        const bg = flagBg(p.color) || '#f7f7f5'
-        const bdr = flagBorder(p.color) || '#ddd'
-        const tc = flagBorder(p.color) || '#555'
-        return (
-          <div key={p.id} style={{ position:'relative', display:'inline-flex', alignItems:'center' }}
-            onMouseEnter={e => { const x = e.currentTarget.querySelector('.del-btn'); if (x) x.style.opacity='1' }}
-            onMouseLeave={e => { const x = e.currentTarget.querySelector('.del-btn'); if (x) x.style.opacity='0' }}>
-            <button onClick={() => onSelect(p.id)}
-              style={{ flexShrink:0, fontSize:12, padding:'4px 12px', paddingRight:active?12:20, borderRadius:16, cursor:'pointer', border:active?`1.5px solid ${tc}`:'0.5px solid #e5e5e5', background:active?bg:'white', color:active?tc:'#888', fontWeight:active?500:400, whiteSpace:'nowrap' }}>
-              {p.name}
-            </button>
-            <button className="del-btn" onClick={e => { e.stopPropagation(); onDelete(p.id) }}
-              style={{ position:'absolute', right:4, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:9, color:'#bbb', lineHeight:1, opacity:0, transition:'opacity 0.1s', padding:'2px' }}>
-              ✕
-            </button>
-          </div>
-        )
-      })}
-
-      {/* Inline add form or + button */}
-      {adding ? (
-        <div style={{ display:'flex', gap:4, alignItems:'center' }}>
-          <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewName('') } }}
-            placeholder="Project name..."
-            style={{ fontSize:12, padding:'4px 10px', borderRadius:16, border:'1.5px solid #111', outline:'none', width:140, fontFamily:'inherit' }} />
-          <button onClick={handleAdd} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:12, padding:'4px 10px', cursor:'pointer' }}>Add</button>
-          <button onClick={() => { setAdding(false); setNewName('') }} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:12, padding:'4px 10px', cursor:'pointer', color:'#888' }}>Cancel</button>
+    <div style={{ position:'relative', flexShrink:0, width:200 }}
+      onMouseEnter={e => { const d = e.currentTarget.querySelector('.pcard-del'); if(d) d.style.opacity='1' }}
+      onMouseLeave={e => { const d = e.currentTarget.querySelector('.pcard-del'); if(d) d.style.opacity='0' }}>
+      <div onClick={() => onSelect(project.id)}
+        style={{ background:active?activeBg:(bg||'white'), border:active?`1.5px solid ${activeBorder}`:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'pointer', boxSizing:'border-box', boxShadow:active?`0 0 0 3px ${activeBorder}22`:'none', userSelect:'none' }}
+        onMouseEnter={e => { if(!active && !border) e.currentTarget.style.borderColor='#bbb' }}
+        onMouseLeave={e => { if(!active && !border) e.currentTarget.style.borderColor=active?activeBorder:'#e5e5e5' }}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
+          {project.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:6, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{project.domain}</span>}
+          {project.substatus && (() => { const ss = subStyle(project.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
+          {project.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
         </div>
-      ) : (
-        <button onClick={() => setAdding(true)}
-          style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:'0.5px dashed #ccc', background:'white', color:'#aaa' }}>
-          + Project
-        </button>
-      )}
+        <div style={{ fontSize:13, fontWeight:500, color:'#111', marginBottom:6, lineHeight:1.3 }}>{project.title}</div>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
+          {project.due && <span style={{ fontSize:10, background:'#FAEEDA', color:'#633806', padding:'2px 7px', borderRadius:10 }}>{project.due}</span>}
+          <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', marginLeft:'auto' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+        </div>
+      </div>
+      <button onClick={e => { e.stopPropagation(); onAddTask({ project_id: project.id }) }}
+        style={{ width:'100%', marginTop:4, padding:'5px 0', fontSize:11, color:'#888', border:'0.5px dashed #ccc', borderRadius:6, background:'white', cursor:'pointer', fontFamily:'inherit' }}>
+        + Add task
+      </button>
+      <button className="pcard-del" onClick={e => { e.stopPropagation(); onDelete(project.id) }}
+        style={{ position:'absolute', top:4, right:4, background:'rgba(255,255,255,0.9)', border:'none', cursor:'pointer', fontSize:9, color:'#bbb', lineHeight:1, opacity:0, transition:'opacity 0.1s', padding:'2px 4px', borderRadius:3 }}>
+        ✕
+      </button>
     </div>
   )
 }
 
-// ─── Escalations Strip ───────────────────────────────────────────────────────
-function EscalationsStrip({ escalations, activeEscalation, onSelect, onAdd, onDelete }) {
+// ─── Projects Section ─────────────────────────────────────────────────────────
+function ProjectsSection({ projects, tasks, activeProject, onSelect, onAdd, onDelete, onAddTask }) {
   const [adding, setAdding] = useState(false)
-  const [newName, setNewName] = useState('')
-  const handleAdd = async () => { if (!newName.trim()) return; await onAdd(newName.trim()); setNewName(''); setAdding(false) }
+  const [newTitle, setNewTitle] = useState('')
+  const handleAdd = () => {
+    const title = newTitle.trim()
+    if (!title) { setAdding(false); return }
+    onAdd(title); setNewTitle(''); setAdding(false)
+  }
   return (
-    <div style={{ paddingBottom:8, borderBottom:'0.5px solid #f0f0f0', marginBottom:12 }}>
-      <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
-        <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', flexShrink:0 }}>Escalations</span>
-        <button onClick={() => onSelect(null)} style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:activeEscalation===null?'1.5px solid #c0392b':'0.5px solid #e5e5e5', background:activeEscalation===null?'#c0392b':'white', color:activeEscalation===null?'white':'#888', fontWeight:activeEscalation===null?500:400 }}>
-          All
-        </button>
-        {escalations.map(e => {
-          const active = activeEscalation === e.id
-          return (
-            <div key={e.id} style={{ position:'relative', display:'inline-flex', alignItems:'center' }}
-              onMouseEnter={el => { const d = el.currentTarget.querySelector('.edel'); if(d) d.style.opacity='1' }}
-              onMouseLeave={el => { const d = el.currentTarget.querySelector('.edel'); if(d) d.style.opacity='0' }}>
-              <button onClick={() => onSelect(active ? null : e.id)}
-                style={{ flexShrink:0, fontSize:12, padding:'4px 12px', paddingRight:active?12:20, borderRadius:16, cursor:'pointer', border:active?'1.5px solid #c0392b':'0.5px solid #e5e5e5', background:active?'#fff0ef':'white', color:active?'#c0392b':'#888', fontWeight:active?500:400, whiteSpace:'nowrap' }}>
-                {e.title}
-              </button>
-              <button className="edel" onClick={ev => { ev.stopPropagation(); onDelete(e.id) }}
-                style={{ position:'absolute', right:4, top:'50%', transform:'translateY(-50%)', fontSize:9, color:'#aaa', background:'none', border:'none', cursor:'pointer', opacity:0, padding:0, lineHeight:1 }}>✕</button>
-            </div>
-          )
-        })}
+    <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+        <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects</span>
+        {activeProject && <button onClick={() => onSelect(null)} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:8, padding:'2px 8px', cursor:'pointer', fontFamily:'inherit' }}>Show all</button>}
+      </div>
+      <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
+        {projects.map(p => (
+          <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} active={activeProject===p.id} onSelect={onSelect} onDelete={onDelete} onAddTask={onAddTask} />
+        ))}
         {adding ? (
-          <div style={{ display:'flex', gap:4, alignItems:'center' }}>
-            <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewName('') } }}
-              placeholder="Escalation name..."
-              style={{ fontSize:12, padding:'4px 10px', borderRadius:16, border:'1.5px solid #c0392b', outline:'none', width:160, fontFamily:'inherit' }} />
-            <button onClick={handleAdd} style={{ fontSize:11, background:'#c0392b', color:'white', border:'none', borderRadius:12, padding:'4px 10px', cursor:'pointer' }}>Add</button>
-            <button onClick={() => { setAdding(false); setNewName('') }} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:12, padding:'4px 10px', cursor:'pointer', color:'#888' }}>Cancel</button>
+          <div style={{ flexShrink:0, width:200 }}>
+            <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+              onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewTitle('') } }}
+              placeholder="Project title..."
+              style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'8px 10px', border:'1.5px solid #111', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
+            <div style={{ display:'flex', gap:4, marginTop:4 }}>
+              <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
+              <button onClick={() => { setAdding(false); setNewTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
+            </div>
           </div>
         ) : (
-          <button onClick={() => setAdding(true)} style={{ flexShrink:0, fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:'0.5px dashed #f5b8b4', background:'white', color:'#e88' }}>
-            + Escalation
-          </button>
+          <div onClick={() => setAdding(true)} style={{ flexShrink:0, width:200, border:'0.5px dashed #ccc', borderRadius:8, padding:'28px 12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#bbb', fontSize:12, minHeight:80, boxSizing:'border-box' }}>
+            + New project
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Escalation Card ──────────────────────────────────────────────────────────
+function EscalationCard({ escalation, taskCount, active, onSelect, onDelete, onAddTask }) {
+  const RED = '#c0392b', REDBG = '#fff0ef', REDBORDER = '#f0a0a0'
+  return (
+    <div style={{ position:'relative', flexShrink:0, width:200 }}
+      onMouseEnter={e => { const d = e.currentTarget.querySelector('.ecard-del'); if(d) d.style.opacity='1' }}
+      onMouseLeave={e => { const d = e.currentTarget.querySelector('.ecard-del'); if(d) d.style.opacity='0' }}>
+      <div onClick={() => onSelect(escalation.id)}
+        style={{ background:active?REDBG:'white', border:active?`1.5px solid ${RED}`:`0.5px solid #e5e5e5`, borderRadius:8, padding:'10px 12px', cursor:'pointer', boxSizing:'border-box', boxShadow:active?`0 0 0 3px ${RED}18`:'none', userSelect:'none' }}
+        onMouseEnter={e => { if(!active) e.currentTarget.style.borderColor=REDBORDER }}
+        onMouseLeave={e => { if(!active) e.currentTarget.style.borderColor='#e5e5e5' }}>
+        <div style={{ fontSize:13, fontWeight:500, color:active?RED:'#111', marginBottom:6, lineHeight:1.3 }}>{escalation.title}</div>
+        <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+      </div>
+      <button onClick={e => { e.stopPropagation(); onAddTask({ escalation_id: escalation.id }) }}
+        style={{ width:'100%', marginTop:4, padding:'5px 0', fontSize:11, color:RED, border:`0.5px dashed ${REDBORDER}`, borderRadius:6, background:'white', cursor:'pointer', fontFamily:'inherit' }}>
+        + Add task
+      </button>
+      <button className="ecard-del" onClick={e => { e.stopPropagation(); onDelete(escalation.id) }}
+        style={{ position:'absolute', top:4, right:4, background:'rgba(255,255,255,0.9)', border:'none', cursor:'pointer', fontSize:9, color:'#bbb', lineHeight:1, opacity:0, transition:'opacity 0.1s', padding:'2px 4px', borderRadius:3 }}>
+        ✕
+      </button>
+    </div>
+  )
+}
+
+// ─── Escalations Section ──────────────────────────────────────────────────────
+function EscalationsSection({ escalations, tasks, activeEscalation, onSelect, onAdd, onDelete, onAddTask }) {
+  const [adding, setAdding] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const RED = '#c0392b', REDBORDER = '#f0a0a0'
+  const handleAdd = () => {
+    const title = newTitle.trim()
+    if (!title) { setAdding(false); return }
+    onAdd(title); setNewTitle(''); setAdding(false)
+  }
+  return (
+    <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+        <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
+        {activeEscalation && <button onClick={() => onSelect(null)} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:8, padding:'2px 8px', cursor:'pointer', fontFamily:'inherit' }}>Show all</button>}
+      </div>
+      <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
+        {escalations.map(e => (
+          <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} active={activeEscalation===e.id} onSelect={onSelect} onDelete={onDelete} onAddTask={onAddTask} />
+        ))}
+        {adding ? (
+          <div style={{ flexShrink:0, width:200 }}>
+            <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+              onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewTitle('') } }}
+              placeholder="Escalation title..."
+              style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'8px 10px', border:`1.5px solid ${RED}`, borderRadius:8, outline:'none', fontFamily:'inherit' }} />
+            <div style={{ display:'flex', gap:4, marginTop:4 }}>
+              <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:RED, color:'white', border:'none', borderRadius:6, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
+              <button onClick={() => { setAdding(false); setNewTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div onClick={() => setAdding(true)} style={{ flexShrink:0, width:200, border:`0.5px dashed ${REDBORDER}`, borderRadius:8, padding:'28px 12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#bbb', fontSize:12, minHeight:80, boxSizing:'border-box' }}>
+            + New escalation
+          </div>
         )}
       </div>
     </div>
@@ -543,8 +575,8 @@ function NoteItem({ note, onDelete, onSave }) {
 }
 
 // ─── Task Form ────────────────────────────────────────────────────────────────
-function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects }) {
-  const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null }
+function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations }) {
+  const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null, escalation_id:null }
   const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:['Levi'], notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[] })
   const [newNote, setNewNote] = useState('')
   const [newSub, setNewSub] = useState('')
@@ -594,7 +626,16 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects }
             <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Project</label>
             <select value={f.project_id||''} onChange={e => set('project_id', e.target.value||null)} style={{ width:'100%', fontSize:13 }}>
               <option value="">— none —</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+            </select>
+          </div>
+        )}
+        {escalations && escalations.length > 0 && (
+          <div style={{ marginBottom:12 }}>
+            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Escalation</label>
+            <select value={f.escalation_id||''} onChange={e => set('escalation_id', e.target.value||null)} style={{ width:'100%', fontSize:13 }}>
+              <option value="">— none —</option>
+              {escalations.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
             </select>
           </div>
         )}
@@ -1350,6 +1391,7 @@ export default function App() {
       updated_at: new Date().toISOString(),
     }
     if (data.project_id !== undefined) payload.project_id = data.project_id || null
+    if (data.escalation_id !== undefined) payload.escalation_id = data.escalation_id || null
     if (isEdit && form?.id) {
       await supabase.from('tasks').update(payload).eq('id', form.id)
     } else {
@@ -1365,8 +1407,8 @@ export default function App() {
     setForm(null); await loadData()
   }
 
-  const addProject = async name => {
-    const { error } = await supabase.from('projects').insert({ name })
+  const addProject = async title => {
+    const { error } = await supabase.from('projects').insert({ title })
     if (error) console.error('[TASKr] addProject error', error)
     await loadData()
   }
@@ -1451,11 +1493,26 @@ export default function App() {
   const activeCols = COLS.filter(c => !minimized[c.key])
   const minCols = COLS.filter(c => minimized[c.key])
 
-  const projectFilteredTasks = activeProject
-    ? tasks.filter(t => t.project_id === activeProject)
-    : tasks
+  const handleSelectProject = id => {
+    setActiveProject(prev => prev === id ? null : id)
+    setActiveEscalation(null)
+  }
+  const handleSelectEscalation = id => {
+    setActiveEscalation(prev => prev === id ? null : id)
+    setActiveProject(null)
+  }
+  const openAddTask = (extra = {}) => {
+    setForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null, escalation_id:null, ...extra })
+    setIsEdit(false)
+  }
 
-  const getColTasks = (colKey) => projectFilteredTasks.filter(t => t.status === colKey && t.status !== 'canceled')
+  const filteredTasks = activeProject
+    ? tasks.filter(t => t.project_id === activeProject)
+    : activeEscalation
+      ? tasks.filter(t => t.escalation_id === activeEscalation)
+      : tasks
+
+  const getColTasks = (colKey) => filteredTasks.filter(t => t.status === colKey && t.status !== 'canceled')
 
   if (loading) return (
     <div style={{ fontFamily:'system-ui,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'#888', fontSize:14 }}>
@@ -1519,19 +1576,19 @@ export default function App() {
           </div>
 
           {/* Today strip */}
-          <TodayStrip tasks={projectFilteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} />
+          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} />
 
-          {/* Projects strip */}
-          <ProjectsStrip projects={projects} activeProject={activeProject} onSelect={setActiveProject} onAdd={addProject} onDelete={deleteProject} />
+          {/* Projects section */}
+          <ProjectsSection projects={projects} tasks={tasks} activeProject={activeProject} onSelect={handleSelectProject} onAdd={addProject} onDelete={deleteProject} onAddTask={openAddTask} />
 
-          {/* Escalations strip */}
-          <EscalationsStrip escalations={escalations} activeEscalation={activeEscalation} onSelect={setActiveEscalation} onAdd={addEscalation} onDelete={deleteEscalation} />
+          {/* Escalations section */}
+          <EscalationsSection escalations={escalations} tasks={tasks} activeEscalation={activeEscalation} onSelect={handleSelectEscalation} onAdd={addEscalation} onDelete={deleteEscalation} onAddTask={openAddTask} />
 
           {/* ── Domain grouped view ── */}
           {viewMode === 'domain' && (
             <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto' }}>
               {[...domains.map(d => ({ key:d, lbl:d })), { key:'', lbl:'No domain' }].map(domCol => {
-                const ct = projectFilteredTasks.filter(t => (t.domain||'') === domCol.key && t.status !== 'canceled')
+                const ct = filteredTasks.filter(t => (t.domain||'') === domCol.key && t.status !== 'canceled')
                 if (ct.length === 0 && domCol.key !== '') return null
                 return (
                   <div key={domCol.key} style={{ flex:'0 0 220px', background:'#f7f7f5', borderRadius:12, padding:12, minHeight:180 }}>
@@ -1669,7 +1726,7 @@ export default function App() {
 
       {/* Task form modal */}
       {form !== null && (
-        <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} />
+        <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} escalations={escalations} />
       )}
     </div>
   )
