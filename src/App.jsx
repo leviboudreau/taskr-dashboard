@@ -327,19 +327,174 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
   )
 }
 
-// ─── Project Card ─────────────────────────────────────────────────────────────
-function ProjectCard({ project, taskCount, active, onSelect, onDelete, onAddTask }) {
-  const bg = flagBg(project.color), border = flagBorder(project.color)
-  const activeBorder = border || '#378ADD'
-  const activeBg = bg || '#f0f7ff'
+// ─── Detail Popup (Project / Escalation) ─────────────────────────────────────
+const STATUS_DOT = { active:'#378ADD', waiting:'#F0A500', someday:'#bbb', done:'#48A868' }
+function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, onSaveEntity, onSaveTask, onDeleteTask }) {
+  const isProject = entityType === 'project'
+  const RED = '#c0392b'
+
+  const [f, setF] = useState({
+    title:    entity.title    || '',
+    status:   entity.status   || 'active',
+    domain:   entity.domain   || '',
+    owners:   Array.isArray(entity.owners) ? entity.owners : ['Levi'],
+    due:      entity.due      || '',
+    priority: entity.priority || '',
+    color:    entity.color    || '',
+    substatus:entity.substatus|| '',
+    notes:    Array.isArray(entity.notes) ? entity.notes : [],
+  })
+  const [newNote, setNewNote] = useState('')
+  const set = (k, v) => setF(p => ({ ...p, [k]:v }))
+  const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { if (cur.length>1) set('owners', cur.filter(o=>o!==m)) } else set('owners', [...cur,m]) }
+  const addNote = () => { const text=newNote.trim(); if(!text) return; set('notes',[...f.notes,{id:'n'+Date.now(),text,ts:Date.now()}]); setNewNote('') }
+  const removeNote = id => set('notes', f.notes.filter(n=>n.id!==id))
+
+  const linkedTasks = isProject
+    ? tasks.filter(t => t.project_id === entity.id)
+    : tasks.filter(t => t.escalation_id === entity.id)
+
+  const [taskForm, setTaskForm] = useState(null)
+  const [isEditTask, setIsEditTask] = useState(false)
+  const openAddTask = () => {
+    setTaskForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:isProject?entity.id:null, escalation_id:!isProject?entity.id:null })
+    setIsEditTask(false)
+  }
+  const openEditTask = t => { setTaskForm({...t}); setIsEditTask(true) }
+
   return (
-    <div style={{ position:'relative', flexShrink:0, width:200 }}
-      onMouseEnter={e => { const d = e.currentTarget.querySelector('.pcard-del'); if(d) d.style.opacity='1' }}
-      onMouseLeave={e => { const d = e.currentTarget.querySelector('.pcard-del'); if(d) d.style.opacity='0' }}>
-      <div onClick={() => onSelect(project.id)}
-        style={{ background:active?activeBg:(bg||'white'), border:active?`1.5px solid ${activeBorder}`:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'pointer', boxSizing:'border-box', boxShadow:active?`0 0 0 3px ${activeBorder}22`:'none', userSelect:'none' }}
-        onMouseEnter={e => { if(!active && !border) e.currentTarget.style.borderColor='#bbb' }}
-        onMouseLeave={e => { if(!active && !border) e.currentTarget.style.borderColor=active?activeBorder:'#e5e5e5' }}>
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:30, zIndex:50 }}>
+        <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:520, maxHeight:'88vh', overflowY:'auto' }}>
+
+          {/* Title */}
+          <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)}
+            placeholder={isProject ? 'Project title...' : 'Escalation title...'}
+            style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:isProject?'#111':RED, background:'transparent', padding:0 }} />
+
+          {/* Status + Priority */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Status</label>
+              <select value={f.status} onChange={e => set('status', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+                {['active','waiting','someday','done'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+              </select></div>
+            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Priority</label>
+              <select value={f.priority} onChange={e => set('priority', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+                <option value="">Normal</option><option value="high">High</option>
+              </select></div>
+          </div>
+
+          {/* Sub-status + Domain */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Sub-status</label>
+              <select value={f.substatus||''} onChange={e => set('substatus', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+                {SUBSTATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select></div>
+            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Domain</label>
+              <select value={f.domain} onChange={e => set('domain', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+                <option value="">— none —</option>
+                {domains.map(d => <option key={d} value={d}>{d}</option>)}
+              </select></div>
+          </div>
+
+          {/* Due date + Flag color */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Due date</label>
+              <input type="text" value={f.due} onChange={e => set('due', e.target.value)} placeholder="e.g. Sep 2025" style={{ width:'100%', fontSize:13 }} /></div>
+            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Flag color</label>
+              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
+              </div></div>
+          </div>
+
+          {/* Assigned to */}
+          <div style={{ marginBottom:12 }}>
+            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {MEMBERS.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
+            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Notes</label>
+            {f.notes.map(n => (
+              <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
+                <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
+                <span style={{ flex:1 }}>{n.text}</span>
+                <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+              </div>
+            ))}
+            <div style={{ display:'flex', gap:8, marginTop:4 }}>
+              <input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addNote()}} placeholder="Add a note..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+              <button onClick={addNote} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+            </div>
+          </div>
+
+          {/* Tasks list */}
+          <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:12 }}>
+            <div style={{ fontSize:11, fontWeight:500, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>
+              Tasks · {linkedTasks.length}
+            </div>
+            {linkedTasks.length === 0 && <div style={{ fontSize:12, color:'#ccc', padding:'4px 0 10px' }}>No tasks yet</div>}
+            {linkedTasks.map(t => (
+              <div key={t.id} onClick={() => openEditTask(t)}
+                style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0', marginBottom:6, cursor:'pointer', boxSizing:'border-box' }}
+                onMouseEnter={e => e.currentTarget.style.background='#f2f2f0'}
+                onMouseLeave={e => e.currentTarget.style.background='#fafafa'}>
+                <span style={{ width:7, height:7, borderRadius:'50%', background:STATUS_DOT[t.status]||'#bbb', flexShrink:0 }} />
+                <span style={{ flex:1, fontSize:13, color:t.status==='done'?'#aaa':'#111', textDecoration:t.status==='done'?'line-through':'none' }}>{t.title}</span>
+                {t.domain && <span style={{ fontSize:9, background:'#E6F1FB', color:'#0C447C', padding:'2px 6px', borderRadius:6, border:'0.5px solid #85B7EB', flexShrink:0, whiteSpace:'nowrap' }}>{t.domain}</span>}
+                {t.priority === 'high' && <span style={{ fontSize:9, background:'#FCEBEB', color:'#791F1F', padding:'2px 5px', borderRadius:6, border:'0.5px solid #F09595', flexShrink:0 }}>High</span>}
+                <span style={{ fontSize:12, color:'#ccc', flexShrink:0 }}>›</span>
+              </div>
+            ))}
+            <button onClick={openAddTask}
+              style={{ width:'100%', marginTop:4, padding:'8px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer', fontFamily:'inherit' }}>
+              + Add task
+            </button>
+          </div>
+
+          {/* Footer */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:12 }}>
+            <button onClick={() => { onDelete(entity.id); onClose() }}
+              style={{ fontSize:12, color:'#E24B4A', background:'none', border:'0.5px solid #fcc', borderRadius:6, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
+              Delete {isProject ? 'project' : 'escalation'}
+            </button>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={onClose}
+                style={{ fontSize:12, background:'none', color:'#888', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
+                Cancel
+              </button>
+              <button onClick={() => { onSaveEntity(f, entity.id); onClose() }}
+                style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'5px 14px', cursor:'pointer', fontFamily:'inherit' }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {taskForm && (
+        <TaskForm task={taskForm} isEdit={isEditTask}
+          onSave={async data => { await onSaveTask(data, isEditTask ? taskForm.id : null); setTaskForm(null) }}
+          onDelete={async id => { await onDeleteTask(id); setTaskForm(null) }}
+          onClose={() => setTaskForm(null)}
+          domains={domains} zIndex={60}
+        />
+      )}
+    </>
+  )
+}
+
+// ─── Project Card ─────────────────────────────────────────────────────────────
+function ProjectCard({ project, taskCount, onOpen }) {
+  const bg = flagBg(project.color), border = flagBorder(project.color)
+  return (
+    <div style={{ position:'relative', flexShrink:0, width:200 }}>
+      <div onClick={() => onOpen(project)}
+        style={{ background:bg||'white', border:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'pointer', boxSizing:'border-box', userSelect:'none' }}
+        onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor='#bbb' }}
+        onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
           {project.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:6, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{project.domain}</span>}
           {project.substatus && (() => { const ss = subStyle(project.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
@@ -351,20 +506,12 @@ function ProjectCard({ project, taskCount, active, onSelect, onDelete, onAddTask
           <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', marginLeft:'auto' }}>{taskCount} task{taskCount!==1?'s':''}</span>
         </div>
       </div>
-      <button onClick={e => { e.stopPropagation(); onAddTask({ project_id: project.id }) }}
-        style={{ width:'100%', marginTop:4, padding:'5px 0', fontSize:11, color:'#888', border:'0.5px dashed #ccc', borderRadius:6, background:'white', cursor:'pointer', fontFamily:'inherit' }}>
-        + Add task
-      </button>
-      <button className="pcard-del" onClick={e => { e.stopPropagation(); onDelete(project.id) }}
-        style={{ position:'absolute', top:4, right:4, background:'rgba(255,255,255,0.9)', border:'none', cursor:'pointer', fontSize:9, color:'#bbb', lineHeight:1, opacity:0, transition:'opacity 0.1s', padding:'2px 4px', borderRadius:3 }}>
-        ✕
-      </button>
     </div>
   )
 }
 
 // ─── Projects Section ─────────────────────────────────────────────────────────
-function ProjectsSection({ projects, tasks, activeProject, onSelect, onAdd, onDelete, onAddTask }) {
+function ProjectsSection({ projects, tasks, onAdd, onOpen }) {
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const handleAdd = () => {
@@ -376,11 +523,10 @@ function ProjectsSection({ projects, tasks, activeProject, onSelect, onAdd, onDe
     <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
         <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects</span>
-        {activeProject && <button onClick={() => onSelect(null)} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:8, padding:'2px 8px', cursor:'pointer', fontFamily:'inherit' }}>Show all</button>}
       </div>
       <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
         {projects.map(p => (
-          <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} active={activeProject===p.id} onSelect={onSelect} onDelete={onDelete} onAddTask={onAddTask} />
+          <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} onOpen={onOpen} />
         ))}
         {adding ? (
           <div style={{ flexShrink:0, width:200 }}>
@@ -404,33 +550,32 @@ function ProjectsSection({ projects, tasks, activeProject, onSelect, onAdd, onDe
 }
 
 // ─── Escalation Card ──────────────────────────────────────────────────────────
-function EscalationCard({ escalation, taskCount, active, onSelect, onDelete, onAddTask }) {
-  const RED = '#c0392b', REDBG = '#fff0ef', REDBORDER = '#f0a0a0'
+function EscalationCard({ escalation, taskCount, onOpen }) {
+  const RED = '#c0392b', REDBORDER = '#f0a0a0'
+  const bg = flagBg(escalation.color), border = flagBorder(escalation.color)
   return (
-    <div style={{ position:'relative', flexShrink:0, width:200 }}
-      onMouseEnter={e => { const d = e.currentTarget.querySelector('.ecard-del'); if(d) d.style.opacity='1' }}
-      onMouseLeave={e => { const d = e.currentTarget.querySelector('.ecard-del'); if(d) d.style.opacity='0' }}>
-      <div onClick={() => onSelect(escalation.id)}
-        style={{ background:active?REDBG:'white', border:active?`1.5px solid ${RED}`:`0.5px solid #e5e5e5`, borderRadius:8, padding:'10px 12px', cursor:'pointer', boxSizing:'border-box', boxShadow:active?`0 0 0 3px ${RED}18`:'none', userSelect:'none' }}
-        onMouseEnter={e => { if(!active) e.currentTarget.style.borderColor=REDBORDER }}
-        onMouseLeave={e => { if(!active) e.currentTarget.style.borderColor='#e5e5e5' }}>
-        <div style={{ fontSize:13, fontWeight:500, color:active?RED:'#111', marginBottom:6, lineHeight:1.3 }}>{escalation.title}</div>
-        <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+    <div style={{ position:'relative', flexShrink:0, width:200 }}>
+      <div onClick={() => onOpen(escalation)}
+        style={{ background:bg||'white', border:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'pointer', boxSizing:'border-box', userSelect:'none' }}
+        onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor=REDBORDER }}
+        onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
+          {escalation.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:6, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{escalation.domain}</span>}
+          {escalation.substatus && (() => { const ss = subStyle(escalation.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
+          {escalation.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
+        </div>
+        <div style={{ fontSize:13, fontWeight:500, color:'#111', marginBottom:6, lineHeight:1.3 }}>{escalation.title}</div>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
+          {escalation.due && <span style={{ fontSize:10, background:'#FAEEDA', color:'#633806', padding:'2px 7px', borderRadius:10 }}>{escalation.due}</span>}
+          <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', marginLeft:'auto' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+        </div>
       </div>
-      <button onClick={e => { e.stopPropagation(); onAddTask({ escalation_id: escalation.id }) }}
-        style={{ width:'100%', marginTop:4, padding:'5px 0', fontSize:11, color:RED, border:`0.5px dashed ${REDBORDER}`, borderRadius:6, background:'white', cursor:'pointer', fontFamily:'inherit' }}>
-        + Add task
-      </button>
-      <button className="ecard-del" onClick={e => { e.stopPropagation(); onDelete(escalation.id) }}
-        style={{ position:'absolute', top:4, right:4, background:'rgba(255,255,255,0.9)', border:'none', cursor:'pointer', fontSize:9, color:'#bbb', lineHeight:1, opacity:0, transition:'opacity 0.1s', padding:'2px 4px', borderRadius:3 }}>
-        ✕
-      </button>
     </div>
   )
 }
 
 // ─── Escalations Section ──────────────────────────────────────────────────────
-function EscalationsSection({ escalations, tasks, activeEscalation, onSelect, onAdd, onDelete, onAddTask }) {
+function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const RED = '#c0392b', REDBORDER = '#f0a0a0'
@@ -443,11 +588,10 @@ function EscalationsSection({ escalations, tasks, activeEscalation, onSelect, on
     <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
         <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
-        {activeEscalation && <button onClick={() => onSelect(null)} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:8, padding:'2px 8px', cursor:'pointer', fontFamily:'inherit' }}>Show all</button>}
       </div>
       <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
         {escalations.map(e => (
-          <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} active={activeEscalation===e.id} onSelect={onSelect} onDelete={onDelete} onAddTask={onAddTask} />
+          <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} onOpen={onOpen} />
         ))}
         {adding ? (
           <div style={{ flexShrink:0, width:200 }}>
@@ -575,7 +719,7 @@ function NoteItem({ note, onDelete, onSave }) {
 }
 
 // ─── Task Form ────────────────────────────────────────────────────────────────
-function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations }) {
+function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations, zIndex = 50 }) {
   const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null, escalation_id:null }
   const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:['Levi'], notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[] })
   const [newNote, setNewNote] = useState('')
@@ -588,7 +732,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
   const addSub = () => { const text = newSub.trim(); if (!text) return; set('subtasks', [...f.subtasks, { id:'st'+Date.now(), title:text, done:false }]); setNewSub('') }
 
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:30, zIndex:50 }}>
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:30, zIndex }}>
       <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88vh', overflowY:'auto' }}>
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Task title..."
           style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
@@ -621,24 +765,6 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
               {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
             </div></div>
         </div>
-        {projects && projects.length > 0 && (
-          <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Project</label>
-            <select value={f.project_id||''} onChange={e => set('project_id', e.target.value||null)} style={{ width:'100%', fontSize:13 }}>
-              <option value="">— none —</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-            </select>
-          </div>
-        )}
-        {escalations && escalations.length > 0 && (
-          <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Escalation</label>
-            <select value={f.escalation_id||''} onChange={e => set('escalation_id', e.target.value||null)} style={{ width:'100%', fontSize:13 }}>
-              <option value="">— none —</option>
-              {escalations.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
-            </select>
-          </div>
-        )}
         <div style={{ marginBottom:12 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
@@ -1336,6 +1462,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('tasks')
   const [activeEscalation, setActiveEscalation] = useState(null)
+  const [activePopup, setActivePopup] = useState(null) // { entity, type: 'project' | 'escalation' }
   const [form, setForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
   const [draggingId, setDraggingId] = useState(null)
@@ -1382,7 +1509,7 @@ export default function App() {
     return () => supabase.removeChannel(ch)
   }, [loadData])
 
-  const saveTask = async data => {
+  const buildTaskPayload = data => {
     const payload = {
       title: data.title, status: data.status, domain: data.domain||'',
       owners: data.owners||['Levi'], due: data.due||'', priority: data.priority||'',
@@ -1392,6 +1519,11 @@ export default function App() {
     }
     if (data.project_id !== undefined) payload.project_id = data.project_id || null
     if (data.escalation_id !== undefined) payload.escalation_id = data.escalation_id || null
+    return payload
+  }
+
+  const saveTask = async data => {
+    const payload = buildTaskPayload(data)
     if (isEdit && form?.id) {
       await supabase.from('tasks').update(payload).eq('id', form.id)
     } else {
@@ -1402,15 +1534,37 @@ export default function App() {
     await loadData()
   }
 
+  const saveTaskSilent = async (data, editId = null) => {
+    const payload = buildTaskPayload(data)
+    if (editId) {
+      await supabase.from('tasks').update(payload).eq('id', editId)
+    } else {
+      const maxOrder = tasks.length ? Math.max(...tasks.map(t => t.sort_order||0)) : 0
+      await supabase.from('tasks').insert({ ...payload, sort_order: maxOrder+1 })
+    }
+    await loadData(true)
+  }
+
   const deleteTask = async id => {
     await supabase.from('tasks').delete().eq('id', id)
     setForm(null); await loadData()
+  }
+
+  const deleteTaskSilent = async id => {
+    await supabase.from('tasks').delete().eq('id', id)
+    await loadData(true)
   }
 
   const addProject = async title => {
     const { error } = await supabase.from('projects').insert({ title })
     if (error) console.error('[TASKr] addProject error', error)
     await loadData()
+  }
+
+  const saveProject = async (data, id) => {
+    const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[] }
+    await supabase.from('projects').update(payload).eq('id', id)
+    await loadData(true)
   }
 
   const deleteProject = async id => {
@@ -1421,6 +1575,12 @@ export default function App() {
 
   const addEscalation = async title => {
     await supabase.from('escalations').insert({ title })
+    await loadData(true)
+  }
+
+  const saveEscalation = async (data, id) => {
+    const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[] }
+    await supabase.from('escalations').update(payload).eq('id', id)
     await loadData(true)
   }
 
@@ -1579,10 +1739,10 @@ export default function App() {
           <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} />
 
           {/* Projects section */}
-          <ProjectsSection projects={projects} tasks={tasks} activeProject={activeProject} onSelect={handleSelectProject} onAdd={addProject} onDelete={deleteProject} onAddTask={openAddTask} />
+          <ProjectsSection projects={projects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} />
 
           {/* Escalations section */}
-          <EscalationsSection escalations={escalations} tasks={tasks} activeEscalation={activeEscalation} onSelect={handleSelectEscalation} onAdd={addEscalation} onDelete={deleteEscalation} onAddTask={openAddTask} />
+          <EscalationsSection escalations={escalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />
 
           {/* ── Domain grouped view ── */}
           {viewMode === 'domain' && (
@@ -1727,6 +1887,21 @@ export default function App() {
       {/* Task form modal */}
       {form !== null && (
         <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} escalations={escalations} />
+      )}
+
+      {/* Project / Escalation detail popup */}
+      {activePopup && (
+        <DetailPopup
+          entity={activePopup.entity}
+          entityType={activePopup.type}
+          tasks={tasks}
+          domains={domains}
+          onClose={() => setActivePopup(null)}
+          onDelete={activePopup.type === 'project' ? deleteProject : deleteEscalation}
+          onSaveEntity={activePopup.type === 'project' ? saveProject : saveEscalation}
+          onSaveTask={saveTaskSilent}
+          onDeleteTask={deleteTaskSilent}
+        />
       )}
     </div>
   )
