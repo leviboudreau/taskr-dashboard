@@ -616,45 +616,160 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
 
 // ─── Rich Text Editor ─────────────────────────────────────────────────────────
 function RichTextEditor({ initialValue, onChange }) {
-  const ref = useRef(null)
+  const editorRef = useRef(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [tableHover, setTableHover] = useState([0, 0])
+  const [tableCtx, setTableCtx] = useState(null)
 
-  useLayoutEffect(() => { if (ref.current) ref.current.innerHTML = initialValue || '' }, [])
+  useLayoutEffect(() => { if (editorRef.current) editorRef.current.innerHTML = initialValue || '' }, [])
+
+  useEffect(() => {
+    const check = () => {
+      const sel = window.getSelection()
+      if (!sel || !sel.anchorNode || !editorRef.current) return setTableCtx(null)
+      let td = null, tr = null, table = null, cur = sel.anchorNode
+      while (cur && cur !== editorRef.current) {
+        if (!td && cur.nodeName === 'TD') td = cur
+        if (!tr && cur.nodeName === 'TR') tr = cur
+        if (!table && cur.nodeName === 'TABLE') table = cur
+        cur = cur.parentNode
+      }
+      setTableCtx(td && tr && table ? { td, tr, table } : null)
+    }
+    document.addEventListener('selectionchange', check)
+    return () => document.removeEventListener('selectionchange', check)
+  }, [])
 
   const exec = (cmd, val = null) => {
-    ref.current.focus()
+    editorRef.current.focus()
     document.execCommand(cmd, false, val)
-    onChange(ref.current.innerHTML)
+    onChange(editorRef.current.innerHTML)
   }
 
   const insertTable = (rows, cols) => {
-    const cell = `<td style="border:1px solid #d1d5db;padding:6px 10px;min-width:60px;">&nbsp;</td>`
-    const row = `<tr>${Array(cols).fill(cell).join('')}</tr>`
-    const html = `<table style="border-collapse:collapse;width:100%;margin:8px 0">${Array(rows).fill(row).join('')}</table><p><br></p>`
-    exec('insertHTML', html)
+    const cellHTML = `<td style="border:1px solid #d1d5db;padding:3px 8px;min-width:60px;">&nbsp;</td>`
+    const rowHTML = `<tr>${Array(cols).fill(cellHTML).join('')}</tr>`
+    exec('insertHTML', `<table style="border-collapse:collapse;width:100%;margin:8px 0">${Array(rows).fill(rowHTML).join('')}</table><p><br></p>`)
     setShowTablePicker(false)
   }
 
   const insertChecklist = () => {
-    exec('insertHTML', '<div style="display:flex;align-items:flex-start;gap:7px;margin:3px 0"><input type="checkbox" style="width:14px;height:14px;margin-top:2px;cursor:pointer;flex-shrink:0"><span>Checklist item</span></div><p><br></p>')
+    exec('insertHTML', '<div style="display:flex;align-items:center;gap:8px;margin:2px 0"><input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0"><span style="line-height:1.5">Checklist item</span></div>')
+  }
+
+  const getChecklistCtx = () => {
+    const sel = window.getSelection()
+    if (!sel || !sel.anchorNode || !editorRef.current) return null
+    let cur = sel.anchorNode
+    while (cur && cur !== editorRef.current) {
+      if (cur.nodeName === 'DIV') {
+        const cb = cur.querySelector('input[type="checkbox"]')
+        if (cb) return { div: cur, cb, span: cur.querySelector('span') }
+      }
+      cur = cur.parentNode
+    }
+    return null
+  }
+
+  const handleKeyDown = e => {
+    if (e.key !== 'Enter' && e.key !== 'Backspace') return
+    const ctx = getChecklistCtx()
+    if (!ctx) return
+    const sel = window.getSelection()
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const newDiv = document.createElement('div')
+      newDiv.style.cssText = 'display:flex;align-items:center;gap:8px;margin:2px 0'
+      const newCb = document.createElement('input')
+      newCb.type = 'checkbox'
+      newCb.style.cssText = 'width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0'
+      const newSpan = document.createElement('span')
+      newSpan.style.lineHeight = '1.5'
+      newDiv.appendChild(newCb)
+      newDiv.appendChild(newSpan)
+      ctx.div.parentNode.insertBefore(newDiv, ctx.div.nextSibling)
+      const range = document.createRange()
+      range.setStart(newSpan, 0)
+      range.collapse(true)
+      sel.removeAllRanges()
+      sel.addRange(range)
+      onChange(editorRef.current.innerHTML)
+    } else if (e.key === 'Backspace') {
+      const atStart = sel && sel.isCollapsed && sel.anchorOffset === 0
+      const isEmpty = !ctx.span || ctx.span.textContent === ''
+      if (atStart && isEmpty) {
+        e.preventDefault()
+        const prev = ctx.div.previousSibling
+        ctx.div.remove()
+        if (prev) {
+          const range = document.createRange()
+          range.selectNodeContents(prev)
+          range.collapse(false)
+          sel.removeAllRanges()
+          sel.addRange(range)
+        }
+        onChange(editorRef.current.innerHTML)
+      }
+    }
+  }
+
+  const fillCell = color => {
+    if (!tableCtx) return
+    tableCtx.td.style.backgroundColor = color
+    onChange(editorRef.current.innerHTML)
+  }
+
+  const tableOp = op => {
+    if (!tableCtx) return
+    const { td, tr, table } = tableCtx
+    const rows = Array.from(table.rows)
+    const colIdx = Array.from(tr.cells).indexOf(td)
+    const mkCell = () => {
+      const c = document.createElement('td')
+      c.style.cssText = 'border:1px solid #d1d5db;padding:3px 8px;min-width:60px;'
+      c.innerHTML = ' '
+      return c
+    }
+    if (op === 'col-left' || op === 'col-right') {
+      const idx = op === 'col-left' ? colIdx : colIdx + 1
+      rows.forEach(r => r.insertBefore(mkCell(), r.cells[idx] || null))
+    } else if (op === 'col-del') {
+      if (rows[0]?.cells.length > 1) rows.forEach(r => { if (r.cells[colIdx]) r.deleteCell(colIdx) })
+    } else if (op === 'row-above' || op === 'row-below') {
+      const newRow = document.createElement('tr')
+      for (let i = 0; i < tr.cells.length; i++) newRow.appendChild(mkCell())
+      tr.parentNode.insertBefore(newRow, op === 'row-above' ? tr : tr.nextSibling)
+    } else if (op === 'row-del') {
+      if (rows.length > 1) tr.remove()
+    }
+    onChange(editorRef.current.innerHTML)
   }
 
   const COLORS = [
     '#111111','#c0392b','#0C447C','#27500A','#7d3c98','#d35400',
     '#f1948a','#85c1e9','#a9dfbf','#d7bde2','#fad7a0','#a2d9ce','#f9e79f','#aab7b8',
   ]
-  const sep = { width:'0.5px', height:16, background:'#e0e0e0', margin:'0 2px', flexShrink:0 }
+  const HIGHLIGHTS = ['#fef08a','#bbf7d0','#bae6fd','#fecdd3','#fed7aa','#e9d5ff']
+  const CELL_FILLS  = ['','#fef9c3','#dbeafe','#dcfce7','#fce7f3','#ffedd5','#f3f4f6','#1e293b']
+  const sep = { width:'0.5px', height:14, background:'#e0e0e0', margin:'0 2px', flexShrink:0 }
   const tbtn = (label, cmd, val = null, extra = {}) => (
-    <button onMouseDown={e => { e.preventDefault(); exec(cmd, val) }} title={typeof label === 'string' ? label : undefined}
+    <button onMouseDown={e => { e.preventDefault(); exec(cmd, val) }}
       style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4, ...extra }}>
       {label}
     </button>
   )
+  const xbtn = (label, action, title) => (
+    <button onMouseDown={e => { e.preventDefault(); action() }} title={title}
+      style={{ fontSize:11, padding:'2px 7px', border:'0.5px solid #c8dff5', borderRadius:4, background:'white', cursor:'pointer', lineHeight:1.4, color:'#3a6ea5' }}>
+      {label}
+    </button>
+  )
+  const rowStyle = { display:'flex', gap:3, padding:'5px 10px', background:'#f7f7f5', borderLeft:'0.5px solid #e5e5e5', borderRight:'0.5px solid #e5e5e5', flexWrap:'wrap', alignItems:'center' }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
-      <div style={{ display:'flex', gap:3, padding:'6px 10px', background:'#f7f7f5', borderRadius:'8px 8px 0 0', border:'0.5px solid #e5e5e5', borderBottom:'none', flexWrap:'wrap', alignItems:'center' }}>
+      {/* Row 1: text formatting + lists + table + size */}
+      <div style={{ ...rowStyle, borderTop:'0.5px solid #e5e5e5', borderRadius:'8px 8px 0 0' }}>
         {tbtn('B', 'bold', null, { fontWeight:700 })}
         {tbtn('I', 'italic', null, { fontStyle:'italic' })}
         {tbtn('U', 'underline', null, { textDecoration:'underline' })}
@@ -666,8 +781,7 @@ function RichTextEditor({ initialValue, onChange }) {
         {tbtn('←', 'outdent', null, { title:'Outdent' })}
         <div style={sep} />
         <button onMouseDown={e => { e.preventDefault(); insertChecklist() }}
-          style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}
-          title="Insert checklist item">
+          style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}>
           ☑ Check
         </button>
         <div style={sep} />
@@ -689,7 +803,6 @@ function RichTextEditor({ initialValue, onChange }) {
                     <div key={i}
                       style={{ width:16, height:16, background:active?'#bfdbfe':'#f0f0f0', border:`1px solid ${active?'#93c5fd':'#e0e0e0'}`, borderRadius:2, cursor:'pointer' }}
                       onMouseEnter={() => setTableHover([r,c])}
-                      onMouseLeave={() => {}}
                       onClick={() => tableHover[0] > 0 && insertTable(tableHover[0], tableHover[1])} />
                   )
                 })}
@@ -698,16 +811,10 @@ function RichTextEditor({ initialValue, onChange }) {
           )}
         </div>
         <div style={sep} />
-        {COLORS.map(c => (
-          <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
-            style={{ width:14, height:14, borderRadius:'50%', background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
-            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
-            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
-        ))}
-        <div style={sep} />
         <select defaultValue="3" onMouseDown={e => e.stopPropagation()}
           onChange={e => { exec('fontSize', e.target.value); e.target.value='3' }}
           style={{ fontSize:11, border:'0.5px solid #e0e0e0', borderRadius:4, padding:'2px 4px', background:'white', cursor:'pointer', height:24 }}>
+          <option value="1">X-Small</option>
           <option value="2">Small</option>
           <option value="3">Normal</option>
           <option value="4">Large</option>
@@ -716,10 +823,59 @@ function RichTextEditor({ initialValue, onChange }) {
         <div style={sep} />
         {tbtn('✕ fmt', 'removeFormat', null, { color:'#aaa', fontSize:11 })}
       </div>
-      <div ref={ref} contentEditable suppressContentEditableWarning
-        onInput={() => onChange(ref.current.innerHTML)}
+      {/* Row 2: colors */}
+      <div style={{ ...rowStyle, borderTop:'0.5px solid #f0f0f0', gap:5 }}>
+        <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Text</span>
+        <div style={sep} />
+        {COLORS.map(c => (
+          <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
+            style={{ width:14, height:14, borderRadius:'50%', background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
+            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
+            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
+        ))}
+        <div style={{ ...sep, margin:'0 5px' }} />
+        <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Highlight</span>
+        <div style={sep} />
+        {HIGHLIGHTS.map(c => (
+          <button key={c} onMouseDown={e => { e.preventDefault(); exec('hiliteColor', c) }}
+            style={{ width:16, height:14, borderRadius:3, background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
+            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
+            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
+        ))}
+        <button onMouseDown={e => { e.preventDefault(); exec('hiliteColor', 'transparent') }}
+          style={{ fontSize:10, padding:'1px 5px', border:'0.5px solid #e0e0e0', borderRadius:3, background:'white', cursor:'pointer', color:'#aaa', lineHeight:1.4 }}
+          title="Remove highlight">✕</button>
+      </div>
+      {/* Row 3: table context controls (shown when cursor is inside a table) */}
+      {tableCtx && (
+        <div style={{ ...rowStyle, borderTop:'0.5px solid #dbeafe', background:'#eff6ff', gap:4 }}>
+          <span style={{ fontSize:10, color:'#3b82f6', fontWeight:500, marginRight:2, flexShrink:0 }}>Table</span>
+          <div style={{ ...sep, background:'#bfdbfe' }} />
+          {xbtn('← Col', () => tableOp('col-left'), 'Insert column to the left')}
+          {xbtn('Col →', () => tableOp('col-right'), 'Insert column to the right')}
+          {xbtn('✕ Col', () => tableOp('col-del'), 'Delete this column')}
+          <div style={{ ...sep, background:'#bfdbfe' }} />
+          {xbtn('↑ Row', () => tableOp('row-above'), 'Insert row above')}
+          {xbtn('Row ↓', () => tableOp('row-below'), 'Insert row below')}
+          {xbtn('✕ Row', () => tableOp('row-del'), 'Delete this row')}
+          <div style={{ ...sep, background:'#bfdbfe' }} />
+          <span style={{ fontSize:10, color:'#3b82f6', flexShrink:0 }}>Cell fill</span>
+          {CELL_FILLS.map((c, i) => (
+            <button key={i} onMouseDown={e => { e.preventDefault(); fillCell(c) }}
+              title={c || 'Clear fill'}
+              style={{ width:15, height:15, borderRadius:3, background:c||'white', border:c?'1.5px solid transparent':'1.5px solid #d1d5db', cursor:'pointer', padding:0, flexShrink:0, position:'relative', overflow:'hidden' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor='#3b82f6'}
+              onMouseLeave={e => e.currentTarget.style.borderColor=c?'transparent':'#d1d5db'}>
+              {!c && <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#bbb', lineHeight:1 }}>✕</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      <div ref={editorRef} contentEditable suppressContentEditableWarning
+        onInput={() => onChange(editorRef.current.innerHTML)}
+        onKeyDown={handleKeyDown}
         onClick={e => {
-          if (e.target.type === 'checkbox') setTimeout(() => onChange(ref.current.innerHTML), 0)
+          if (e.target.type === 'checkbox') setTimeout(() => onChange(editorRef.current.innerHTML), 0)
           setShowTablePicker(false)
         }}
         onMouseLeave={() => setTableHover([0,0])}
@@ -862,6 +1018,7 @@ function NotesTab({ notes, onSave, onDelete }) {
   const [draft, setDraft] = useState(null)
   const [dirty, setDirty] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [focused, setFocused] = useState(false)
 
   useEffect(() => {
     if (notes.length > 0 && !selectedId) {
@@ -887,66 +1044,89 @@ function NotesTab({ notes, onSave, onDelete }) {
     setCopied(true); setTimeout(() => setCopied(false), 1500)
   }
 
-  return (
-    <div style={{ display:'flex', gap:16, height:'calc(100vh - 220px)', minHeight:400 }}>
-      <div style={{ width:220, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
-        <div style={{ padding:'10px 12px', borderBottom:'0.5px solid #f0f0f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>All Notes</span>
-          <button onClick={handleNew} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>+ New</button>
-        </div>
-        <div style={{ flex:1, overflowY:'auto' }}>
-          {notes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>No notes yet.<br/>Click + New to start.</div>}
-          {notes.map(n => (
-            <div key={n.id} onClick={() => handleSelect(n)}
-              style={{ padding:'10px 12px', cursor:'pointer', borderBottom:'0.5px solid #f5f5f5', background:selectedId===n.id?'#f5f5f3':'transparent' }}
-              onMouseEnter={e => { if (selectedId!==n.id) e.currentTarget.style.background='#fafafa' }}
-              onMouseLeave={e => { if (selectedId!==n.id) e.currentTarget.style.background='transparent' }}>
-              <div style={{ fontSize:12, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
-              <div style={{ fontSize:10, color:'#bbb', marginTop:2 }}>{new Date(n.updated_at||n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
-            </div>
-          ))}
-        </div>
+  const sidebar = (
+    <div style={{ width:220, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div style={{ padding:'10px 12px', borderBottom:'0.5px solid #f0f0f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>All Notes</span>
+        <button onClick={handleNew} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>+ New</button>
       </div>
-      <div style={{ flex:1, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
-        {!draft ? (
-          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
-            <div style={{ fontSize:36 }}>📝</div>
-            <div style={{ fontSize:13, color:'#bbb' }}>Select a note or create a new one</div>
-            <button onClick={handleNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:'pointer' }}>+ New Note</button>
+      <div style={{ flex:1, overflowY:'auto' }}>
+        {notes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>No notes yet.<br/>Click + New to start.</div>}
+        {notes.map(n => (
+          <div key={n.id} onClick={() => handleSelect(n)}
+            style={{ padding:'10px 12px', cursor:'pointer', borderBottom:'0.5px solid #f5f5f5', background:selectedId===n.id?'#f5f5f3':'transparent' }}
+            onMouseEnter={e => { if (selectedId!==n.id) e.currentTarget.style.background='#fafafa' }}
+            onMouseLeave={e => { if (selectedId!==n.id) e.currentTarget.style.background='transparent' }}>
+            <div style={{ fontSize:12, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
+            <div style={{ fontSize:10, color:'#bbb', marginTop:2 }}>{new Date(n.updated_at||n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
           </div>
-        ) : (
-          <>
-            <div style={{ padding:'10px 14px', borderBottom:'0.5px solid #f0f0f0', display:'flex', flexDirection:'column', gap:4 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        ))}
+      </div>
+    </div>
+  )
+
+  const editorPane = (
+    <div style={{ flex:1, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      {!draft ? (
+        <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
+          <div style={{ fontSize:36 }}>📝</div>
+          <div style={{ fontSize:13, color:'#bbb' }}>Select a note or create a new one</div>
+          <button onClick={handleNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:'pointer' }}>+ New Note</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ padding:'10px 14px', borderBottom:'0.5px solid #f0f0f0', display:'flex', flexDirection:'column', gap:4 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
               <input value={draft.title} onChange={e => { setDraft(p => ({...p, title:e.target.value})); setDirty(true) }}
                 style={{ flex:1, fontSize:15, fontWeight:600, border:'none', outline:'none', color:'#111', background:'transparent' }}
                 placeholder="Note title..." />
               <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                <button onClick={() => setFocused(f => !f)}
+                  title={focused ? 'Exit focus mode' : 'Focus mode'}
+                  style={{ fontSize:13, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#555', lineHeight:1 }}>
+                  {focused ? '⤡' : '⤢'}
+                </button>
                 <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'4px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
                   {copied ? '✓ Copied' : '📋 Copy'}
                 </button>
                 {dirty && <button onClick={handleSave} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Save</button>}
                 {selectedId && <button onClick={async () => { await onDelete(selectedId); setSelectedId(null); setDraft(null); setDirty(false) }} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Delete</button>}
               </div>
-              </div>
-              {(() => {
-                const noteRecord = notes.find(n => n.id === selectedId)
-                const fmtDT = iso => iso ? new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : '—'
-                return noteRecord ? (
-                  <div style={{ display:'flex', gap:14, fontSize:10, color:'#bbb' }}>
-                    <span>Created {fmtDT(noteRecord.created_at)}</span>
-                    {noteRecord.updated_at && noteRecord.updated_at !== noteRecord.created_at && <span>· Edited {fmtDT(noteRecord.updated_at)}</span>}
-                  </div>
-                ) : null
-              })()}
             </div>
-            <RichTextEditor key={selectedId} initialValue={draft.body}
-              onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }} />
-          </>
-        )}
-      </div>
+            {(() => {
+              const noteRecord = notes.find(n => n.id === selectedId)
+              const fmtDT = iso => iso ? new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : '—'
+              return noteRecord ? (
+                <div style={{ display:'flex', gap:14, fontSize:10, color:'#bbb' }}>
+                  <span>Created {fmtDT(noteRecord.created_at)}</span>
+                  {noteRecord.updated_at && noteRecord.updated_at !== noteRecord.created_at && <span>· Edited {fmtDT(noteRecord.updated_at)}</span>}
+                </div>
+              ) : null
+            })()}
+          </div>
+          <RichTextEditor key={selectedId} initialValue={draft.body}
+            onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }} />
+        </>
+      )}
     </div>
   )
+
+  const layout = (
+    <div style={{ display:'flex', gap:16, height: focused ? 'calc(100vh - 72px)' : 'calc(100vh - 220px)', minHeight:400 }}>
+      {sidebar}
+      {editorPane}
+    </div>
+  )
+
+  if (focused) {
+    return (
+      <div style={{ position:'fixed', inset:0, zIndex:200, background:'white', padding:'16px 24px', display:'flex', flexDirection:'column', boxSizing:'border-box' }}>
+        {layout}
+      </div>
+    )
+  }
+
+  return layout
 }
 
 // ─── Note Item ────────────────────────────────────────────────────────────────
