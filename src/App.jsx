@@ -252,34 +252,18 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
           {task.due && <Badge type="due">{task.due}</Badge>}
           {done && <Badge type="done">Done</Badge>}
         </div>
-        {!compact && hasSubtasks && (
-          <div>
-            <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
-              <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
-                {subtasksOpen ? 'hide subtasks' : `${completedSubs}/${subtasks.length} subtask${subtasks.length>1?'s':''}`}
-              </button>
-            </div>
-            {subtasksOpen && (
-              <div style={{ marginBottom:6, paddingLeft:2 }}>
-                {subtasks.map(st => (
-                  <div key={st.id} onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
-                    <input type="checkbox" checked={!!st.done} onChange={e => { e.stopPropagation(); onToggleSubtask(task.id, st.id, e.target.checked) }} style={{ width:12, height:12, cursor:'pointer' }} />
-                    <span style={{ fontSize:11, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
-                  </div>
-                ))}
+        {subtasksOpen && !compact && hasSubtasks && (
+          <div style={{ marginBottom:6, paddingLeft:2, marginTop:4 }}>
+            {subtasks.map(st => (
+              <div key={st.id} onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                <input type="checkbox" checked={!!st.done} onChange={e => { e.stopPropagation(); onToggleSubtask(task.id, st.id, e.target.checked) }} style={{ width:12, height:12, cursor:'pointer' }} />
+                <span style={{ fontSize:11, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
               </div>
-            )}
-          </div>
-        )}
-        {!compact && hasNotes && (
-          <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:4 }}>
-            <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
-              {notesOpen ? 'hide notes' : `${task.notes.length} note${task.notes.length>1?'s':''}`}
-            </button>
+            ))}
           </div>
         )}
         {notesOpen && !compact && hasNotes && (
-          <div style={{ marginBottom:8, borderTop:'0.5px solid #e5e5e5', paddingTop:8 }}>
+          <div style={{ marginBottom:6, borderTop:'0.5px solid #e5e5e5', paddingTop:8, marginTop:4 }}>
             {task.notes.map(n => (
               <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:5, lineHeight:1.5 }}>
                 <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
@@ -288,8 +272,22 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
           </div>
         )}
         {!compact && showOwners && (
-          <div style={{ display:'flex', gap:3, marginTop:2 }}>
+          <div style={{ display:'flex', gap:3, marginTop:2, marginBottom:hasSubtasks||hasNotes?4:0 }}>
             {owners.map(o => <OwnerPip key={o} name={o} />)}
+          </div>
+        )}
+        {!compact && (hasSubtasks || hasNotes) && (
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:4, marginTop:2 }}>
+            {hasNotes && (
+              <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
+                {notesOpen ? 'hide notes' : `${task.notes.length} note${task.notes.length>1?'s':''}`}
+              </button>
+            )}
+            {hasSubtasks && (
+              <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
+                {subtasksOpen ? 'hide' : `${completedSubs}/${subtasks.length} sub`}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -329,7 +327,7 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
 
 // ─── Detail Popup (Project / Escalation) ─────────────────────────────────────
 const STATUS_DOT = { active:'#378ADD', waiting:'#F0A500', someday:'#bbb', done:'#48A868' }
-function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, onSaveEntity, onSaveTask, onDeleteTask }) {
+function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, onSaveEntity, onSaveTask, onDeleteTask, members = MEMBERS }) {
   const isProject = entityType === 'project'
   const RED = '#c0392b'
 
@@ -411,7 +409,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
           <div style={{ marginBottom:12 }}>
             <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-              {MEMBERS.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+              {members.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
             </div>
           </div>
 
@@ -475,7 +473,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
         </div>
       </div>
       {taskForm && (
-        <TaskForm task={taskForm} isEdit={isEditTask}
+        <TaskForm task={taskForm} isEdit={isEditTask} members={members}
           onSave={async data => { await onSaveTask(data, isEditTask ? taskForm.id : null); setTaskForm(null) }}
           onDelete={async id => { await onDeleteTask(id); setTaskForm(null) }}
           onClose={() => setTaskForm(null)}
@@ -1019,6 +1017,9 @@ function NotesTab({ notes, onSave, onDelete }) {
   const [dirty, setDirty] = useState(false)
   const [copied, setCopied] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [sortKey, setSortKey] = useState('date')
+  const [sortDir, setSortDir] = useState('desc')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (notes.length > 0 && !selectedId) {
@@ -1044,21 +1045,47 @@ function NotesTab({ notes, onSave, onDelete }) {
     setCopied(true); setTimeout(() => setCopied(false), 1500)
   }
 
+  const stripHtml = html => { const d = document.createElement('div'); d.innerHTML = html||''; return d.textContent||'' }
+  const visibleNotes = notes
+    .filter(n => {
+      if (!search.trim()) return true
+      const q = search.toLowerCase()
+      return (n.title||'').toLowerCase().includes(q) || stripHtml(n.body).toLowerCase().includes(q)
+    })
+    .sort((a, b) => {
+      const cmp = sortKey === 'alpha'
+        ? (a.title||'').localeCompare(b.title||'')
+        : new Date(a.created_at) - new Date(b.created_at)
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+
   const sidebar = (
     <div style={{ width:220, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
-      <div style={{ padding:'10px 12px', borderBottom:'0.5px solid #f0f0f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-        <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>All Notes</span>
-        <button onClick={handleNew} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>+ New</button>
+      <div style={{ padding:'8px 12px', borderBottom:'0.5px solid #f0f0f0' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:7 }}>
+          <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>All Notes</span>
+          <button onClick={handleNew} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>+ New</button>
+        </div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notes…"
+          style={{ width:'100%', boxSizing:'border-box', fontSize:11, padding:'5px 8px', border:'0.5px solid #e0e0e0', borderRadius:6, outline:'none', marginBottom:6, color:'#333' }} />
+        <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+          {[{k:'date',l:'Date'},{k:'alpha',l:'A–Z'}].map(o => (
+            <button key={o.k} onClick={() => { if (sortKey===o.k) setSortDir(d => d==='asc'?'desc':'asc'); else { setSortKey(o.k); setSortDir('desc') } }}
+              style={{ fontSize:10, padding:'2px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:sortKey===o.k?'#111':'white', color:sortKey===o.k?'white':'#666', cursor:'pointer' }}>
+              {o.l}{sortKey===o.k ? (sortDir==='asc'?' ↑':' ↓') : ''}
+            </button>
+          ))}
+        </div>
       </div>
       <div style={{ flex:1, overflowY:'auto' }}>
-        {notes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>No notes yet.<br/>Click + New to start.</div>}
-        {notes.map(n => (
+        {visibleNotes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>{search ? 'No matches.' : 'No notes yet.'}<br/>{!search && 'Click + New to start.'}</div>}
+        {visibleNotes.map(n => (
           <div key={n.id} onClick={() => handleSelect(n)}
             style={{ padding:'10px 12px', cursor:'pointer', borderBottom:'0.5px solid #f5f5f5', background:selectedId===n.id?'#f5f5f3':'transparent' }}
             onMouseEnter={e => { if (selectedId!==n.id) e.currentTarget.style.background='#fafafa' }}
             onMouseLeave={e => { if (selectedId!==n.id) e.currentTarget.style.background='transparent' }}>
             <div style={{ fontSize:12, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
-            <div style={{ fontSize:10, color:'#bbb', marginTop:2 }}>{new Date(n.updated_at||n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+            <div style={{ fontSize:10, color:'#bbb', marginTop:2 }}>{new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
           </div>
         ))}
       </div>
@@ -1154,7 +1181,7 @@ function NoteItem({ note, onDelete, onSave }) {
 }
 
 // ─── Task Form ────────────────────────────────────────────────────────────────
-function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations, zIndex = 50 }) {
+function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations, zIndex = 50, members = MEMBERS }) {
   const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null, escalation_id:null }
   const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:['Levi'], notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[] })
   const [newNote, setNewNote] = useState('')
@@ -1203,7 +1230,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
         <div style={{ marginBottom:12 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {MEMBERS.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+            {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
           </div>
         </div>
         <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#444', marginBottom:14, cursor:'pointer' }}>
@@ -1368,7 +1395,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
         <div style={{ marginBottom:12 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Attendees</label>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {MEMBERS.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+            {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
           </div>
         </div>
 
@@ -1907,6 +1934,8 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
   const [mobileCol, setMobileCol] = useState('active')
   const [viewMode, setViewMode] = useState('order') // 'order' | 'dynamic' | 'domain'
+  const [filterOwner, setFilterOwner] = useState('all')
+  const [teamData, setTeamData] = useState([])
   const [activeProject, setActiveProject] = useState(null)
   const [dropTarget, setDropTarget] = useState(null) // { col, taskId, position }
 
@@ -1918,7 +1947,7 @@ export default function App() {
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*'),
@@ -1926,6 +1955,7 @@ export default function App() {
       supabase.from('escalations').select('*').order('created_at', { ascending: true }),
       supabase.from('notes').select('*').order('updated_at', { ascending: false }),
       supabase.from('follow_ups').select('*').order('created_at', { ascending: true }),
+      supabase.from('team_members').select('*').order('sort_order', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) setDomains(domainsData.map(d => d.name))
@@ -1934,6 +1964,7 @@ export default function App() {
     setEscalations(escalationsData || [])
     setNotes(notesData || [])
     setFollowUps(followUpsData || [])
+    if (teamMembersData && teamMembersData.length > 0) setTeamData(teamMembersData)
     setLoading(false)
   }, [])
 
@@ -2002,6 +2033,7 @@ export default function App() {
   const saveProject = async (data, id) => {
     const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[] }
     await supabase.from('projects').update(payload).eq('id', id)
+    await supabase.from('tasks').update({ color: data.color||'' }).eq('project_id', id)
     await loadData(true)
   }
 
@@ -2019,6 +2051,7 @@ export default function App() {
   const saveEscalation = async (data, id) => {
     const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[] }
     await supabase.from('escalations').update(payload).eq('id', id)
+    await supabase.from('tasks').update({ color: data.color||'' }).eq('escalation_id', id)
     await loadData(true)
   }
 
@@ -2117,11 +2150,14 @@ export default function App() {
     setIsEdit(false)
   }
 
-  const filteredTasks = activeProject
+  const memberNames = teamData.length ? teamData.map(m => m.name) : MEMBERS
+
+  const filteredTasks = (activeProject
     ? tasks.filter(t => t.project_id === activeProject)
     : activeEscalation
       ? tasks.filter(t => t.escalation_id === activeEscalation)
       : tasks
+  ).filter(t => filterOwner === 'all' || (t.owners||['Levi']).includes(filterOwner))
 
   const getColTasks = (colKey) => filteredTasks.filter(t => t.status === colKey && t.status !== 'canceled')
 
@@ -2149,9 +2185,7 @@ export default function App() {
         {[
           { key:'tasks', label:'📋 Tasks' },
           { key:'calendar', label:'📅 Calendar' },
-          { key:'team', label:'👥 Team' },
           { key:'notes', label:'📝 Notes' },
-          { key:'trash', label:`🗑️ Trash${tasks.filter(t=>t.status==='canceled').length>0?` (${tasks.filter(t=>t.status==='canceled').length})`:''}`},
           { key:'settings', label:'⚙️ Settings' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -2162,7 +2196,7 @@ export default function App() {
       </div>
 
       {/* ── Task Board ── */}
-      {tab === 'tasks' && (
+      {(tab === 'tasks' || tab === 'trash') && (
         <>
           {/* View controls */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, flexWrap:'wrap', gap:8 }}>
@@ -2183,17 +2217,34 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)}
+                style={{ fontSize:11, padding:'4px 8px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', color:filterOwner==='all'?'#888':'#111', height:28, outline:'none' }}>
+                <option value="all">👥 All people</option>
+                {TEAM_MEMBERS.filter(m => m.key !== 'all').map(m => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+              <button onClick={() => setTab(tab === 'trash' ? 'tasks' : 'trash')}
+                title="Trash"
+                style={{ position:'relative', fontSize:16, background:tab==='trash'?'#fff0f0':'white', border:tab==='trash'?'0.5px solid #f09595':'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', cursor:'pointer', lineHeight:1 }}>
+                🗑️
+                {tasks.filter(t=>t.status==='canceled').length > 0 && (
+                  <span style={{ position:'absolute', top:-4, right:-4, background:'#c0392b', color:'white', borderRadius:'50%', fontSize:9, width:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, lineHeight:1 }}>
+                    {tasks.filter(t=>t.status==='canceled').length}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
           {/* Today strip */}
-          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} />
+          {tab === 'tasks' && <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} /> }
 
           {/* Projects section */}
-          <ProjectsSection projects={projects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} />
+          {tab === 'tasks' && <ProjectsSection projects={projects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} /> }
 
           {/* Escalations section */}
-          <EscalationsSection escalations={escalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />
+          {tab === 'tasks' && <EscalationsSection escalations={escalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} /> }
 
           {/* ── Domain grouped view ── */}
           {viewMode === 'domain' && (
@@ -2294,21 +2345,6 @@ export default function App() {
         <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} followUps={followUps} onAddFollowUp={addFollowUp} onToggleFollowUp={toggleFollowUp} onDeleteFollowUp={deleteFollowUp} />
       )}
 
-      {/* ── Team Board ── */}
-      {tab === 'team' && (
-        <TeamBoardTab
-          tasks={tasks}
-          onEdit={t => { setForm({...t}); setIsEdit(true) }}
-          onDragStart={id => setDraggingId(id)}
-          onDragEnd={() => { setDraggingId(null); setOverCol(null) }}
-          draggingId={draggingId}
-          onDrop={drop}
-          onDragOver={setOverCol}
-          onDragLeave={() => setOverCol(null)}
-          overCol={overCol}
-          toggleSubtask={toggleSubtask}
-        />
-      )}
 
       {/* ── Trash ── */}
       {tab === 'trash' && (
@@ -2332,12 +2368,15 @@ export default function App() {
 
       {/* ── Settings ── */}
       {tab === 'settings' && (
-        <DomainSettings domains={domains} onUpdate={loadData} />
+        <div style={{ display:'flex', flexDirection:'column', gap:32 }}>
+          <DomainSettings domains={domains} onUpdate={loadData} />
+          <TeamSettings teamData={teamData} onUpdate={loadData} />
+        </div>
       )}
 
       {/* Task form modal */}
       {form !== null && (
-        <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} escalations={escalations} />
+        <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} escalations={escalations} members={memberNames} />
       )}
 
       {/* Project / Escalation detail popup */}
@@ -2352,6 +2391,7 @@ export default function App() {
           onSaveEntity={activePopup.type === 'project' ? saveProject : saveEscalation}
           onSaveTask={saveTaskSilent}
           onDeleteTask={deleteTaskSilent}
+          members={memberNames}
         />
       )}
     </div>
@@ -2419,6 +2459,105 @@ function DomainSettings({ domains, onUpdate }) {
           <input type="text" value={newDomain} onChange={e => setNewDomain(e.target.value)} onKeyDown={e => { if (e.key==='Enter') addDomain() }} placeholder="Add a new domain..." style={{ flex:1, fontSize:13, padding:'8px 10px', border:'0.5px solid #ddd', borderRadius:8 }} />
           <button onClick={addDomain} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'0 16px', cursor:'pointer' }}>Add</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Team Settings ────────────────────────────────────────────────────────────
+const MEMBER_COLOR_OPTIONS = [
+  { bg:'#F1EFE8', tc:'#5F5E5A' },
+  { bg:'#E1F5EE', tc:'#085041' },
+  { bg:'#E6F1FB', tc:'#0C447C' },
+  { bg:'#EEEDFE', tc:'#3C3489' },
+  { bg:'#FCEBEB', tc:'#791F1F' },
+  { bg:'#FFF3E0', tc:'#7C4A00' },
+  { bg:'#F3F4F6', tc:'#374151' },
+]
+
+function TeamSettings({ teamData, onUpdate }) {
+  const [editId, setEditId] = useState(null)
+  const [editVals, setEditVals] = useState({})
+  const [adding, setAdding] = useState(false)
+  const [newVals, setNewVals] = useState({ name:'', full_name:'', role:'', location:'' })
+
+  const startEdit = m => { setEditId(m.id); setEditVals({ name:m.name, full_name:m.full_name||'', role:m.role||'', location:m.location||'' }) }
+
+  const saveEdit = async id => {
+    if (!editVals.name.trim()) return
+    await supabase.from('team_members').update({ name:editVals.name.trim(), full_name:editVals.full_name.trim(), role:editVals.role.trim(), location:editVals.location.trim() }).eq('id', id)
+    setEditId(null); onUpdate()
+  }
+
+  const addMember = async () => {
+    if (!newVals.name.trim()) return
+    const maxOrder = teamData.length ? Math.max(...teamData.map(m => m.sort_order||0)) : 0
+    await supabase.from('team_members').insert({ name:newVals.name.trim(), full_name:newVals.full_name.trim(), role:newVals.role.trim(), location:newVals.location.trim(), sort_order:maxOrder+1 })
+    setNewVals({ name:'', full_name:'', role:'', location:'' }); setAdding(false); onUpdate()
+  }
+
+  const removeMember = async id => { await supabase.from('team_members').delete().eq('id', id); onUpdate() }
+
+  const inp = (val, setter, ph) => (
+    <input value={val} onChange={e => setter(e.target.value)} placeholder={ph}
+      style={{ flex:1, fontSize:12, padding:'4px 7px', border:'0.5px solid #ddd', borderRadius:5, outline:'none', minWidth:0 }} />
+  )
+
+  return (
+    <div>
+      <div style={{ fontSize:12, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Team</div>
+      {teamData.length === 0 && (
+        <div style={{ fontSize:12, color:'#bbb', padding:'12px 0', marginBottom:12 }}>
+          No team members loaded. Run the SQL below to set up the team table, then reload.
+        </div>
+      )}
+      <div style={{ maxWidth:620 }}>
+        {teamData.map((m, i) => {
+          const c = MEMBER_COLORS[m.name] || MEMBER_COLOR_OPTIONS[i % MEMBER_COLOR_OPTIONS.length]
+          return (
+            <div key={m.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'10px 12px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8 }}>
+              <div style={{ width:28, height:28, borderRadius:'50%', background:c.bg, color:c.tc, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, flexShrink:0 }}>{m.name[0]}</div>
+              {editId === m.id ? (
+                <div style={{ flex:1, display:'flex', gap:6, flexWrap:'wrap' }}>
+                  {inp(editVals.name, v => setEditVals(p=>({...p,name:v})), 'Display name *')}
+                  {inp(editVals.full_name, v => setEditVals(p=>({...p,full_name:v})), 'Full name')}
+                  {inp(editVals.role, v => setEditVals(p=>({...p,role:v})), 'Role')}
+                  {inp(editVals.location, v => setEditVals(p=>({...p,location:v})), 'Location')}
+                </div>
+              ) : (
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:500, color:'#111' }}>{m.name}{m.full_name && m.full_name !== m.name ? <span style={{ fontWeight:400, color:'#555' }}> · {m.full_name}</span> : ''}</div>
+                  {(m.role || m.location) && <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{[m.role, m.location].filter(Boolean).join(' · ')}</div>}
+                </div>
+              )}
+              <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+                {editId === m.id ? <>
+                  <button onClick={() => saveEdit(m.id)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:4, padding:'3px 8px', cursor:'pointer' }}>Save</button>
+                  <button onClick={() => setEditId(null)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Cancel</button>
+                </> : <>
+                  <button onClick={() => startEdit(m)} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:4, padding:'2px 7px', cursor:'pointer', color:'#888' }}>Edit</button>
+                  <button onClick={() => removeMember(m.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #f0c0c0', borderRadius:4, padding:'2px 6px', cursor:'pointer', color:'#A32D2D' }}>✕</button>
+                </>}
+              </div>
+            </div>
+          )
+        })}
+        {adding ? (
+          <div style={{ padding:'10px 12px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, marginBottom:8 }}>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:8 }}>
+              {inp(newVals.name, v => setNewVals(p=>({...p,name:v})), 'Display name *')}
+              {inp(newVals.full_name, v => setNewVals(p=>({...p,full_name:v})), 'Full name')}
+              {inp(newVals.role, v => setNewVals(p=>({...p,role:v})), 'Role')}
+              {inp(newVals.location, v => setNewVals(p=>({...p,location:v})), 'Location')}
+            </div>
+            <div style={{ display:'flex', gap:6 }}>
+              <button onClick={addMember} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'5px 14px', cursor:'pointer' }}>Add</button>
+              <button onClick={() => { setAdding(false); setNewVals({ name:'', full_name:'', role:'', location:'' }) }} style={{ fontSize:12, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 14px', cursor:'pointer', color:'#888' }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} style={{ fontSize:12, background:'none', border:'0.5px dashed #ccc', borderRadius:8, padding:'7px 16px', cursor:'pointer', color:'#888', marginTop:4 }}>+ Add team member</button>
+        )}
       </div>
     </div>
   )
