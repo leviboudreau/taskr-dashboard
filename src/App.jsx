@@ -207,7 +207,7 @@ function WorldClock() {
 // ─── Badge ────────────────────────────────────────────────────────────────────
 function Badge({ type, children }) {
   const s = { domain:{ background:'#E6F1FB', color:'#0C447C' }, owner:{ background:'#E1F5EE', color:'#085041' }, due:{ background:'#FAEEDA', color:'#633806' }, high:{ background:'#FCEBEB', color:'#791F1F' }, done:{ background:'#EAF3DE', color:'#27500A' } }[type] || {}
-  return <span style={{ ...s, fontSize:11, padding:'2px 7px', borderRadius:10, whiteSpace:'nowrap' }}>{children}</span>
+  return <span style={{ ...s, fontSize:11, padding:'2px 7px', borderRadius:20, whiteSpace:'nowrap' }}>{children}</span>
 }
 
 // ─── Owner Pip ────────────────────────────────────────────────────────────────
@@ -239,14 +239,14 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
         onDragEnd={onDragEnd}
         onDragOver={onDragOver ? e => { e.preventDefault(); onDragOver(task.id) } : undefined}
         onClick={() => onEdit(task)}
-        style={{ background:bg||'white', border:border?`1px solid ${border}`:'0.5px solid #e5e5e5', borderRadius:8, padding:compact?'8px 10px':'10px 12px', marginBottom:8, userSelect:'none', opacity:dragging?0.4:1, cursor:'grab', width:'100%', boxSizing:'border-box' }}
+        style={{ background:bg||'white', border:border?`1px solid ${border}`:'0.5px solid #e5e5e5', borderRadius:8, padding:compact?'8px 10px':'10px 12px', marginBottom:4, userSelect:'none', opacity:dragging?0.4:1, cursor:'grab', width:'100%', boxSizing:'border-box' }}
         onMouseEnter={e => { if (!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if (!border) e.currentTarget.style.borderColor='#e5e5e5' }}
       >
         <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:3, marginBottom:3 }}>
-          {task.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:6, border:'0.5px solid #85B7EB', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.domain}</span>}
-          {task.substatus && (() => { const ss = subStyle(task.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
-          {task.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
+          {task.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.domain}</span>}
+          {task.substatus && (() => { const ss = subStyle(task.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
+          {task.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
         </div>
         <div style={{ fontSize:13, fontWeight:500, color:done?'#999':'#111', textDecoration:done?'line-through':'none', marginBottom:4, lineHeight:1.4, overflowWrap:'break-word', wordBreak:'break-word' }}>{task.title}</div>
         <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', marginBottom:!compact&&(hasNotes||showOwners||hasSubtasks)?6:0 }}>
@@ -280,15 +280,15 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
         {!compact && (hasSubtasks || hasNotes || attachCount > 0) && (
           <div style={{ display:'flex', justifyContent:'flex-end', gap:4, marginTop:2 }}>
             {attachCount > 0 && (
-              <span style={{ fontSize:10, color:'#aaa', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px' }}>📎 {attachCount}</span>
+              <span style={{ fontSize:10, color:'#aaa', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px' }}>📎 {attachCount}</span>
             )}
             {hasNotes && (
-              <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
+              <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
                 {notesOpen ? 'hide notes' : `${task.notes.length} note${task.notes.length>1?'s':''}`}
               </button>
             )}
             {hasSubtasks && (
-              <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
+              <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
                 {subtasksOpen ? 'hide' : `${completedSubs}/${subtasks.length} sub`}
               </button>
             )}
@@ -359,11 +359,22 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
   const [taskForm, setTaskForm] = useState(null)
   const [isEditTask, setIsEditTask] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importSearch, setImportSearch] = useState('')
   const openAddTask = () => {
     setTaskForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], attachments:[], project_id:isProject?entity.id:null, escalation_id:!isProject?entity.id:null })
     setIsEditTask(false)
   }
   const openEditTask = t => { setTaskForm({...t}); setIsEditTask(true) }
+  const linkTask = async t => {
+    const updated = { ...t, project_id: isProject ? entity.id : t.project_id, escalation_id: !isProject ? entity.id : t.escalation_id }
+    await onSaveTask(updated, t.id)
+    setImportOpen(false); setImportSearch('')
+  }
+  const importableTasks = tasks
+    .filter(t => t.substatus !== 'canceled' && t.status !== 'canceled')
+    .filter(t => isProject ? t.project_id !== entity.id : t.escalation_id !== entity.id)
+    .filter(t => !importSearch || t.title.toLowerCase().includes(importSearch.toLowerCase()))
 
   return (
     <>
@@ -403,7 +414,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
           {/* Due date + Flag color */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
             <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Due date</label>
-              <input type="text" value={f.due} onChange={e => set('due', e.target.value)} placeholder="e.g. Sep 2025" style={{ width:'100%', fontSize:13 }} /></div>
+              <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
             <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Flag color</label>
               <div style={{ display:'flex', gap:6, alignItems:'center' }}>
                 {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
@@ -459,10 +470,39 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
                 <span style={{ fontSize:12, color:'#ccc', flexShrink:0 }}>›</span>
               </div>
             ))}
-            <button onClick={openAddTask}
-              style={{ width:'100%', marginTop:4, padding:'8px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer', fontFamily:'inherit' }}>
-              + Add task
-            </button>
+            <div style={{ display:'flex', gap:6, marginTop:4 }}>
+              <button onClick={openAddTask}
+                style={{ flex:1, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer', fontFamily:'inherit' }}>
+                + New task
+              </button>
+              <button onClick={() => { setImportOpen(o => !o); setImportSearch('') }}
+                style={{ flex:1, padding:'7px 0', fontSize:12, color:importOpen?'#111':'#aaa', border:importOpen?'0.5px solid #bbb':'0.5px dashed #ccc', borderRadius:8, background:importOpen?'#f7f7f5':'none', cursor:'pointer', fontFamily:'inherit' }}>
+                ↙ Import task
+              </button>
+            </div>
+            {importOpen && (
+              <div style={{ marginTop:8, background:'#fafafa', border:'0.5px solid #e5e5e5', borderRadius:8, overflow:'hidden' }}>
+                <input autoFocus type="text" value={importSearch} onChange={e => setImportSearch(e.target.value)}
+                  placeholder="Search tasks to import..."
+                  style={{ width:'100%', boxSizing:'border-box', fontSize:12, padding:'8px 10px', border:'none', borderBottom:'0.5px solid #e5e5e5', outline:'none', background:'white', fontFamily:'inherit' }} />
+                <div style={{ maxHeight:200, overflowY:'auto' }}>
+                  {importableTasks.length === 0 && (
+                    <div style={{ fontSize:12, color:'#ccc', padding:'10px', textAlign:'center' }}>No tasks found</div>
+                  )}
+                  {importableTasks.map(t => (
+                    <div key={t.id} onClick={() => linkTask(t)}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px', cursor:'pointer', borderBottom:'0.5px solid #f0f0f0' }}
+                      onMouseEnter={e => e.currentTarget.style.background='#f0f0ee'}
+                      onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                      <span style={{ width:6, height:6, borderRadius:'50%', background:STATUS_DOT[t.status]||'#bbb', flexShrink:0 }} />
+                      <span style={{ flex:1, fontSize:12, color:'#111' }}>{t.title}</span>
+                      {t.domain && <span style={{ fontSize:9, background:'#E6F1FB', color:'#0C447C', padding:'1px 6px', borderRadius:20, border:'0.5px solid #85B7EB', flexShrink:0 }}>{t.domain}</span>}
+                      {(t.project_id || t.escalation_id) && <span style={{ fontSize:9, color:'#bbb', flexShrink:0 }}>linked</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Footer */}
@@ -498,6 +538,8 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
 // ─── Project Card ─────────────────────────────────────────────────────────────
 function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpen }) {
+  const [notesOpen, setNotesOpen] = useState(false)
+  const notes = Array.isArray(project.notes) ? project.notes : []
   const bg = flagBg(project.color), border = flagBorder(project.color)
   return (
     <div style={{ position:'relative', flexShrink:0, width:200 }}>
@@ -506,17 +548,30 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
         onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
-          {project.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:6, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{project.domain}</span>}
-          {project.substatus && (() => { const ss = subStyle(project.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
-          {project.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
+          {project.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{project.domain}</span>}
+          {project.substatus && (() => { const ss = subStyle(project.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
+          {project.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
         </div>
         <div style={{ fontSize:13, fontWeight:500, color:'#111', marginBottom:6, lineHeight:1.3 }}>{project.title}</div>
+        {notesOpen && notes.length > 0 && (
+          <div style={{ marginBottom:6, borderTop:'0.5px solid #e5e5e5', paddingTop:8, marginTop:4 }}>
+            {notes.map(n => (
+              <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:5, lineHeight:1.5 }}>
+                <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
-          {project.due && <span style={{ fontSize:10, background:'#FAEEDA', color:'#633806', padding:'2px 7px', borderRadius:10 }}>{project.due}</span>}
+          {project.due && <Badge type="due">{project.due}</Badge>}
           <div style={{ display:'flex', gap:4, marginLeft:'auto', alignItems:'center' }}>
-            {noteCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>📝 {noteCount}</span>}
-            {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>📎 {attachCount}</span>}
-            <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+            {noteCount > 0 && (
+              <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
+                {notesOpen ? 'hide notes' : `${noteCount} note${noteCount!==1?'s':''}`}
+              </button>
+            )}
+            {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>📎 {attachCount}</span>}
+            <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
           </div>
         </div>
       </div>
@@ -565,6 +620,8 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen }) {
 
 // ─── Escalation Card ──────────────────────────────────────────────────────────
 function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0, onOpen }) {
+  const [notesOpen, setNotesOpen] = useState(false)
+  const notes = Array.isArray(escalation.notes) ? escalation.notes : []
   const RED = '#c0392b', REDBORDER = '#f0a0a0'
   const bg = flagBg(escalation.color), border = flagBorder(escalation.color)
   return (
@@ -574,17 +631,30 @@ function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0,
         onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor=REDBORDER }}
         onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
-          {escalation.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:6, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{escalation.domain}</span>}
-          {escalation.substatus && (() => { const ss = subStyle(escalation.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
-          {escalation.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:6, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
+          {escalation.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{escalation.domain}</span>}
+          {escalation.substatus && (() => { const ss = subStyle(escalation.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
+          {escalation.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
         </div>
         <div style={{ fontSize:13, fontWeight:500, color:'#111', marginBottom:6, lineHeight:1.3 }}>{escalation.title}</div>
+        {notesOpen && notes.length > 0 && (
+          <div style={{ marginBottom:6, borderTop:'0.5px solid #e5e5e5', paddingTop:8, marginTop:4 }}>
+            {notes.map(n => (
+              <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:5, lineHeight:1.5 }}>
+                <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
-          {escalation.due && <span style={{ fontSize:10, background:'#FAEEDA', color:'#633806', padding:'2px 7px', borderRadius:10 }}>{escalation.due}</span>}
+          {escalation.due && <Badge type="due">{escalation.due}</Badge>}
           <div style={{ display:'flex', gap:4, marginLeft:'auto', alignItems:'center' }}>
-            {noteCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>📝 {noteCount}</span>}
-            {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>📎 {attachCount}</span>}
-            <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+            {noteCount > 0 && (
+              <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
+                {notesOpen ? 'hide notes' : `${noteCount} note${noteCount!==1?'s':''}`}
+              </button>
+            )}
+            {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>📎 {attachCount}</span>}
+            <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
           </div>
         </div>
       </div>
@@ -1201,6 +1271,68 @@ function NoteItem({ note, onDelete, onSave }) {
 }
 
 // ─── Task Form ────────────────────────────────────────────────────────────────
+const DUE_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const DUE_MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
+function formatDue(d) { const dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0'), yy=String(d.getFullYear()).slice(-2); return `${mm}/${dd}/${yy}` }
+
+function DatePicker({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+  const parseView = () => {
+    const d = value ? new Date(value) : new Date()
+    return isNaN(d) ? new Date() : d
+  }
+  const [view, setView] = useState(() => { const d = parseView(); return new Date(d.getFullYear(), d.getMonth(), 1) })
+  useEffect(() => {
+    if (!open) return
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+  const yr = view.getFullYear(), mo = view.getMonth()
+  const firstDow = new Date(yr, mo, 1).getDay()
+  const days = new Date(yr, mo + 1, 0).getDate()
+  const todayStr = formatDue(new Date())
+  const selectDay = d => { onChange(formatDue(new Date(yr, mo, d))); setOpen(false) }
+  return (
+    <div ref={ref} style={{ position:'relative', width:'100%' }}>
+      <div style={{ display:'flex', alignItems:'center', border:'0.5px solid #ddd', borderRadius:6, overflow:'hidden' }}>
+        <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder="Pick a date..."
+          style={{ flex:1, fontSize:13, padding:'5px 8px', border:'none', outline:'none', background:'transparent', fontFamily:'inherit' }} />
+        <button onClick={() => { setView(parseView()); setOpen(o => !o) }}
+          style={{ background:'none', border:'none', borderLeft:'0.5px solid #f0f0f0', padding:'5px 8px', cursor:'pointer', color:'#bbb', fontSize:13, lineHeight:1 }}
+          onMouseEnter={e => e.currentTarget.style.color='#555'} onMouseLeave={e => e.currentTarget.style.color='#bbb'}>
+          📅
+        </button>
+      </div>
+      {open && (
+        <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:200, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:12, boxShadow:'0 6px 24px rgba(0,0,0,0.12)', width:240 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <button onClick={() => setView(new Date(yr, mo-1, 1))} style={{ background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#888', padding:'0 6px', lineHeight:1 }}>‹</button>
+            <span style={{ fontSize:12, fontWeight:500, color:'#333' }}>{DUE_MONTHS_LONG[mo]} {yr}</span>
+            <button onClick={() => setView(new Date(yr, mo+1, 1))} style={{ background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#888', padding:'0 6px', lineHeight:1 }}>›</button>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, marginBottom:4 }}>
+            {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} style={{ fontSize:10, color:'#bbb', textAlign:'center' }}>{d}</div>)}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
+            {Array.from({length:firstDow}).map((_,i) => <div key={'x'+i} />)}
+            {Array.from({length:days}).map((_,i) => {
+              const d = i+1, str = formatDue(new Date(yr,mo,d))
+              const sel = str === value, isToday = str === todayStr
+              return <button key={d} onClick={() => selectDay(d)}
+                style={{ fontSize:12, border:'none', borderRadius:6, padding:'5px 2px', cursor:'pointer', textAlign:'center', background:sel?'#111':isToday?'#f0f0f0':'transparent', color:sel?'white':isToday?'#111':'#444', fontFamily:'inherit' }}>
+                {d}
+              </button>
+            })}
+          </div>
+          {value && <button onClick={() => { onChange(''); setOpen(false) }} style={{ marginTop:8, width:'100%', fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'4px 0', cursor:'pointer', color:'#aaa', fontFamily:'inherit' }}>Clear</button>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
   const fileRef = useRef()
   const [uploading, setUploading] = useState(false)
@@ -1280,7 +1412,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
           <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Due date</label>
-            <input type="text" value={f.due} onChange={e => set('due', e.target.value)} placeholder="e.g. Sep 2025" style={{ width:'100%', fontSize:13 }} /></div>
+            <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
           <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Flag color</label>
             <div style={{ display:'flex', gap:6, alignItems:'center' }}>
               {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
@@ -2013,7 +2145,9 @@ export default function App() {
   const [isEdit, setIsEdit] = useState(false)
   const [draggingId, setDraggingId] = useState(null)
   const [overCol, setOverCol] = useState(null)
-  const [minimized, setMinimized] = useState({})
+  const [minimized, setMinimized] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('taskr-minimized-cols') || '{}') } catch { return {} }
+  })
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
   const [mobileCol, setMobileCol] = useState('active')
   const [viewMode, setViewMode] = useState('order') // 'order' | 'dynamic' | 'domain'
@@ -2227,10 +2361,11 @@ export default function App() {
   }
 
   const removeFromToday = async id => { await toggleToday(id, false) }
-  const toggleMin = key => setMinimized(m => ({ ...m, [key]: !m[key] }))
-
-  const activeCols = COLS.filter(c => !minimized[c.key])
-  const minCols = COLS.filter(c => minimized[c.key])
+  const toggleMin = key => setMinimized(m => {
+    const next = { ...m, [key]: !m[key] }
+    localStorage.setItem('taskr-minimized-cols', JSON.stringify(next))
+    return next
+  })
 
   const handleSelectProject = id => {
     setActiveProject(prev => prev === id ? null : id)
@@ -2295,15 +2430,7 @@ export default function App() {
       {tab === 'tasks' && (
         <>
           {/* View controls */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, flexWrap:'wrap', gap:8 }}>
-            <div style={{ display:'flex', gap:6 }}>
-              {minCols.map(col => (
-                <div key={col.key} onClick={() => toggleMin(col.key)} style={{ background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'5px 10px', cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-                  <span style={{ fontSize:11, fontWeight:500, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.06em' }}>{col.lbl}</span>
-                  <span style={{ fontSize:10, color:'#ccc', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'1px 5px' }}>{getColTasks(col.key).length}</span>
-                </div>
-              ))}
-            </div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', marginBottom:12, flexWrap:'wrap', gap:8 }}>
             <div style={{ display:'flex', gap:6, alignItems:'center' }}>
               {/* View mode */}
               <div style={{ display:'flex', background:'#efefed', borderRadius:8, padding:2, gap:1 }}>
@@ -2391,7 +2518,8 @@ export default function App() {
               </div>
             ) : (
               <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
-                {activeCols.map(col => {
+                {/* Active columns — fill available space, cards wrap into grid */}
+                {COLS.filter(c => !minimized[c.key]).map(col => {
                   const ct = getColTasks(col.key)
                   return (
                     <div key={col.key}
@@ -2403,22 +2531,24 @@ export default function App() {
                         <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{col.lbl}</span>
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                           <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{ct.length}</span>
-                          <button onClick={() => toggleMin(col.key)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:16, padding:'0 2px' }} onMouseEnter={e => e.currentTarget.style.color='#888'} onMouseLeave={e => e.currentTarget.style.color='#ccc'}>−</button>
+                          <button onClick={() => toggleMin(col.key)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:16, padding:'0 2px', lineHeight:1 }} onMouseEnter={e => e.currentTarget.style.color='#888'} onMouseLeave={e => e.currentTarget.style.color='#ccc'}>−</button>
                         </div>
                       </div>
-                      {ct.map(t => (
-                        <TaskCard key={t.id} task={t}
-                          onEdit={t => { setForm({...t}); setIsEdit(true) }}
-                          onDragStart={id => setDraggingId(id)}
-                          onDragEnd={() => { setDraggingId(null); setOverCol(null); setDropTarget(null) }}
-                          dragging={draggingId===t.id}
-                          onToggleSubtask={toggleSubtask}
-                          dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null}
-                          onDragOver={viewMode==='dynamic'?taskId => setDropTarget({ col:col.key, taskId, position:'before' }):null}
-                        />
-                      ))}
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:4, alignItems:'start' }}>
+                        {ct.map(t => (
+                          <TaskCard key={t.id} task={t}
+                            onEdit={t => { setForm({...t}); setIsEdit(true) }}
+                            onDragStart={id => setDraggingId(id)}
+                            onDragEnd={() => { setDraggingId(null); setOverCol(null); setDropTarget(null) }}
+                            dragging={draggingId===t.id}
+                            onToggleSubtask={toggleSubtask}
+                            dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null}
+                            onDragOver={viewMode==='dynamic'?taskId => setDropTarget({ col:col.key, taskId, position:'before' }):null}
+                          />
+                        ))}
+                      </div>
                       <button onClick={() => { setForm({ status:col.key }); setIsEdit(false) }}
-                        style={{ width:'100%', marginTop:4, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}
+                        style={{ width:'100%', marginTop:8, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}
                         onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
                         onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>
                         + Add task
@@ -2426,6 +2556,23 @@ export default function App() {
                     </div>
                   )
                 })}
+                {/* Minimized columns — vertical strips stacked side-by-side on the right */}
+                {COLS.filter(c => minimized[c.key]).length > 0 && (
+                  <div style={{ flexShrink:0, display:'flex', flexDirection:'column', gap:4 }}>
+                    {COLS.filter(c => minimized[c.key]).map(col => {
+                      const ct = getColTasks(col.key)
+                      return (
+                        <div key={col.key} onClick={() => toggleMin(col.key)}
+                          style={{ width:28, minHeight:90, background:'#f7f7f5', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, padding:'8px 0', cursor:'pointer', userSelect:'none' }}
+                          onMouseEnter={e => e.currentTarget.style.background='#eeede9'}
+                          onMouseLeave={e => e.currentTarget.style.background='#f7f7f5'}>
+                          <span style={{ fontSize:10, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'1px 4px', color:'#aaa' }}>{ct.length}</span>
+                          <span style={{ fontSize:10, color:'#bbb', fontWeight:500, writingMode:'vertical-rl', transform:'rotate(180deg)', letterSpacing:'0.06em', textTransform:'uppercase' }}>{col.lbl}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )
           )}
