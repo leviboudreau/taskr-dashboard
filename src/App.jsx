@@ -741,8 +741,57 @@ function RichTextEditor({ initialValue, onChange }) {
     setShowTablePicker(false)
   }
 
-  const insertChecklist = () => {
-    exec('insertHTML', '<div style="display:flex;align-items:center;gap:8px;margin:2px 0"><input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0"><span style="line-height:1.5">Checklist item</span></div>')
+  const convertToChecklist = () => {
+    const sel = window.getSelection()
+    if (!sel || !editorRef.current) return
+    const makeItem = text => {
+      const div = document.createElement('div')
+      div.style.cssText = 'display:flex;align-items:center;gap:8px;margin:2px 0'
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'
+      cb.style.cssText = 'width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0'
+      const span = document.createElement('span')
+      span.style.lineHeight = '1.5'
+      if (text) span.textContent = text
+      div.appendChild(cb)
+      div.appendChild(span)
+      return { div, span }
+    }
+    const placeCursor = span => {
+      const range = document.createRange()
+      range.selectNodeContents(span)
+      range.collapse(false)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+    if (!sel.isCollapsed && sel.toString().trim()) {
+      const text = sel.toString()
+      const { div, span } = makeItem(text)
+      const range = sel.getRangeAt(0)
+      range.deleteContents()
+      range.insertNode(div)
+      placeCursor(span)
+    } else {
+      let block = sel.anchorNode
+      while (block && block.parentNode !== editorRef.current) block = block.parentNode
+      if (!block || block === editorRef.current || block.nodeName === 'TABLE') {
+        exec('insertHTML', '<div style="display:flex;align-items:center;gap:8px;margin:2px 0"><input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0"><span style="line-height:1.5">Checklist item</span></div>')
+        onChange(editorRef.current.innerHTML)
+        return
+      }
+      const isChecklist = block.nodeType === 1 && !!block.querySelector('input[type="checkbox"]')
+      if (isChecklist) {
+        const { div, span } = makeItem('')
+        block.parentNode.insertBefore(div, block.nextSibling)
+        placeCursor(span)
+      } else {
+        const text = (block.textContent || '').trim()
+        const { div, span } = makeItem(text)
+        block.parentNode.replaceChild(div, block)
+        placeCursor(span)
+      }
+    }
+    onChange(editorRef.current.innerHTML)
   }
 
   const getChecklistCtx = () => {
@@ -807,11 +856,23 @@ function RichTextEditor({ initialValue, onChange }) {
     onChange(editorRef.current.innerHTML)
   }
 
+  const focusCell = cell => {
+    editorRef.current.focus()
+    const sel = window.getSelection()
+    const range = document.createRange()
+    const node = cell.firstChild || cell
+    range.setStart(node, 0)
+    range.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
   const tableOp = op => {
     if (!tableCtx) return
     const { td, tr, table } = tableCtx
     const rows = Array.from(table.rows)
     const colIdx = Array.from(tr.cells).indexOf(td)
+    const rowIdx = rows.indexOf(tr)
     const mkCell = () => {
       const c = document.createElement('td')
       c.style.cssText = 'border:1px solid #d1d5db;padding:3px 8px;min-width:60px;'
@@ -822,13 +883,69 @@ function RichTextEditor({ initialValue, onChange }) {
       const idx = op === 'col-left' ? colIdx : colIdx + 1
       rows.forEach(r => r.insertBefore(mkCell(), r.cells[idx] || null))
     } else if (op === 'col-del') {
-      if (rows[0]?.cells.length > 1) rows.forEach(r => { if (r.cells[colIdx]) r.deleteCell(colIdx) })
+      if (rows[0]?.cells.length > 1) {
+        rows.forEach(r => { if (r.cells[colIdx]) r.deleteCell(colIdx) })
+        const targetCell = rows[rowIdx]?.cells[Math.min(colIdx, rows[0].cells.length - 1)]
+        if (targetCell) focusCell(targetCell)
+      }
     } else if (op === 'row-above' || op === 'row-below') {
       const newRow = document.createElement('tr')
       for (let i = 0; i < tr.cells.length; i++) newRow.appendChild(mkCell())
       tr.parentNode.insertBefore(newRow, op === 'row-above' ? tr : tr.nextSibling)
     } else if (op === 'row-del') {
-      if (rows.length > 1) tr.remove()
+      if (rows.length > 1) {
+        tr.remove()
+        const updatedRows = Array.from(table.rows)
+        const targetRow = updatedRows[Math.min(rowIdx, updatedRows.length - 1)]
+        const targetCell = targetRow?.cells[Math.min(colIdx, (targetRow?.cells.length || 1) - 1)]
+        if (targetCell) focusCell(targetCell)
+      } else {
+        const sibling = table.nextSibling || table.previousSibling
+        table.remove()
+        editorRef.current.focus()
+        if (sibling) {
+          const r = document.createRange()
+          r.selectNodeContents(sibling)
+          r.collapse(true)
+          const s = window.getSelection()
+          s.removeAllRanges()
+          s.addRange(r)
+        }
+      }
+    } else if (op === 'merge-right') {
+      const nextCell = tr.cells[colIdx + 1]
+      if (nextCell) {
+        td.colSpan = (td.colSpan || 1) + (nextCell.colSpan || 1)
+        const content = nextCell.innerHTML.trim()
+        if (content && content !== '&nbsp;') td.innerHTML += ' ' + content
+        nextCell.remove()
+        focusCell(td)
+      }
+    } else if (op === 'merge-down') {
+      const nextRow = rows[rowIdx + 1]
+      if (nextRow && nextRow.cells[colIdx]) {
+        const belowCell = nextRow.cells[colIdx]
+        td.rowSpan = (td.rowSpan || 1) + (belowCell.rowSpan || 1)
+        const content = belowCell.innerHTML.trim()
+        if (content && content !== '&nbsp;') td.innerHTML += ' ' + content
+        belowCell.remove()
+        focusCell(td)
+      }
+    } else if (op === 'split') {
+      const extraCols = (td.colSpan || 1) - 1
+      if (extraCols > 0) {
+        td.colSpan = 1
+        for (let i = 0; i < extraCols; i++) tr.insertBefore(mkCell(), tr.cells[colIdx + 1] || null)
+      }
+      const extraRows = (td.rowSpan || 1) - 1
+      if (extraRows > 0) {
+        td.rowSpan = 1
+        for (let i = 1; i <= extraRows; i++) {
+          const targetRow = rows[rowIdx + i]
+          if (targetRow) targetRow.insertBefore(mkCell(), targetRow.cells[colIdx] || null)
+        }
+      }
+      focusCell(td)
     }
     onChange(editorRef.current.innerHTML)
   }
@@ -856,6 +973,7 @@ function RichTextEditor({ initialValue, onChange }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+      <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}`}</style>
       {/* Row 1: text formatting + lists + table + size */}
       <div style={{ ...rowStyle, borderTop:'0.5px solid #e5e5e5', borderRadius:'8px 8px 0 0' }}>
         {tbtn('B', 'bold', null, { fontWeight:700 })}
@@ -868,8 +986,9 @@ function RichTextEditor({ initialValue, onChange }) {
         {tbtn('→', 'indent', null, { title:'Indent' })}
         {tbtn('←', 'outdent', null, { title:'Outdent' })}
         <div style={sep} />
-        <button onMouseDown={e => { e.preventDefault(); insertChecklist() }}
-          style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}>
+        <button onMouseDown={e => { e.preventDefault(); convertToChecklist() }}
+          style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}
+          title="Convert current line or selected text to checklist item">
           ☑ Check
         </button>
         <div style={sep} />
@@ -947,6 +1066,10 @@ function RichTextEditor({ initialValue, onChange }) {
           {xbtn('Row ↓', () => tableOp('row-below'), 'Insert row below')}
           {xbtn('✕ Row', () => tableOp('row-del'), 'Delete this row')}
           <div style={{ ...sep, background:'#bfdbfe' }} />
+          {xbtn('⊞→', () => tableOp('merge-right'), 'Merge with cell to the right')}
+          {xbtn('⊞↓', () => tableOp('merge-down'), 'Merge with cell below')}
+          {xbtn('⊟', () => tableOp('split'), 'Split merged cell')}
+          <div style={{ ...sep, background:'#bfdbfe' }} />
           <span style={{ fontSize:10, color:'#3b82f6', flexShrink:0 }}>Cell fill</span>
           {CELL_FILLS.map((c, i) => (
             <button key={i} onMouseDown={e => { e.preventDefault(); fillCell(c) }}
@@ -967,7 +1090,8 @@ function RichTextEditor({ initialValue, onChange }) {
           setShowTablePicker(false)
         }}
         onMouseLeave={() => setTableHover([0,0])}
-        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize:13, lineHeight:1.7, overflowY:'auto', color:'#333', minHeight:200 }} />
+        className="note-editor"
+        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize:13, lineHeight:1.4, overflowY:'auto', color:'#333', minHeight:200 }} />
     </div>
   )
 }
@@ -1082,22 +1206,8 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete }) {
 }
 
 // ─── Notes Section (wrapper with sub-tabs) ────────────────────────────────────
-function NotesSection({ notes, onSaveNote, onDeleteNote, followUps, onAddFollowUp, onToggleFollowUp, onDeleteFollowUp }) {
-  const [subTab, setSubTab] = useState('notes')
-  return (
-    <div>
-      <div style={{ display:'flex', gap:3, marginBottom:16, background:'#f2f2f0', borderRadius:10, padding:3, width:'fit-content' }}>
-        {[{ k:'notes', l:'📝 Notes' }, { k:'followups', l:'🔄 Follow Ups' }].map(t => (
-          <button key={t.k} onClick={() => setSubTab(t.k)}
-            style={{ fontSize:13, padding:'6px 14px', cursor:'pointer', background:subTab===t.k?'white':'transparent', border:'none', borderRadius:8, color:subTab===t.k?'#111':'#777', fontWeight:subTab===t.k?500:400, boxShadow:subTab===t.k?'0 1px 3px rgba(0,0,0,0.09)':'none', whiteSpace:'nowrap' }}>
-            {t.l}
-          </button>
-        ))}
-      </div>
-      {subTab === 'notes' && <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} />}
-      {subTab === 'followups' && <FollowUpsTab followUps={followUps} onAdd={onAddFollowUp} onToggle={onToggleFollowUp} onDelete={onDeleteFollowUp} />}
-    </div>
-  )
+function NotesSection({ notes, onSaveNote, onDeleteNote }) {
+  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} />
 }
 
 // ─── Notes Tab ───────────────────────────────────────────────────────────────
@@ -2415,8 +2525,9 @@ export default function App() {
       <div style={{ display:'flex', gap:3, marginBottom:'1.25rem', background:'#f2f2f0', borderRadius:12, padding:4, width:'fit-content' }}>
         {[
           { key:'tasks', label:'📋 Tasks' },
-          { key:'calendar', label:'📅 Calendar' },
+          { key:'followups', label:'🔄 Follow Ups' },
           { key:'notes', label:'📝 Notes' },
+          { key:'calendar', label:'📅 Calendar' },
           { key:'settings', label:'⚙️ Settings' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -2611,7 +2722,12 @@ export default function App() {
 
       {/* ── Notes ── */}
       {tab === 'notes' && (
-        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} followUps={followUps} onAddFollowUp={addFollowUp} onToggleFollowUp={toggleFollowUp} onDeleteFollowUp={deleteFollowUp} />
+        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} />
+      )}
+
+      {/* ── Follow Ups ── */}
+      {tab === 'followups' && (
+        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} />
       )}
 
       {/* ── Settings ── */}
