@@ -1230,7 +1230,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
         <div style={{ marginBottom:12 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+            {MEMBERS.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
           </div>
         </div>
         <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#444', marginBottom:14, cursor:'pointer' }}>
@@ -1395,7 +1395,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
         <div style={{ marginBottom:12 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Attendees</label>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+            {MEMBERS.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
           </div>
         </div>
 
@@ -1447,51 +1447,52 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
 
   return (
     <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden', background:'white' }}>
-      {/* Day headers */}
-      <div style={{ display:'flex', borderBottom:'0.5px solid #e5e5e5' }}>
-        <div style={{ width:50, flexShrink:0 }} />
-        {weekDates.map((d, i) => {
-          const ds = toISODate(d), isToday = ds === todayStr
-          return (
-            <div key={i} onClick={() => onDayClick(d)} style={{ flex:1, textAlign:'center', padding:'10px 0 8px', borderLeft:'0.5px solid #f0f0f0', cursor:'pointer' }}>
-              <div style={{ fontSize:10, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.04em' }}>{DOW_SHORT[d.getDay()]}</div>
-              <div style={{ width:30, height:30, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:16, fontWeight:300, marginTop:2, background:isToday?'#111':'transparent', color:isToday?'white':'#111' }}>
-                {d.getDate()}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      <div style={{ overflowY:'auto', maxHeight:620 }}>
 
-      {/* All-day row */}
-      {allDayEvs.length > 0 && (
-        <div style={{ display:'flex', borderBottom:'0.5px solid #e5e5e5', minHeight:32 }}>
-          <div style={{ width:50, flexShrink:0, fontSize:9, color:'#ccc', padding:'8px 4px 0 6px' }}>all-day</div>
-          <div style={{ flex:1, display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, padding:'4px 2px', borderLeft:'0.5px solid #f0f0f0' }}>
-            {allDayEvs.map((ev, i) => {
-              const evS = fromISODate(ev.start_date)
-              const evE = ev.end_date ? fromISODate(ev.end_date) : evS
-              const dispS = evS < rangeStart ? rangeStart : evS
-              const dispE = evE > rangeEnd ? rangeEnd : evE
-              const sc = Math.max(0, weekDates.findIndex(d => toISODate(d) === toISODate(dispS))) + 1
-              const ec = Math.min(7, weekDates.findIndex(d => toISODate(d) === toISODate(dispE))) + 2
-              const bg = ev.type === 'travel' ? '#FAEEDA' : (flagBg(ev.color) || '#E6F1FB')
-              const bdr = ev.type === 'travel' ? '#FAC775' : (flagBorder(ev.color) || '#85B7EB')
-              return (
-                <div key={i} onClick={() => onEventClick(ev)} style={{ gridColumn:`${sc}/${ec}`, fontSize:10, padding:'3px 6px', borderRadius:4, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>
-                  {ev.type === 'travel' && '✈ '}{ev.title}
+        {/* Sticky day headers */}
+        <div style={{ display:'flex', position:'sticky', top:0, zIndex:3, background:'white', borderBottom:'0.5px solid #d8d8d8' }}>
+          <div style={{ width:50, flexShrink:0, borderRight:'0.5px solid #d8d8d8' }} />
+          {weekDates.map((d, i) => {
+            const ds = toISODate(d), isToday = ds === todayStr
+            return (
+              <div key={i} onClick={() => onDayClick(d)} style={{ flex:1, textAlign:'center', padding:'10px 0 8px', borderLeft:'0.5px solid #d8d8d8', cursor:'pointer', background:d.getDay()===0||d.getDay()===6?'#f5f4f0':'white' }}>
+                <div style={{ fontSize:10, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.04em' }}>{DOW_SHORT[d.getDay()]}</div>
+                <div style={{ width:30, height:30, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:16, fontWeight:300, marginTop:2, background:isToday?'#111':'transparent', color:isToday?'white':'#111' }}>
+                  {d.getDate()}
                 </div>
-              )
-            })}
-          </div>
+              </div>
+            )
+          })}
         </div>
-      )}
 
-      {/* Time grid */}
-      <div style={{ overflowY:'auto', maxHeight:520 }}>
+        {/* All-day row */}
+        {allDayEvs.length > 0 && (
+          <div style={{ display:'flex', borderBottom:'0.5px solid #d8d8d8', minHeight:32 }}>
+            <div style={{ width:50, flexShrink:0, fontSize:9, color:'#ccc', padding:'8px 4px 0 6px', borderRight:'0.5px solid #d8d8d8' }}>all-day</div>
+            <div style={{ flex:1, display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, padding:'4px 2px' }}>
+              {allDayEvs.map((ev, i) => {
+                const evS = fromISODate(ev.start_date)
+                const evE = ev.end_date ? fromISODate(ev.end_date) : evS
+                const dispS = evS < rangeStart ? rangeStart : evS
+                const dispE = evE > rangeEnd ? rangeEnd : evE
+                const sc = Math.max(0, weekDates.findIndex(d => toISODate(d) === toISODate(dispS))) + 1
+                const ec = Math.min(7, weekDates.findIndex(d => toISODate(d) === toISODate(dispE))) + 2
+                const bg = ev.type === 'travel' ? '#FAEEDA' : (flagBg(ev.color) || '#E6F1FB')
+                const bdr = ev.type === 'travel' ? '#FAC775' : (flagBorder(ev.color) || '#85B7EB')
+                return (
+                  <div key={i} onClick={() => onEventClick(ev)} style={{ gridColumn:`${sc}/${ec}`, fontSize:10, padding:'3px 6px', borderRadius:4, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>
+                    {ev.type === 'travel' && '✈ '}{ev.title}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Time grid */}
         <div style={{ display:'flex', height:CAL_TOTAL_H, position:'relative' }}>
           {/* Hour labels */}
-          <div style={{ width:50, flexShrink:0, position:'relative' }}>
+          <div style={{ width:50, flexShrink:0, position:'relative', borderRight:'0.5px solid #d8d8d8' }}>
             {HOURS.map(h => (
               <div key={h} style={{ position:'absolute', top:(h-CAL_START_HOUR)*CAL_HOUR_H, width:'100%', fontSize:10, color:'#ccc', textAlign:'right', paddingRight:8, paddingTop:2 }}>
                 {h===12?'12pm':h>12?`${h-12}pm`:`${h}am`}
@@ -1499,10 +1500,10 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
             ))}
           </div>
           {/* Day columns */}
-          <div style={{ flex:1, display:'grid', gridTemplateColumns:'repeat(7,1fr)', position:'relative', borderLeft:'0.5px solid #f0f0f0' }}>
+          <div style={{ flex:1, display:'grid', gridTemplateColumns:'repeat(7,1fr)', position:'relative' }}>
             {/* Hour lines */}
             {HOURS.map(h => (
-              <div key={h} style={{ position:'absolute', left:0, right:0, top:(h-CAL_START_HOUR)*CAL_HOUR_H, borderTop:`0.5px solid ${h===12?'#e0e0e0':'#f0f0f0'}`, pointerEvents:'none' }} />
+              <div key={h} style={{ position:'absolute', left:0, right:0, top:(h-CAL_START_HOUR)*CAL_HOUR_H, borderTop:`0.5px solid ${h===12?'#b0b0b0':'#d8d8d8'}`, pointerEvents:'none' }} />
             ))}
             {/* Now line */}
             {(() => {
@@ -1513,9 +1514,9 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
               }
             })()}
             {weekDates.map((d, di) => {
-              const ds = toISODate(d), isToday = ds === todayStr
+              const ds = toISODate(d), isToday = ds === todayStr, isWknd = d.getDay()===0||d.getDay()===6
               return (
-                <div key={di} onClick={() => onDayClick(d)} style={{ position:'relative', borderLeft:di>0?'0.5px solid #f0f0f0':'none', background:isToday?'#fefffe':'transparent', cursor:'pointer', minHeight:CAL_TOTAL_H }}>
+                <div key={di} onClick={() => onDayClick(d)} style={{ position:'relative', borderLeft:di>0?'0.5px solid #d8d8d8':'none', background:isToday?'#fefffe':isWknd?'#f5f4f0':'transparent', cursor:'pointer', minHeight:CAL_TOTAL_H }}>
                   {evsByDay[di].map((ev, ei) => {
                     const top = evTop(ev.start_time)
                     const height = evH(ev.start_time, ev.end_time)
@@ -1534,6 +1535,7 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
             })}
           </div>
         </div>
+
       </div>
     </div>
   )
@@ -1613,7 +1615,7 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
   return (
     <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden', background:'white' }}>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'0.5px solid #e5e5e5' }}>
-        {DOW_SHORT.map(d => <div key={d} style={{ textAlign:'center', fontSize:10, color:'#aaa', padding:'8px 0', textTransform:'uppercase' }}>{d}</div>)}
+        {DOW_SHORT.map((d,di) => <div key={d} style={{ textAlign:'center', fontSize:10, color:'#aaa', padding:'8px 0', textTransform:'uppercase', background:di===0||di===6?'#f5f4f0':'white' }}>{d}</div>)}
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)' }}>
         {dates.map((d, i) => {
@@ -1628,9 +1630,9 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
           const overflow = Math.max(0, singles.length - singlesSlots)
           return (
             <div key={i} onClick={() => onDayClick(d)}
-              style={{ minHeight:80, padding:'6px 4px 4px', borderTop:i>=7?'0.5px solid #f0f0f0':undefined, borderLeft:i%7!==0?'0.5px solid #f0f0f0':undefined, cursor:'pointer', background:'transparent' }}
-              onMouseEnter={e => e.currentTarget.style.background='#fafafa'}
-              onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+              style={{ minHeight:80, padding:'6px 4px 4px', borderTop:i>=7?'0.5px solid #d8d8d8':undefined, borderLeft:i%7!==0?'0.5px solid #d8d8d8':undefined, cursor:'pointer', background:d.getDay()===0||d.getDay()===6?'#f5f4f0':'transparent' }}
+              onMouseEnter={e => e.currentTarget.style.background=d.getDay()===0||d.getDay()===6?'#eceae5':'#f5f5f3'}
+              onMouseLeave={e => e.currentTarget.style.background=d.getDay()===0||d.getDay()===6?'#f5f4f0':'transparent'}>
               <div style={{ width:22, height:22, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:12, marginBottom:3, background:isToday?'#111':'transparent', color:isToday?'white':inMonth?'#111':'#ccc', fontWeight:isToday?500:400 }}>
                 {d.getDate()}
               </div>
@@ -1705,33 +1707,42 @@ function CalendarYearView({ events, year, onDayClick, onEventClick }) {
           <div style={{ position:'sticky', top:0, left:0, zIndex:3, background:'white', borderBottom:'0.5px solid #e5e5e5', borderRight:'0.5px solid #f0f0f0' }} />
           {/* Month headers */}
           {MONTH_NAMES.map((mn, m) => (
-            <div key={m} style={{ position:'sticky', top:0, zIndex:2, background:'white', textAlign:'center', fontSize:10, fontWeight:500, color:'#888', padding:'7px 0 5px', borderBottom:'0.5px solid #e5e5e5', borderLeft:'0.5px solid #f0f0f0', textTransform:'uppercase', letterSpacing:'0.04em' }}>
+            <div key={m} style={{ position:'sticky', top:0, zIndex:2, background:'white', textAlign:'center', fontSize:10, fontWeight:500, color:'#888', padding:'7px 0 5px', borderBottom:'0.5px solid #d8d8d8', borderLeft:'0.5px solid #d8d8d8', textTransform:'uppercase', letterSpacing:'0.04em' }}>
               {mn.slice(0, 3)}
             </div>
           ))}
           {/* Day rows */}
           {Array.from({ length: 31 }, (_, i) => i + 1).flatMap(day => [
-            <div key={`lbl-${day}`} style={{ position:'sticky', left:0, zIndex:1, background:'white', borderRight:'0.5px solid #f0f0f0', borderTop:'0.5px solid #f5f5f5', height:22, display:'flex', alignItems:'center', justifyContent:'flex-end', paddingRight:5, fontSize:10, color:'#bbb', fontVariantNumeric:'tabular-nums' }}>
+            <div key={`lbl-${day}`} style={{ position:'sticky', left:0, zIndex:1, background:'white', borderRight:'0.5px solid #d8d8d8', borderTop:'0.5px solid #d8d8d8', height:22, display:'flex', alignItems:'center', justifyContent:'flex-end', paddingRight:5, fontSize:10, color:'#bbb', fontVariantNumeric:'tabular-nums' }}>
               {day}
             </div>,
             ...Array.from({ length: 12 }, (_, m) => {
               const maxDay = new Date(year, m + 1, 0).getDate()
               const ds = `${year}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
               const isToday = ds === todayStr
+              const dow = new Date(year, m, day).getDay()
+              const isWknd = dow===0||dow===6
               if (day > maxDay) return (
-                <div key={`${m}-${day}`} style={{ background:'#fafafa', borderTop:'0.5px solid #f5f5f5', borderLeft:'0.5px solid #f0f0f0', height:22 }} />
+                <div key={`${m}-${day}`} style={{ background:isWknd?'#eeede9':'#f5f5f3', borderTop:'0.5px solid #d8d8d8', borderLeft:'0.5px solid #d8d8d8', height:22 }} />
               )
               const cellEvs = evsByDay[ds] || []
+              const cellNormalBg = isToday?'#EEF4FF':isWknd?'#f5f4f0':'transparent'
               return (
                 <div key={`${m}-${day}`} onClick={() => onDayClick(fromISODate(ds))}
-                  style={{ height:22, borderTop:'0.5px solid #f5f5f5', borderLeft:'0.5px solid #f0f0f0', background:isToday?'#EEF4FF':'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:2, padding:'0 3px' }}
-                  onMouseEnter={e => { if (!isToday) e.currentTarget.style.background='#fafafa' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = isToday ? '#EEF4FF' : 'transparent' }}>
-                  {cellEvs.slice(0, 5).map((ev, i) => (
-                    <div key={i} onClick={e => { e.stopPropagation(); onEventClick(ev) }} title={ev.title}
-                      style={{ width:5, height:5, borderRadius:'50%', background:flagBorder(ev.color)||(ev.type==='travel'?'#FAC775':'#85B7EB'), flexShrink:0, cursor:'pointer' }} />
-                  ))}
-                  {cellEvs.length > 5 && <div style={{ fontSize:7, color:'#aaa', lineHeight:1 }}>+{cellEvs.length-5}</div>}
+                  style={{ minHeight:22, borderTop:'0.5px solid #d8d8d8', borderLeft:'0.5px solid #d8d8d8', background:cellNormalBg, cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'stretch', justifyContent:'center', gap:1, padding:'1px 2px', overflow:'hidden' }}
+                  onMouseEnter={e => { if (!isToday) e.currentTarget.style.background=isWknd?'#eceae5':'#f0f0ee' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=cellNormalBg }}>
+                  {cellEvs.slice(0, 2).map((ev, i) => {
+                    const bg = flagBg(ev.color)||(ev.type==='travel'?'#FAEEDA':'#E6F1FB')
+                    const tc = ev.type==='travel'?'#633806':'#0C447C'
+                    return (
+                      <div key={i} onClick={e => { e.stopPropagation(); onEventClick(ev) }} title={ev.title}
+                        style={{ fontSize:7, lineHeight:'8px', padding:'0 3px', height:8, borderRadius:2, background:bg, color:tc, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'pointer', flexShrink:0, fontWeight:500 }}>
+                        {ev.type==='travel'?'✈ ':''}{ev.title}
+                      </div>
+                    )
+                  })}
+                  {cellEvs.length > 2 && <div style={{ fontSize:6, color:'#aaa', lineHeight:'7px', paddingLeft:2, flexShrink:0 }}>+{cellEvs.length-2}</div>}
                 </div>
               )
             })
@@ -1744,11 +1755,12 @@ function CalendarYearView({ events, year, onDayClick, onEventClick }) {
 
 function CalendarTab({ events, onSave, onDelete }) {
   const [calView, setCalView] = useState('month')
+  const [travelFilter, setTravelFilter] = useState(false)
   const [calDate, setCalDate] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1) })
   const [eventForm, setEventForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
 
-  const weekStart = calView === 'week' ? calDate : startOfWeek(calDate)
+  const weekStart = startOfWeek(calDate)
   const year = calDate.getFullYear(), month = calDate.getMonth()
 
   const nav = dir => {
@@ -1826,6 +1838,12 @@ function CalendarTab({ events, onSave, onDelete }) {
               </button>
             ))}
           </div>
+          {calView === 'year' && (
+            <button onClick={() => setTravelFilter(v => !v)}
+              style={{ fontSize:12, background:travelFilter?'#FAEEDA':'white', border:travelFilter?'0.5px solid #FAC775':'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 12px', cursor:'pointer', color:travelFilter?'#633806':'#888', fontWeight:travelFilter?500:400 }}>
+              ✈ Travel only
+            </button>
+          )}
           <button onClick={() => { setEventForm({ ...CAL_EMPTY }); setIsEdit(false) }} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>+ Event</button>
         </div>
       </div>
@@ -1834,7 +1852,7 @@ function CalendarTab({ events, onSave, onDelete }) {
         ? <CalendarWeekView events={events} weekStart={calDate} onDayClick={handleDayClick} onEventClick={handleEventClick} />
         : calView === 'month'
         ? <CalendarMonthView events={events} year={year} month={month} onDayClick={handleDayClick} onEventClick={handleEventClick} />
-        : <CalendarYearView events={events} year={year} onDayClick={handleDayClick} onEventClick={handleEventClick} />}
+        : <CalendarYearView events={travelFilter ? events.filter(e => e.type === 'travel') : events} year={year} onDayClick={handleDayClick} onEventClick={handleEventClick} />}
 
       {eventForm !== null && (
         <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} />
@@ -1935,7 +1953,11 @@ export default function App() {
   const [mobileCol, setMobileCol] = useState('active')
   const [viewMode, setViewMode] = useState('order') // 'order' | 'dynamic' | 'domain'
   const [filterOwner, setFilterOwner] = useState('all')
-  const [teamData, setTeamData] = useState([])
+  const [showTrash, setShowTrash] = useState(false)
+  const trashRef = useRef(null)
+  const [teamData, setTeamData] = useState(
+    TEAM_MEMBERS.filter(m => m.key !== 'all').map((m, i) => ({ id:m.key, name:m.label, full_name:m.full||'', role:m.role||'', location:m.loc||'', sort_order:i+1 }))
+  )
   const [activeProject, setActiveProject] = useState(null)
   const [dropTarget, setDropTarget] = useState(null) // { col, taskId, position }
 
@@ -2086,6 +2108,14 @@ export default function App() {
     await loadData(true)
   }
 
+  const restoreTask = async (task) => {
+    const upd = { updated_at: new Date().toISOString() }
+    if (task.status === 'canceled') upd.status = 'active'
+    if (task.substatus === 'canceled') upd.substatus = ''
+    await supabase.from('tasks').update(upd).eq('id', task.id)
+    await loadData()
+  }
+
   const moveTask = async (id, newStatus) => {
     await supabase.from('tasks').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
     await loadData()
@@ -2158,8 +2188,9 @@ export default function App() {
       ? tasks.filter(t => t.escalation_id === activeEscalation)
       : tasks
   ).filter(t => filterOwner === 'all' || (t.owners||['Levi']).includes(filterOwner))
+   .filter(t => t.substatus !== 'canceled')
 
-  const getColTasks = (colKey) => filteredTasks.filter(t => t.status === colKey && t.status !== 'canceled')
+  const getColTasks = (colKey) => filteredTasks.filter(t => t.status === colKey && t.status !== 'canceled' && t.substatus !== 'canceled')
 
   if (loading) return (
     <div style={{ fontFamily:'system-ui,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'#888', fontSize:14 }}>
@@ -2196,7 +2227,7 @@ export default function App() {
       </div>
 
       {/* ── Task Board ── */}
-      {(tab === 'tasks' || tab === 'trash') && (
+      {tab === 'tasks' && (
         <>
           {/* View controls */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, flexWrap:'wrap', gap:8 }}>
@@ -2224,33 +2255,34 @@ export default function App() {
                   <option key={m.key} value={m.key}>{m.label}</option>
                 ))}
               </select>
-              <button onClick={() => setTab(tab === 'trash' ? 'tasks' : 'trash')}
+              <button onClick={() => { setShowTrash(v => { const next=!v; if(next) setTimeout(()=>trashRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),50); return next; }) }}
                 title="Trash"
-                style={{ position:'relative', fontSize:16, background:tab==='trash'?'#fff0f0':'white', border:tab==='trash'?'0.5px solid #f09595':'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', cursor:'pointer', lineHeight:1 }}>
-                🗑️
-                {tasks.filter(t=>t.status==='canceled').length > 0 && (
+                style={{ position:'relative', background:showTrash?'#fff0f0':'white', border:showTrash?'0.5px solid #f09595':'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 10px', cursor:'pointer', height:28, display:'flex', alignItems:'center' }}>
+                <span style={{ fontSize:10 }}>🗑️</span>
+                {tasks.filter(t=>t.status==='canceled'||t.substatus==='canceled').length > 0 && (
                   <span style={{ position:'absolute', top:-4, right:-4, background:'#c0392b', color:'white', borderRadius:'50%', fontSize:9, width:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, lineHeight:1 }}>
-                    {tasks.filter(t=>t.status==='canceled').length}
+                    {tasks.filter(t=>t.status==='canceled'||t.substatus==='canceled').length}
                   </span>
                 )}
               </button>
             </div>
           </div>
 
+          {!showTrash && (<>
           {/* Today strip */}
-          {tab === 'tasks' && <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} /> }
+          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} />
 
           {/* Projects section */}
-          {tab === 'tasks' && <ProjectsSection projects={projects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} /> }
+          <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} />
 
           {/* Escalations section */}
-          {tab === 'tasks' && <EscalationsSection escalations={escalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} /> }
+          <EscalationsSection escalations={filterOwner==='all'?escalations:escalations.filter(e=>(e.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />
 
           {/* ── Domain grouped view ── */}
           {viewMode === 'domain' && (
             <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto' }}>
               {[...domains.map(d => ({ key:d, lbl:d })), { key:'', lbl:'No domain' }].map(domCol => {
-                const ct = filteredTasks.filter(t => (t.domain||'') === domCol.key && t.status !== 'canceled')
+                const ct = filteredTasks.filter(t => (t.domain||'') === domCol.key && t.status !== 'canceled' && t.substatus !== 'canceled')
                 if (ct.length === 0 && domCol.key !== '') return null
                 return (
                   <div key={domCol.key} style={{ flex:'0 0 220px', background:'#f7f7f5', borderRadius:12, padding:12, minHeight:180 }}>
@@ -2332,6 +2364,31 @@ export default function App() {
               </div>
             )
           )}
+
+          </>)}
+
+          {/* ── Trash section ── */}
+          {showTrash && (
+            <div ref={trashRef} style={{ marginTop:8 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                <span style={{ fontSize:12, fontWeight:500, color:'#888' }}>🗑️ Trash</span>
+                <span style={{ fontSize:11, color:'#bbb' }}>Canceled tasks — click Restore to recover.</span>
+              </div>
+              {tasks.filter(t=>t.status==='canceled'||t.substatus==='canceled').length === 0 && <div style={{ fontSize:13, color:'#ccc', textAlign:'center', padding:'2rem 0' }}>Trash bin is empty</div>}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:10 }}>
+                {tasks.filter(t=>t.status==='canceled'||t.substatus==='canceled').map(t => (
+                  <div key={t.id} style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'10px 12px', opacity:0.75 }}>
+                    <div style={{ fontSize:13, fontWeight:500, color:'#888', textDecoration:'line-through', marginBottom:6 }}>{t.title}</div>
+                    {t.domain && <div style={{ fontSize:11, color:'#aaa', marginBottom:8 }}>{t.domain}</div>}
+                    <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                      <button onClick={() => restoreTask(t)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Restore</button>
+                      <button onClick={() => deleteTask(t.id)} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -2343,27 +2400,6 @@ export default function App() {
       {/* ── Notes ── */}
       {tab === 'notes' && (
         <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} followUps={followUps} onAddFollowUp={addFollowUp} onToggleFollowUp={toggleFollowUp} onDeleteFollowUp={deleteFollowUp} />
-      )}
-
-
-      {/* ── Trash ── */}
-      {tab === 'trash' && (
-        <div>
-          <p style={{ fontSize:13, color:'#888', marginBottom:16 }}>Canceled tasks — click Restore to recover.</p>
-          {tasks.filter(t => t.status==='canceled').length === 0 && <div style={{ fontSize:13, color:'#ccc', textAlign:'center', padding:'2rem 0' }}>Trash bin is empty</div>}
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:10 }}>
-            {tasks.filter(t => t.status==='canceled').map(t => (
-              <div key={t.id} style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'10px 12px', opacity:0.75 }}>
-                <div style={{ fontSize:13, fontWeight:500, color:'#888', textDecoration:'line-through', marginBottom:6 }}>{t.title}</div>
-                {t.domain && <div style={{ fontSize:11, color:'#aaa', marginBottom:8 }}>{t.domain}</div>}
-                <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-                  <button onClick={() => moveTask(t.id, 'active')} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Restore</button>
-                  <button onClick={() => deleteTask(t.id)} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Delete</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
 
       {/* ── Settings ── */}
