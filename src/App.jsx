@@ -223,6 +223,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
   const done = task.status === 'done'
   const bg = flagBg(task.color), border = flagBorder(task.color)
   const hasNotes = task.notes && task.notes.length > 0
+  const attachCount = Array.isArray(task.attachments) ? task.attachments.length : 0
   const subtasks = Array.isArray(task.subtasks) ? task.subtasks : []
   const hasSubtasks = subtasks.length > 0
   const completedSubs = subtasks.filter(s => s.done).length
@@ -276,8 +277,11 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
             {owners.map(o => <OwnerPip key={o} name={o} />)}
           </div>
         )}
-        {!compact && (hasSubtasks || hasNotes) && (
+        {!compact && (hasSubtasks || hasNotes || attachCount > 0) && (
           <div style={{ display:'flex', justifyContent:'flex-end', gap:4, marginTop:2 }}>
+            {attachCount > 0 && (
+              <span style={{ fontSize:10, color:'#aaa', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px' }}>📎 {attachCount}</span>
+            )}
             {hasNotes && (
               <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
                 {notesOpen ? 'hide notes' : `${task.notes.length} note${task.notes.length>1?'s':''}`}
@@ -341,6 +345,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
     color:    entity.color    || '',
     substatus:entity.substatus|| '',
     notes:    Array.isArray(entity.notes) ? entity.notes : [],
+    attachments: Array.isArray(entity.attachments) ? entity.attachments : [],
   })
   const [newNote, setNewNote] = useState('')
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
@@ -355,7 +360,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
   const [taskForm, setTaskForm] = useState(null)
   const [isEditTask, setIsEditTask] = useState(false)
   const openAddTask = () => {
-    setTaskForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:isProject?entity.id:null, escalation_id:!isProject?entity.id:null })
+    setTaskForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], attachments:[], project_id:isProject?entity.id:null, escalation_id:!isProject?entity.id:null })
     setIsEditTask(false)
   }
   const openEditTask = t => { setTaskForm({...t}); setIsEditTask(true) }
@@ -429,6 +434,13 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
             </div>
           </div>
 
+          <AttachmentSection
+            attachments={f.attachments}
+            entityPath={isProject ? `projects/${entity.id}` : `escalations/${entity.id}`}
+            onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
+            onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
+          />
+
           {/* Tasks list */}
           <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:12 }}>
             <div style={{ fontSize:11, fontWeight:500, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>
@@ -485,7 +497,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 }
 
 // ─── Project Card ─────────────────────────────────────────────────────────────
-function ProjectCard({ project, taskCount, onOpen }) {
+function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpen }) {
   const bg = flagBg(project.color), border = flagBorder(project.color)
   return (
     <div style={{ position:'relative', flexShrink:0, width:200 }}>
@@ -501,7 +513,11 @@ function ProjectCard({ project, taskCount, onOpen }) {
         <div style={{ fontSize:13, fontWeight:500, color:'#111', marginBottom:6, lineHeight:1.3 }}>{project.title}</div>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
           {project.due && <span style={{ fontSize:10, background:'#FAEEDA', color:'#633806', padding:'2px 7px', borderRadius:10 }}>{project.due}</span>}
-          <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', marginLeft:'auto' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+          <div style={{ display:'flex', gap:4, marginLeft:'auto', alignItems:'center' }}>
+            {noteCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>📝 {noteCount}</span>}
+            {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>📎 {attachCount}</span>}
+            <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -524,7 +540,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen }) {
       </div>
       <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
         {projects.map(p => (
-          <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} onOpen={onOpen} />
+          <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} noteCount={Array.isArray(p.notes)?p.notes.length:0} attachCount={Array.isArray(p.attachments)?p.attachments.length:0} onOpen={onOpen} />
         ))}
         {adding ? (
           <div style={{ flexShrink:0, width:200 }}>
@@ -548,7 +564,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen }) {
 }
 
 // ─── Escalation Card ──────────────────────────────────────────────────────────
-function EscalationCard({ escalation, taskCount, onOpen }) {
+function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0, onOpen }) {
   const RED = '#c0392b', REDBORDER = '#f0a0a0'
   const bg = flagBg(escalation.color), border = flagBorder(escalation.color)
   return (
@@ -565,7 +581,11 @@ function EscalationCard({ escalation, taskCount, onOpen }) {
         <div style={{ fontSize:13, fontWeight:500, color:'#111', marginBottom:6, lineHeight:1.3 }}>{escalation.title}</div>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
           {escalation.due && <span style={{ fontSize:10, background:'#FAEEDA', color:'#633806', padding:'2px 7px', borderRadius:10 }}>{escalation.due}</span>}
-          <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', marginLeft:'auto' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+          <div style={{ display:'flex', gap:4, marginLeft:'auto', alignItems:'center' }}>
+            {noteCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>📝 {noteCount}</span>}
+            {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>📎 {attachCount}</span>}
+            <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -589,7 +609,7 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
       </div>
       <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
         {escalations.map(e => (
-          <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} onOpen={onOpen} />
+          <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} noteCount={Array.isArray(e.notes)?e.notes.length:0} attachCount={Array.isArray(e.attachments)?e.attachments.length:0} onOpen={onOpen} />
         ))}
         {adding ? (
           <div style={{ flexShrink:0, width:200 }}>
@@ -1181,9 +1201,48 @@ function NoteItem({ note, onDelete, onSave }) {
 }
 
 // ─── Task Form ────────────────────────────────────────────────────────────────
+function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
+  const fileRef = useRef()
+  const [uploading, setUploading] = useState(false)
+  const handleFile = async e => {
+    const file = e.target.files[0]
+    if (!file) return
+    setUploading(true)
+    const path = `${entityPath}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    const { error } = await supabase.storage.from('taskr-attachments').upload(path, file)
+    if (error) { console.error('[TASKr] upload error', error); setUploading(false); return }
+    const { data: { publicUrl } } = supabase.storage.from('taskr-attachments').getPublicUrl(path)
+    onAdd({ id: 'att' + Date.now(), name: file.name, size: file.size, type: file.type, path, url: publicUrl, ts: Date.now() })
+    setUploading(false)
+    e.target.value = ''
+  }
+  const handleRemove = async att => {
+    await supabase.storage.from('taskr-attachments').remove([att.path])
+    onRemove(att.id)
+  }
+  return (
+    <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:4 }}>
+      <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Attachments</label>
+      {attachments.map(att => (
+        <div key={att.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0' }}>
+          <span style={{ fontSize:11, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{att.name}</span>
+          {att.size && <span style={{ fontSize:10, color:'#bbb', flexShrink:0 }}>{(att.size/1024).toFixed(0)}KB</span>}
+          <a href={att.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize:10, color:'#378ADD', flexShrink:0, textDecoration:'none' }}>Open</a>
+          <button onClick={() => handleRemove(att)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+        </div>
+      ))}
+      <input ref={fileRef} type="file" onChange={handleFile} style={{ display:'none' }} />
+      <button onClick={() => fileRef.current.click()} disabled={uploading} style={{ fontSize:12, background:'none', border:'0.5px dashed #ccc', borderRadius:6, padding:'6px 14px', cursor:uploading?'default':'pointer', color:'#888', width:'100%', fontFamily:'inherit' }}>
+        {uploading ? 'Uploading...' : '+ Add attachment'}
+      </button>
+    </div>
+  )
+}
+
 function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations, zIndex = 50, members = MEMBERS }) {
-  const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null, escalation_id:null }
-  const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:['Levi'], notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[] })
+  const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null, escalation_id:null, attachments:[] }
+  const tempId = useRef(crypto.randomUUID())
+  const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:['Levi'], notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[], attachments:Array.isArray(task?.attachments)?task.attachments:[] })
   const [newNote, setNewNote] = useState('')
   const [newSub, setNewSub] = useState('')
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
@@ -1258,6 +1317,12 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
             <button onClick={addNote} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
           </div>
         </div>
+        <AttachmentSection
+          attachments={f.attachments}
+          entityPath={isEdit && task?.id ? `tasks/${task.id}` : `tasks/tmp-${tempId.current}`}
+          onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
+          onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
+        />
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16 }}>
           <div>{isEdit && <button onClick={() => onDelete(task.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</button>}</div>
           <div style={{ display:'flex', gap:8 }}>
@@ -1849,7 +1914,7 @@ function CalendarTab({ events, onSave, onDelete }) {
       </div>
 
       {calView === 'week'
-        ? <CalendarWeekView events={events} weekStart={calDate} onDayClick={handleDayClick} onEventClick={handleEventClick} />
+        ? <CalendarWeekView events={events} weekStart={weekStart} onDayClick={handleDayClick} onEventClick={handleEventClick} />
         : calView === 'month'
         ? <CalendarMonthView events={events} year={year} month={month} onDayClick={handleDayClick} onEventClick={handleEventClick} />
         : <CalendarYearView events={travelFilter ? events.filter(e => e.type === 'travel') : events} year={year} onDayClick={handleDayClick} onEventClick={handleEventClick} />}
@@ -2005,7 +2070,7 @@ export default function App() {
       title: data.title, status: data.status, domain: data.domain||'',
       owners: data.owners||['Levi'], due: data.due||'', priority: data.priority||'',
       color: data.color||'', substatus: data.substatus||'',
-      notes: data.notes||[], today: !!data.today, subtasks: data.subtasks||[],
+      notes: data.notes||[], today: !!data.today, subtasks: data.subtasks||[], attachments: data.attachments||[],
       updated_at: new Date().toISOString(),
     }
     if (data.project_id !== undefined) payload.project_id = data.project_id || null
@@ -2053,7 +2118,7 @@ export default function App() {
   }
 
   const saveProject = async (data, id) => {
-    const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[] }
+    const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[], attachments:data.attachments||[] }
     await supabase.from('projects').update(payload).eq('id', id)
     await supabase.from('tasks').update({ color: data.color||'' }).eq('project_id', id)
     await loadData(true)
@@ -2071,7 +2136,7 @@ export default function App() {
   }
 
   const saveEscalation = async (data, id) => {
-    const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[] }
+    const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[], attachments:data.attachments||[] }
     await supabase.from('escalations').update(payload).eq('id', id)
     await supabase.from('tasks').update({ color: data.color||'' }).eq('escalation_id', id)
     await loadData(true)
@@ -2176,7 +2241,7 @@ export default function App() {
     setActiveProject(null)
   }
   const openAddTask = (extra = {}) => {
-    setForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null, escalation_id:null, ...extra })
+    setForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], attachments:[], project_id:null, escalation_id:null, ...extra })
     setIsEdit(false)
   }
 
