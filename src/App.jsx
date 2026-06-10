@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -614,6 +614,248 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
   )
 }
 
+// ─── Rich Text Editor ─────────────────────────────────────────────────────────
+function RichTextEditor({ initialValue, onChange }) {
+  const ref = useRef(null)
+  const [showTablePicker, setShowTablePicker] = useState(false)
+  const [tableHover, setTableHover] = useState([0, 0])
+
+  useLayoutEffect(() => { if (ref.current) ref.current.innerHTML = initialValue || '' }, [])
+
+  const exec = (cmd, val = null) => {
+    ref.current.focus()
+    document.execCommand(cmd, false, val)
+    onChange(ref.current.innerHTML)
+  }
+
+  const insertTable = (rows, cols) => {
+    const cell = `<td style="border:1px solid #d1d5db;padding:6px 10px;min-width:60px;">&nbsp;</td>`
+    const row = `<tr>${Array(cols).fill(cell).join('')}</tr>`
+    const html = `<table style="border-collapse:collapse;width:100%;margin:8px 0">${Array(rows).fill(row).join('')}</table><p><br></p>`
+    exec('insertHTML', html)
+    setShowTablePicker(false)
+  }
+
+  const insertChecklist = () => {
+    exec('insertHTML', '<div style="display:flex;align-items:flex-start;gap:7px;margin:3px 0"><input type="checkbox" style="width:14px;height:14px;margin-top:2px;cursor:pointer;flex-shrink:0"><span>Checklist item</span></div><p><br></p>')
+  }
+
+  const COLORS = [
+    '#111111','#c0392b','#0C447C','#27500A','#7d3c98','#d35400',
+    '#f1948a','#85c1e9','#a9dfbf','#d7bde2','#fad7a0','#a2d9ce','#f9e79f','#aab7b8',
+  ]
+  const sep = { width:'0.5px', height:16, background:'#e0e0e0', margin:'0 2px', flexShrink:0 }
+  const tbtn = (label, cmd, val = null, extra = {}) => (
+    <button onMouseDown={e => { e.preventDefault(); exec(cmd, val) }} title={typeof label === 'string' ? label : undefined}
+      style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4, ...extra }}>
+      {label}
+    </button>
+  )
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+      <div style={{ display:'flex', gap:3, padding:'6px 10px', background:'#f7f7f5', borderRadius:'8px 8px 0 0', border:'0.5px solid #e5e5e5', borderBottom:'none', flexWrap:'wrap', alignItems:'center' }}>
+        {tbtn('B', 'bold', null, { fontWeight:700 })}
+        {tbtn('I', 'italic', null, { fontStyle:'italic' })}
+        {tbtn('U', 'underline', null, { textDecoration:'underline' })}
+        {tbtn('S', 'strikeThrough', null, { textDecoration:'line-through' })}
+        <div style={sep} />
+        {tbtn('• List', 'insertUnorderedList')}
+        {tbtn('1. List', 'insertOrderedList')}
+        {tbtn('→', 'indent', null, { title:'Indent' })}
+        {tbtn('←', 'outdent', null, { title:'Outdent' })}
+        <div style={sep} />
+        <button onMouseDown={e => { e.preventDefault(); insertChecklist() }}
+          style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}
+          title="Insert checklist item">
+          ☑ Check
+        </button>
+        <div style={sep} />
+        <div style={{ position:'relative' }}>
+          <button onMouseDown={e => { e.preventDefault(); setShowTablePicker(v => !v) }}
+            style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:showTablePicker?'#e8f0fe':'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}>
+            ⊞ Table
+          </button>
+          {showTablePicker && (
+            <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:20 }}>
+              <div style={{ fontSize:10, color:'#888', marginBottom:5, textAlign:'center', minWidth:120 }}>
+                {tableHover[0] > 0 ? `${tableHover[0]} × ${tableHover[1]} table` : 'Hover to select'}
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 18px)', gap:2 }}>
+                {Array.from({ length:36 }).map((_, i) => {
+                  const r = Math.floor(i/6)+1, c = (i%6)+1
+                  const active = r <= tableHover[0] && c <= tableHover[1]
+                  return (
+                    <div key={i}
+                      style={{ width:16, height:16, background:active?'#bfdbfe':'#f0f0f0', border:`1px solid ${active?'#93c5fd':'#e0e0e0'}`, borderRadius:2, cursor:'pointer' }}
+                      onMouseEnter={() => setTableHover([r,c])}
+                      onMouseLeave={() => {}}
+                      onClick={() => tableHover[0] > 0 && insertTable(tableHover[0], tableHover[1])} />
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={sep} />
+        {COLORS.map(c => (
+          <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
+            style={{ width:14, height:14, borderRadius:'50%', background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
+            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
+            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
+        ))}
+        <div style={sep} />
+        <select defaultValue="3" onMouseDown={e => e.stopPropagation()}
+          onChange={e => { exec('fontSize', e.target.value); e.target.value='3' }}
+          style={{ fontSize:11, border:'0.5px solid #e0e0e0', borderRadius:4, padding:'2px 4px', background:'white', cursor:'pointer', height:24 }}>
+          <option value="2">Small</option>
+          <option value="3">Normal</option>
+          <option value="4">Large</option>
+          <option value="5">X-Large</option>
+        </select>
+        <div style={sep} />
+        {tbtn('✕ fmt', 'removeFormat', null, { color:'#aaa', fontSize:11 })}
+      </div>
+      <div ref={ref} contentEditable suppressContentEditableWarning
+        onInput={() => onChange(ref.current.innerHTML)}
+        onClick={e => {
+          if (e.target.type === 'checkbox') setTimeout(() => onChange(ref.current.innerHTML), 0)
+          setShowTablePicker(false)
+        }}
+        onMouseLeave={() => setTableHover([0,0])}
+        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize:13, lineHeight:1.7, overflowY:'auto', color:'#333', minHeight:200 }} />
+    </div>
+  )
+}
+
+// ─── Follow Ups Tab ───────────────────────────────────────────────────────────
+const DEFAULT_FOLLOW_UP_PEOPLE = ['Margarita', 'Illya', 'Matthew', 'Kaat']
+function FollowUpsTab({ followUps, onAdd, onToggle, onDelete }) {
+  const [activePerson, setActivePerson] = useState(null)
+  const [showDone, setShowDone] = useState(false)
+  const [addingFor, setAddingFor] = useState(null)
+  const [newText, setNewText] = useState('')
+
+  const extraPeople = [...new Set(followUps.map(f => f.person))].filter(p => p && !DEFAULT_FOLLOW_UP_PEOPLE.includes(p))
+  const allPeople = [...DEFAULT_FOLLOW_UP_PEOPLE, ...extraPeople]
+
+  const pendingFor = p => followUps.filter(f => f.person === p && !f.done).length
+  const itemsFor = p => followUps.filter(f => f.person === p && (showDone || !f.done))
+  const visiblePeople = activePerson ? [activePerson] : allPeople
+
+  const handleAdd = person => {
+    if (!newText.trim()) return
+    onAdd(newText.trim(), person)
+    setNewText(''); setAddingFor(null)
+  }
+
+  return (
+    <div>
+      {/* Person filter pills */}
+      <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', marginBottom:16 }}>
+        <button onClick={() => setActivePerson(null)}
+          style={{ fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:activePerson===null?'1.5px solid #111':'0.5px solid #e5e5e5', background:activePerson===null?'#111':'white', color:activePerson===null?'white':'#888', fontWeight:activePerson===null?500:400 }}>
+          All
+        </button>
+        {allPeople.map(p => {
+          const cnt = pendingFor(p), active = activePerson === p
+          const mc = MEMBER_COLORS[p]
+          return (
+            <button key={p} onClick={() => setActivePerson(active ? null : p)}
+              style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:active?`1.5px solid ${mc?.tc||'#111'}`:'0.5px solid #e5e5e5', background:active?(mc?.bg||'#f0f0f0'):'white', color:active?(mc?.tc||'#111'):'#888', fontWeight:active?500:400, display:'flex', alignItems:'center', gap:5 }}>
+              {p}
+              {cnt > 0 && <span style={{ fontSize:10, background:active?'rgba(0,0,0,0.1)':'#f0f0f0', color:active?(mc?.tc||'#555'):'#888', borderRadius:10, padding:'0 5px', minWidth:14, textAlign:'center' }}>{cnt}</span>}
+            </button>
+          )
+        })}
+        <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'#aaa', cursor:'pointer', marginLeft:'auto' }}>
+          <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} style={{ width:12, height:12 }} />
+          Show done
+        </label>
+      </div>
+
+      {/* Per-person sections */}
+      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        {visiblePeople.map(person => {
+          const items = itemsFor(person)
+          const pending = pendingFor(person)
+          if (!activePerson && items.length === 0) return null
+          const mc = MEMBER_COLORS[person]
+          return (
+            <div key={person} style={{ background:'#f7f7f5', borderRadius:12, padding:12 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <div style={{ width:26, height:26, borderRadius:'50%', background:mc?.bg||'#e8e8e8', color:mc?.tc||'#888', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, border:'0.5px solid rgba(0,0,0,0.06)' }}>{person[0]}</div>
+                  <span style={{ fontSize:13, fontWeight:500, color:'#111' }}>{person}</span>
+                  {pending > 0 && <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{pending} pending</span>}
+                </div>
+                <button onClick={() => { setAddingFor(addingFor === person ? null : person); setNewText('') }}
+                  style={{ fontSize:11, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'3px 9px', cursor:'pointer', fontFamily:'inherit' }}>
+                  {addingFor === person ? 'Cancel' : '+ Add'}
+                </button>
+              </div>
+
+              {addingFor === person && (
+                <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+                  <input autoFocus value={newText} onChange={e => setNewText(e.target.value)}
+                    onKeyDown={e => { if (e.key==='Enter') handleAdd(person); if (e.key==='Escape') { setAddingFor(null); setNewText('') } }}
+                    placeholder="Follow-up item..."
+                    style={{ flex:1, fontSize:13, padding:'6px 10px', border:'1px solid #ddd', borderRadius:6, outline:'none', fontFamily:'inherit' }} />
+                  <button onClick={() => handleAdd(person)}
+                    style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer', fontFamily:'inherit' }}>
+                    Add
+                  </button>
+                </div>
+              )}
+
+              {items.length === 0 && addingFor !== person && (
+                <div style={{ fontSize:12, color:'#bbb', padding:'4px 0 2px' }}>No pending follow-ups — click + Add to create one</div>
+              )}
+              {items.map(item => (
+                <div key={item.id}
+                  style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', background:item.done?'transparent':'white', borderRadius:6, border:item.done?'none':'0.5px solid #ebebeb', marginBottom:4 }}
+                  onMouseEnter={e => { const d = e.currentTarget.querySelector('.fu-del'); if(d) d.style.opacity='1' }}
+                  onMouseLeave={e => { const d = e.currentTarget.querySelector('.fu-del'); if(d) d.style.opacity='0' }}>
+                  <input type="checkbox" checked={!!item.done} onChange={e => onToggle(item.id, e.target.checked)} style={{ width:14, height:14, cursor:'pointer', flexShrink:0 }} />
+                  <span style={{ flex:1, fontSize:13, color:item.done?'#bbb':'#333', textDecoration:item.done?'line-through':'none' }}>{item.text}</span>
+                  <button className="fu-del" onClick={() => onDelete(item.id)}
+                    style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
+                    onMouseEnter={e => e.currentTarget.style.color='#E24B4A'}
+                    onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                </div>
+              ))}
+            </div>
+          )
+        })}
+        {visiblePeople.every(p => itemsFor(p).length === 0) && !activePerson && (
+          <div style={{ textAlign:'center', padding:'40px 0', color:'#bbb', fontSize:13 }}>
+            No follow-ups yet — select a person above and click + Add
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Notes Section (wrapper with sub-tabs) ────────────────────────────────────
+function NotesSection({ notes, onSaveNote, onDeleteNote, followUps, onAddFollowUp, onToggleFollowUp, onDeleteFollowUp }) {
+  const [subTab, setSubTab] = useState('notes')
+  return (
+    <div>
+      <div style={{ display:'flex', gap:3, marginBottom:16, background:'#f2f2f0', borderRadius:10, padding:3, width:'fit-content' }}>
+        {[{ k:'notes', l:'📝 Notes' }, { k:'followups', l:'🔄 Follow Ups' }].map(t => (
+          <button key={t.k} onClick={() => setSubTab(t.k)}
+            style={{ fontSize:13, padding:'6px 14px', cursor:'pointer', background:subTab===t.k?'white':'transparent', border:'none', borderRadius:8, color:subTab===t.k?'#111':'#777', fontWeight:subTab===t.k?500:400, boxShadow:subTab===t.k?'0 1px 3px rgba(0,0,0,0.09)':'none', whiteSpace:'nowrap' }}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+      {subTab === 'notes' && <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} />}
+      {subTab === 'followups' && <FollowUpsTab followUps={followUps} onAdd={onAddFollowUp} onToggle={onToggleFollowUp} onDelete={onDeleteFollowUp} />}
+    </div>
+  )
+}
+
 // ─── Notes Tab ───────────────────────────────────────────────────────────────
 function NotesTab({ notes, onSave, onDelete }) {
   const [selectedId, setSelectedId] = useState(null)
@@ -639,7 +881,9 @@ function NotesTab({ notes, onSave, onDelete }) {
 
   const handleCopy = () => {
     if (!draft) return
-    navigator.clipboard.writeText(`${draft.title}\n\n${draft.body}`)
+    const div = document.createElement('div'); div.innerHTML = draft.body || ''
+    const plain = div.textContent || ''
+    navigator.clipboard.writeText(`${draft.title}\n\n${plain}`)
     setCopied(true); setTimeout(() => setCopied(false), 1500)
   }
 
@@ -672,7 +916,8 @@ function NotesTab({ notes, onSave, onDelete }) {
           </div>
         ) : (
           <>
-            <div style={{ padding:'10px 14px', borderBottom:'0.5px solid #f0f0f0', display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ padding:'10px 14px', borderBottom:'0.5px solid #f0f0f0', display:'flex', flexDirection:'column', gap:4 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
               <input value={draft.title} onChange={e => { setDraft(p => ({...p, title:e.target.value})); setDirty(true) }}
                 style={{ flex:1, fontSize:15, fontWeight:600, border:'none', outline:'none', color:'#111', background:'transparent' }}
                 placeholder="Note title..." />
@@ -683,10 +928,20 @@ function NotesTab({ notes, onSave, onDelete }) {
                 {dirty && <button onClick={handleSave} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Save</button>}
                 {selectedId && <button onClick={async () => { await onDelete(selectedId); setSelectedId(null); setDraft(null); setDirty(false) }} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Delete</button>}
               </div>
+              </div>
+              {(() => {
+                const noteRecord = notes.find(n => n.id === selectedId)
+                const fmtDT = iso => iso ? new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : '—'
+                return noteRecord ? (
+                  <div style={{ display:'flex', gap:14, fontSize:10, color:'#bbb' }}>
+                    <span>Created {fmtDT(noteRecord.created_at)}</span>
+                    {noteRecord.updated_at && noteRecord.updated_at !== noteRecord.created_at && <span>· Edited {fmtDT(noteRecord.updated_at)}</span>}
+                  </div>
+                ) : null
+              })()}
             </div>
-            <textarea value={draft.body} onChange={e => { setDraft(p => ({...p, body:e.target.value})); setDirty(true) }}
-              placeholder="Start writing... Copy to clipboard and paste into Claude to update your tasks."
-              style={{ flex:1, border:'none', outline:'none', padding:'14px 16px', fontSize:13, fontFamily:'inherit', resize:'none', lineHeight:1.7, color:'#333' }} />
+            <RichTextEditor key={selectedId} initialValue={draft.body}
+              onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }} />
           </>
         )}
       </div>
@@ -1458,6 +1713,7 @@ export default function App() {
   const [projects, setProjects] = useState([])
   const [escalations, setEscalations] = useState([])
   const [notes, setNotes] = useState([])
+  const [followUps, setFollowUps] = useState([])
   const [calEvents, setCalEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('tasks')
@@ -1482,13 +1738,14 @@ export default function App() {
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*'),
       supabase.from('calendar_events').select('*').order('created_at', { ascending: true }),
       supabase.from('escalations').select('*').order('created_at', { ascending: true }),
       supabase.from('notes').select('*').order('updated_at', { ascending: false }),
+      supabase.from('follow_ups').select('*').order('created_at', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) setDomains(domainsData.map(d => d.name))
@@ -1496,6 +1753,7 @@ export default function App() {
     if (calData) setCalEvents(calData)
     setEscalations(escalationsData || [])
     setNotes(notesData || [])
+    setFollowUps(followUpsData || [])
     setLoading(false)
   }, [])
 
@@ -1599,6 +1857,19 @@ export default function App() {
 
   const deleteNote = async id => {
     await supabase.from('notes').delete().eq('id', id)
+    await loadData(true)
+  }
+
+  const addFollowUp = async (text, person) => {
+    await supabase.from('follow_ups').insert({ text, person, done: false })
+    await loadData(true)
+  }
+  const toggleFollowUp = async (id, done) => {
+    await supabase.from('follow_ups').update({ done }).eq('id', id)
+    await loadData(true)
+  }
+  const deleteFollowUp = async id => {
+    await supabase.from('follow_ups').delete().eq('id', id)
     await loadData(true)
   }
 
@@ -1840,7 +2111,7 @@ export default function App() {
 
       {/* ── Notes ── */}
       {tab === 'notes' && (
-        <NotesTab notes={notes} onSave={saveNote} onDelete={deleteNote} />
+        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} followUps={followUps} onAddFollowUp={addFollowUp} onToggleFollowUp={toggleFollowUp} onDeleteFollowUp={deleteFollowUp} />
       )}
 
       {/* ── Team Board ── */}
