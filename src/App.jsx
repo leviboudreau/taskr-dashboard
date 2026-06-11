@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
 const COLS = [
+  { key: 'hopper',      lbl: 'Hopper' },
   { key: 'not_started', lbl: 'Not started' },
   { key: 'in_progress', lbl: 'In progress' },
   { key: 'at_risk',     lbl: 'At risk' },
@@ -12,6 +13,7 @@ const COLS = [
 ]
 const SUBSTATUS = [
   { key: '', label: '—' },
+  { key: 'hopper', label: 'Hopper', bg: '#FFFBE6', tc: '#7A5C00', border: '#C9960A' },
   { key: 'not_started', label: 'Not started', bg: '#F1EFE8', tc: '#5F5E5A', border: '#B4B2A9' },
   { key: 'in_progress', label: 'In progress', bg: '#E6F1FB', tc: '#0C447C', border: '#85B7EB' },
   { key: 'at_risk', label: 'At risk', bg: '#FCEBEB', tc: '#791F1F', border: '#F09595' },
@@ -218,7 +220,7 @@ function OwnerPip({ name }) {
 }
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
-function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onToggleSubtask, dropIndicator, onDragOver }) {
+function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onToggleSubtask, dropIndicator, onDragOver, entityMap = {} }) {
   const [notesOpen, setNotesOpen] = useState(false)
   const [subtasksOpen, setSubtasksOpen] = useState(false)
   const done = task.substatus === 'complete'
@@ -230,6 +232,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
   const completedSubs = subtasks.filter(s => s.done).length
   const owners = task.owners || ['Levi']
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
+  const linkedEntity = entityMap[task.project_id] || entityMap[task.escalation_id] || null
 
   return (
     <div style={{ position:'relative' }}>
@@ -246,6 +249,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
       >
         {!done && (
           <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:3, marginBottom:3 }}>
+            {linkedEntity && <span style={{ fontSize:10, fontWeight:500, background:linkedEntity.type==='project'?'#EAF3DE':'#FCEBEB', color:linkedEntity.type==='project'?'#27500A':'#791F1F', padding:'2px 7px', borderRadius:20, border:`0.5px solid ${linkedEntity.type==='project'?'#97C459':'#F09595'}`, maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{linkedEntity.name}</span>}
             {task.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.domain}</span>}
             {task.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
           </div>
@@ -306,7 +310,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
 }
 
 // ─── Today Strip ──────────────────────────────────────────────────────────────
-function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove }) {
+function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, entityMap = {} }) {
   const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete')
   return (
     <div onDragOver={e => { e.preventDefault(); onDragOver('today') }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), 'today') }}
@@ -322,7 +326,7 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8 }}>
           {todayTasks.map(t => (
             <div key={t.id} style={{ position:'relative' }}>
-              <TaskCard task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} compact />
+              <TaskCard task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} compact entityMap={entityMap} />
               <button onClick={e => { e.stopPropagation(); onRemove(t.id) }} style={{ position:'absolute', top:4, right:4, background:'none', border:'none', cursor:'pointer', fontSize:11, color:'#ccc' }} onMouseEnter={e => e.currentTarget.style.color='#333'} onMouseLeave={e => e.currentTarget.style.color='#ccc'}>✕</button>
             </div>
           ))}
@@ -2658,7 +2662,7 @@ const TEAM_MEMBERS = [
   { key: 'Matthew', label: 'Matthew', full: 'Matthew Miller', role: 'Quality Systems Specialist', loc: 'Greenwood, SC' },
 ]
 
-function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, overCol, toggleSubtask }) {
+function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, overCol, toggleSubtask, entityMap = {} }) {
   const [member, setMember] = useState('all')
   const filtered = member === 'all' ? tasks : tasks.filter(t => (t.owners||['Levi']).includes(member))
   const visible = filtered.filter(t => t.substatus !== 'canceled')
@@ -2710,7 +2714,7 @@ function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDro
                 <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{col.lbl}</span>
                 <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{ct.length}</span>
               </div>
-              {ct.map(t => <TaskCard key={t.id} task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} />)}
+              {ct.map(t => <TaskCard key={t.id} task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} entityMap={entityMap} />)}
             </div>
           )
         })}
@@ -2981,6 +2985,10 @@ export default function App() {
 
   const taskSubstatus = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
   const getColTasks = colKey => filteredTasks.filter(t => taskSubstatus(t) === colKey)
+  const entityMap = Object.fromEntries([
+    ...projects.map(p => [p.id, { name: p.title, type: 'project' }]),
+    ...escalations.map(e => [e.id, { name: e.title, type: 'escalation' }]),
+  ])
 
   if (loading) return (
     <div style={{ fontFamily:'system-ui,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'#888', fontSize:14 }}>
@@ -3058,7 +3066,7 @@ export default function App() {
 
           {!showTrash && (<>
           {/* Today strip */}
-          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} />
+          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} entityMap={entityMap} />
 
           {/* Projects section */}
           <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} />
@@ -3083,7 +3091,7 @@ export default function App() {
                     </button>
                     {ct.map(t => (
                       <div key={t.id} style={{ marginBottom:8 }}>
-                        <TaskCard task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} />
+                        <TaskCard task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} entityMap={entityMap} />
                       </div>
                     ))}
                   </div>
@@ -3108,7 +3116,7 @@ export default function App() {
                   const ct = getColTasks(col.key)
                   return <div key={col.key} onDragOver={e => { e.preventDefault(); setOverCol(col.key) }} onDragLeave={() => setOverCol(null)} onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }} style={{ background:'#f7f7f5', borderRadius:12, padding:12, minHeight:200 }}>
                     <button onClick={() => { setForm({ substatus:col.key, status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'10px 0', fontSize:13, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>+ Add task</button>
-                    {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} />)}
+                    {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} entityMap={entityMap} />)}
                   </div>
                 })}
               </div>
@@ -3122,7 +3130,7 @@ export default function App() {
                       onDragOver={e => { e.preventDefault(); setOverCol(col.key) }}
                       onDragLeave={() => { setOverCol(null); setDropTarget(null) }}
                       onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }}
-                      style={{ flex:'1 1 220px', minWidth:220, background:overCol===col.key?'#EEF4FF':'#f7f7f5', border:overCol===col.key?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12, minHeight:220 }}>
+                      style={{ flex:'1 1 220px', minWidth:220, background:overCol===col.key?'#EEF4FF':col.key==='hopper'?'#FFFBE6':'#f7f7f5', border:overCol===col.key?'1.5px dashed #378ADD':col.key==='hopper'?'1.5px solid #C9960A':'1.5px solid transparent', borderRadius:12, padding:12, minHeight:220 }}>
                       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
                         <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{col.lbl}</span>
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -3146,6 +3154,7 @@ export default function App() {
                             onToggleSubtask={toggleSubtask}
                             dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null}
                             onDragOver={viewMode==='dynamic'?taskId => setDropTarget({ col:col.key, taskId, position:'before' }):null}
+                            entityMap={entityMap}
                           />
                         ))}
                       </div>
