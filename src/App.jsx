@@ -3049,7 +3049,7 @@ export default function App() {
                 })}
               </div>
             ) : (
-              <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+              <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto', paddingBottom:8 }}>
                 {/* Active columns — fill available space, cards wrap into grid */}
                 {COLS.filter(c => !minimized[c.key]).map(col => {
                   const ct = getColTasks(col.key)
@@ -3058,7 +3058,7 @@ export default function App() {
                       onDragOver={e => { e.preventDefault(); setOverCol(col.key) }}
                       onDragLeave={() => { setOverCol(null); setDropTarget(null) }}
                       onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }}
-                      style={{ flex:1, minWidth:0, background:overCol===col.key?'#EEF4FF':'#f7f7f5', border:overCol===col.key?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12, minHeight:220 }}>
+                      style={{ flex:'1 1 220px', minWidth:220, background:overCol===col.key?'#EEF4FF':'#f7f7f5', border:overCol===col.key?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12, minHeight:220 }}>
                       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
                         <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{col.lbl}</span>
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
