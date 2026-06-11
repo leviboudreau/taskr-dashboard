@@ -2729,7 +2729,8 @@ export default function App() {
   const [followUps, setFollowUps] = useState([])
   const [calEvents, setCalEvents] = useState([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('briefing')
+  const [tab, setTab] = useState(() => localStorage.getItem('taskr-tab') || 'tasks')
+  const switchTab = t => { setTab(t); localStorage.setItem('taskr-tab', t) }
   const [activeEscalation, setActiveEscalation] = useState(null)
   const [activePopup, setActivePopup] = useState(null) // { entity, type: 'project' | 'escalation' }
   const [form, setForm] = useState(null)
@@ -3011,7 +3012,7 @@ export default function App() {
           { key:'calendar', label:'📅 Calendar' },
           { key:'settings', label:'⚙️ Settings' },
         ].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button key={t.key} onClick={() => switchTab(t.key)}
             style={{ fontSize:13, padding:'6px 14px', cursor:'pointer', background:tab===t.key?'white':'transparent', border:'none', borderRadius:8, color:tab===t.key?'#111':'#777', fontWeight:tab===t.key?500:400, boxShadow:tab===t.key?'0 1px 3px rgba(0,0,0,0.09)':'none', whiteSpace:'nowrap' }}>
             {t.label}
           </button>
