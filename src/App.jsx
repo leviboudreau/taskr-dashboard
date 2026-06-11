@@ -1150,19 +1150,17 @@ function RichTextEditor({ initialValue, onChange }) {
 // ─── Briefing Tab ─────────────────────────────────────────────────────────────
 function BriefingTab() {
   const todayISO = toISODate(new Date())
-  const [content, setContent] = useState(null)
+  const [briefContent, setBriefContent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState(null)
   const [history, setHistory] = useState([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState(null)
+  const taskMetaRef = useRef({})
   const histRef = useRef()
 
-  useEffect(() => {
-    checkAndLoad()
-    loadHistory()
-  }, [])
+  useEffect(() => { checkAndLoad(); loadHistory() }, [])
 
   useEffect(() => {
     if (!historyOpen) return
@@ -1177,53 +1175,49 @@ function BriefingTab() {
   }
 
   const checkAndLoad = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
       const { data } = await supabase.from('briefings').select('content').eq('date', todayISO).maybeSingle()
-      if (data?.content) {
-        setContent(data.content)
-        setLoading(false)
-      } else {
-        setLoading(false)
-        await generate()
-      }
-    } catch (e) {
-      setError('Could not load briefing: ' + e.message)
-      setLoading(false)
-    }
+      if (data?.content) { setBriefContent(data.content); setLoading(false) }
+      else { setLoading(false); await generate() }
+    } catch (e) { setError('Could not load briefing: ' + e.message); setLoading(false) }
   }
 
   const generate = async () => {
-    setGenerating(true)
-    setError(null)
+    setGenerating(true); setError(null)
     try {
+      // Delete today's existing row first
+      await supabase.from('briefings').delete().eq('date', todayISO)
+
       const [{ data: tasks }, { data: calRaw }] = await Promise.all([
         supabase.from('tasks').select('*').eq('status', 'active'),
         supabase.from('calendar_events').select('*'),
       ])
 
+      // Build task meta lookup for Action required coloring
+      const meta = {}
+      ;(tasks || []).forEach(t => { meta[t.title.toLowerCase()] = { color: t.color, substatus: t.substatus } })
+      taskMetaRef.current = meta
+
       const todayDate = fromISODate(todayISO)
       const todayEvents = getEventsForRange(calRaw || [], todayDate, todayDate)
         .filter(ev => ev.start_date === todayISO && ev.type !== 'travel')
         .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
-      const travelEvents = getEventsForRange(calRaw || [], todayDate, todayDate)
-        .filter(ev => ev.type === 'travel')
-
-      // Horizon: tasks + events in next 14 days
+      const travelToday = getEventsForRange(calRaw || [], todayDate, todayDate).filter(ev => ev.type === 'travel')
       const horizon = new Date(todayDate); horizon.setDate(horizon.getDate() + 14)
       const horizonEvents = getEventsForRange(calRaw || [], new Date(todayDate.getTime() + 86400000), horizon)
-        .filter(ev => ev.type === 'travel' || ev.start_date > todayISO)
 
       const dateStr = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
 
-      const calLines = [...travelEvents.map(ev => `- [Travel] ${ev.title}`), ...todayEvents.map(ev => {
-        const t = ev.all_day ? 'All day' : (ev.start_time ? ev.start_time.slice(0,5) : '')
-        const dur = (!ev.all_day && ev.start_time && ev.end_time)
-          ? Math.round((new Date(`2000-01-01T${ev.end_time}`) - new Date(`2000-01-01T${ev.start_time}`)) / 60000)
-          : null
-        return `- [${t}] ${ev.title}${dur ? ` (${dur} min)` : ''}`
-      })].join('\n') || 'None scheduled.'
+      const calLines = [
+        ...travelToday.map(ev => `- [Travel] ${ev.title}`),
+        ...todayEvents.map(ev => {
+          const t = ev.all_day ? 'All day' : (ev.start_time ? ev.start_time.slice(0,5) : '')
+          const dur = (!ev.all_day && ev.start_time && ev.end_time)
+            ? Math.round((new Date(`2000-01-01T${ev.end_time}`) - new Date(`2000-01-01T${ev.start_time}`)) / 60000) : null
+          return `- [${t}] ${ev.title}${dur ? ` (${dur} min)` : ''}`
+        }),
+      ].join('\n') || 'None scheduled.'
 
       const taskLines = (tasks || []).map(t => {
         const parts = [`- [${t.title}]`]
@@ -1237,10 +1231,9 @@ function BriefingTab() {
       }).join('\n') || 'None.'
 
       const horizonLines = horizonEvents.length
-        ? horizonEvents.map(ev => `- ${ev.start_date} ${ev.title}${ev.type==='travel'?' (travel)':''}`).join('\n')
-        : ''
+        ? horizonEvents.map(ev => `- ${ev.start_date} ${ev.title}${ev.type==='travel'?' (travel)':''}`).join('\n') : ''
 
-      const systemPrompt = `You are a personal assistant to a Global Quality Systems Director at a pharmaceutical and nutraceutical contract manufacturing company. You generate concise, professional daily briefings based on live task and calendar data. Your tone is direct and collaborative. No em dashes. Short paragraphs. Bullets for multiple items. Never use the words "KPI" or "KQI" — always say "KQM" (Key Quality Metrics).`
+      const systemPrompt = `You are a personal assistant to a Global Quality Systems Director at a pharmaceutical and nutraceutical contract manufacturing company. You generate concise, professional daily briefings based on live task and calendar data. Your tone is direct, warm, and occasionally witty. No em dashes. Short paragraphs. Bullets for multiple items. Never use the words "KPI" or "KQI" — always say "KQM" (Key Quality Metrics).`
 
       const userPrompt = `Generate a daily briefing for today, ${dateStr}.
 
@@ -1250,14 +1243,33 @@ ${calLines}
 Active tasks:
 ${taskLines}${horizonLines ? `\n\nUpcoming (next 14 days):\n${horizonLines}` : ''}
 
-Format the briefing with these sections:
-1. Today at a glance — 2-3 sentences summarizing the day's tone and priority focus.
-2. On your calendar — bullet list of today's events with times.
-3. Action required — tasks flagged red, substatus at_risk, or with open subtasks. If none, omit this section.
-4. Active tasks by owner — group tasks by owner (Levi, Illya, Margarita, Matthew). List title and substatus for each.
-5. On the horizon — anything with a due date in the next 14 days or upcoming travel.
+Format the briefing exactly in this order with these section headers:
 
-Keep the full briefing under 400 words. Use actual task titles and names, not generic descriptions.`
+## Good morning, Levi.
+3 to 5 sentences summarizing the day's tone, key priorities, and anything worth flagging. Be specific — reference actual tasks and events by name. If travel is coming up within 3 days, mention it.
+
+## Quote of the day
+One motivational or leadership quote relevant to quality, leadership, or the nature of the day's work. Format as: "Quote text." — Author Name
+
+## Did you know?
+One genuinely interesting fact on any topic. Keep it to 2-3 sentences. Make it something worth remembering.
+
+## Action required
+Tasks flagged red, substatus at_risk, or with open subtasks. For each item lead with the task title in bold, then one sentence on why it needs attention and what the next action is. If nothing qualifies, omit this section entirely.
+
+## Suggestions
+3 to 5 opinionated, specific bullets on what Levi should focus on, follow up on, or decide today. Go beyond the active task list — if something hasn't been touched in a while, a deadline is approaching, a team member may need a check-in, or a strategic initiative is stalling, call it out. Be direct and useful, not generic.
+
+## On your calendar
+Bullet list of today's events with times and duration. If none, write "No meetings scheduled — good day to focus."
+
+## On the horizon
+Anything with a due date in the next 14 days, upcoming travel, or recurring deadlines (KQM Data Entry, KQM Report). Format as a simple dated list.
+
+Important rules:
+- You MUST include every section above using the exact ## headers shown. Never omit Quote of the day or Did you know — they are always required.
+- Use actual task titles and names, not generic descriptions.
+- Keep the full briefing under 650 words.`
 
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -1269,7 +1281,7 @@ Keep the full briefing under 400 words. Use actual task titles and names, not ge
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
-          max_tokens: 1024,
+          max_tokens: 1200,
           system: systemPrompt,
           messages: [{ role: 'user', content: userPrompt }],
         }),
@@ -1280,28 +1292,24 @@ Keep the full briefing under 400 words. Use actual task titles and names, not ge
       }
       const result = await resp.json()
       const text = result.content[0].text
-
-      await supabase.from('briefings').upsert({ date: todayISO, content: text }, { onConflict: 'date' })
-      setContent(text)
-      setSelectedDate(null)
+      await supabase.from('briefings').insert({ date: todayISO, content: text })
+      setBriefContent(text); setSelectedDate(null)
       await loadHistory()
     } catch (e) {
       setError('Failed to generate briefing: ' + e.message)
-    } finally {
-      setGenerating(false)
-    }
+    } finally { setGenerating(false) }
   }
 
   const loadHistoryEntry = async date => {
     setHistoryOpen(false)
+    taskMetaRef.current = {}
     const { data } = await supabase.from('briefings').select('content').eq('date', date).maybeSingle()
-    if (data?.content) { setContent(data.content); setSelectedDate(date) }
+    if (data?.content) { setBriefContent(data.content); setSelectedDate(date) }
   }
 
   const fmtDate = iso => {
     if (!iso) return ''
-    const d = fromISODate(iso)
-    return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' })
+    return fromISODate(iso).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' })
   }
 
   const renderInline = text =>
@@ -1309,25 +1317,114 @@ Keep the full briefing under 400 words. Use actual task titles and names, not ge
 
   const renderContent = text => {
     if (!text) return null
-    return text.split('\n').map((line, i) => {
-      if (/^#{1,3} /.test(line)) {
-        const lvl = line.match(/^(#+)/)[1].length
-        const t = line.replace(/^#+\s/, '')
-        return <div key={i} style={{ fontSize: lvl===1?16:14, fontWeight:700, color:'#111', marginTop: lvl===1?0:20, marginBottom:6 }}>{renderInline(t)}</div>
-      }
-      if (/^\d+\.\s/.test(line)) {
-        return <div key={i} style={{ fontSize:14, fontWeight:600, color:'#111', marginTop:20, marginBottom:5 }}>{renderInline(line)}</div>
-      }
-      if (/^[-*]\s/.test(line)) {
-        return (
-          <div key={i} style={{ display:'flex', gap:8, fontSize:13, color:'#333', marginBottom:3, paddingLeft:8, lineHeight:1.5 }}>
-            <span style={{ color:'#bbb', flexShrink:0, marginTop:1 }}>•</span>
-            <span>{renderInline(line.slice(2))}</span>
+    // Split into sections by ## headers
+    const sections = []
+    let cur = { header: null, lines: [] }
+    for (const line of text.split('\n')) {
+      if (/^## /.test(line)) { sections.push(cur); cur = { header: line.slice(3).trim(), lines: [] } }
+      else cur.lines.push(line)
+    }
+    sections.push(cur)
+
+    return sections.filter(s => s.header || s.lines.some(l => l.trim())).map((sec, si) => {
+      const h = (sec.header || '').toLowerCase()
+      const isGreeting = h.startsWith('good morning')
+      const isQuote = h === 'quote of the day'
+      const isDyk = h.startsWith('did you know')
+      const isAction = h.startsWith('action required')
+
+      // Clean leading/trailing blank lines
+      const bodyLines = sec.lines
+      while (bodyLines.length && !bodyLines[0].trim()) bodyLines.shift()
+      while (bodyLines.length && !bodyLines[bodyLines.length-1].trim()) bodyLines.pop()
+
+      const headerEl = sec.header && (
+        <div style={{
+          fontSize: isGreeting ? 22 : 10,
+          fontWeight: isGreeting ? 700 : 600,
+          color: isGreeting ? '#111' : '#999',
+          marginTop: si === 0 ? 0 : 32,
+          marginBottom: isGreeting ? 10 : 10,
+          letterSpacing: isGreeting ? 0 : '0.08em',
+          textTransform: isGreeting ? 'none' : 'uppercase',
+        }}>
+          {renderInline(sec.header)}
+        </div>
+      )
+
+      let bodyEl
+      if (isQuote || isDyk) {
+        bodyEl = (
+          <div style={{ background:'#f8f7f5', borderRadius:8, padding:'14px 18px' }}>
+            {bodyLines.map((line, i) => {
+              if (!line.trim()) return <div key={i} style={{ height:4 }} />
+              return <p key={i} style={{ fontSize:13, color:'#555', margin:'0 0 2px', lineHeight:1.6, fontStyle: isQuote ? 'italic' : 'normal' }}>{renderInline(line)}</p>
+            })}
+          </div>
+        )
+      } else if (isAction) {
+        // Group lines into items: each item starts with a **bold** line
+        const items = []
+        let cur = null
+        for (const line of bodyLines) {
+          if (!line.trim()) { if (cur) { items.push(cur); cur = null } continue }
+          if (/^\*\*/.test(line)) {
+            if (cur) items.push(cur)
+            const titleMatch = line.match(/^\*\*(.*?)\*\*/)
+            const titleKey = titleMatch ? titleMatch[1].toLowerCase() : ''
+            const metaEntry = Object.entries(taskMetaRef.current).find(([k]) =>
+              titleKey.includes(k) || k.includes(titleKey)
+            )
+            const info = metaEntry?.[1]
+            const barColor = info?.color === 'red' ? '#ef4444' : info?.substatus === 'at_risk' ? '#f59e0b' : '#ef4444'
+            cur = { lines: [line], barColor }
+          } else {
+            if (cur) cur.lines.push(line)
+            else { cur = { lines: [line], barColor: '#ef4444' } }
+          }
+        }
+        if (cur) items.push(cur)
+
+        bodyEl = (
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {items.map((item, ii) => (
+              <div key={ii} style={{ display:'flex', gap:0 }}>
+                <div style={{ width:3, borderRadius:2, background:item.barColor, flexShrink:0, marginRight:14, alignSelf:'stretch' }} />
+                <div>
+                  {item.lines.map((line, li) => (
+                    /^\*\*/.test(line)
+                      ? <div key={li} style={{ fontSize:13, fontWeight:600, color:'#111', marginBottom:2, lineHeight:1.5 }}>{renderInline(line)}</div>
+                      : <div key={li} style={{ fontSize:13, color:'#555', lineHeight:1.55 }}>{renderInline(line)}</div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      } else {
+        bodyEl = (
+          <div>
+            {bodyLines.map((line, i) => {
+              if (!line.trim()) return <div key={i} style={{ height:5 }} />
+              if (/^[-*] /.test(line)) return (
+                <div key={i} style={{ display:'flex', gap:9, fontSize:13, color:'#333', marginBottom:4, lineHeight:1.55 }}>
+                  <span style={{ color:'#ccc', flexShrink:0, marginTop:1 }}>•</span>
+                  <span>{renderInline(line.slice(2))}</span>
+                </div>
+              )
+              if (/^\d+\.\s/.test(line) && !isGreeting) return (
+                <div key={i} style={{ display:'flex', gap:9, fontSize:13, color:'#333', marginBottom:4, lineHeight:1.55 }}>
+                  <span style={{ color:'#ccc', flexShrink:0 }}>{line.match(/^(\d+)\./)[ 1]}.</span>
+                  <span>{renderInline(line.replace(/^\d+\.\s/, ''))}</span>
+                </div>
+              )
+              return <p key={i} style={{ fontSize:13, color:'#333', margin:'0 0 5px', lineHeight:1.6 }}>{renderInline(line)}</p>
+            })}
           </div>
         )
       }
-      if (line.trim() === '') return <div key={i} style={{ height:8 }} />
-      return <p key={i} style={{ fontSize:13, color:'#333', margin:'0 0 6px', lineHeight:1.55 }}>{renderInline(line)}</p>
+
+      return <div key={si}>{headerEl}{bodyEl}</div>
     })
   }
 
@@ -1336,65 +1433,57 @@ Keep the full briefing under 400 words. Use actual task titles and names, not ge
   if (loading) return <div style={{ padding:60, textAlign:'center', color:'#aaa', fontSize:13 }}>Loading briefing...</div>
 
   return (
-    <div style={{ maxWidth:720, margin:'0 auto' }}>
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20, gap:12 }}>
-        <div>
-          <div style={{ fontSize:22, fontWeight:700, color:'#111' }}>Daily Briefing</div>
-          <div style={{ fontSize:12, color:'#aaa', marginTop:3 }}>{fmtDate(selectedDate || todayISO)}</div>
-        </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
-          {/* History */}
-          <div ref={histRef} style={{ position:'relative' }}>
-            <button onClick={() => setHistoryOpen(o => !o)}
-              style={{ fontSize:12, padding:'6px 12px', border:'0.5px solid #e5e5e5', borderRadius:8, background:'white', cursor:'pointer', color:'#555', display:'flex', alignItems:'center', gap:4 }}>
-              History <span style={{ fontSize:10, color:'#aaa' }}>▾</span>
-            </button>
-            {historyOpen && (
-              <div style={{ position:'absolute', right:0, top:'calc(100% + 4px)', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 20px rgba(0,0,0,0.1)', zIndex:50, minWidth:180, maxHeight:260, overflowY:'auto' }}>
-                {history.length === 0
-                  ? <div style={{ padding:'12px 16px', fontSize:12, color:'#aaa' }}>No past briefings</div>
-                  : history.map(date => (
-                    <button key={date} onClick={() => loadHistoryEntry(date)}
-                      style={{ display:'block', width:'100%', textAlign:'left', fontSize:12, padding:'9px 14px', border:'none', borderBottom:'0.5px solid #f5f5f5', background:(selectedDate||todayISO)===date?'#f0f7ff':'white', cursor:'pointer', color:'#333' }}>
-                      {date === todayISO ? '📅 Today' : fmtDate(date)}
-                    </button>
-                  ))
-                }
-              </div>
-            )}
-          </div>
-          {/* Regenerate */}
-          {isToday && (
-            <button onClick={generate} disabled={generating}
-              style={{ fontSize:12, padding:'6px 14px', background:'#111', color:'white', border:'none', borderRadius:8, cursor:generating?'not-allowed':'pointer', opacity:generating?0.55:1, whiteSpace:'nowrap' }}>
-              {generating ? 'Generating...' : '↺ Regenerate'}
-            </button>
+    <div style={{ maxWidth:680, margin:'0 auto' }}>
+      {/* Toolbar */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', marginBottom:24, gap:8 }}>
+        <div ref={histRef} style={{ position:'relative' }}>
+          <button onClick={() => setHistoryOpen(o => !o)}
+            style={{ fontSize:12, padding:'6px 12px', border:'0.5px solid #e5e5e5', borderRadius:8, background:'white', cursor:'pointer', color:'#555', display:'flex', alignItems:'center', gap:4 }}>
+            History <span style={{ fontSize:10, color:'#aaa' }}>▾</span>
+          </button>
+          {historyOpen && (
+            <div style={{ position:'absolute', right:0, top:'calc(100% + 4px)', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 20px rgba(0,0,0,0.1)', zIndex:50, minWidth:200, maxHeight:260, overflowY:'auto' }}>
+              {history.length === 0
+                ? <div style={{ padding:'12px 16px', fontSize:12, color:'#aaa' }}>No past briefings</div>
+                : history.map(date => (
+                  <button key={date} onClick={() => loadHistoryEntry(date)}
+                    style={{ display:'block', width:'100%', textAlign:'left', fontSize:12, padding:'9px 16px', border:'none', borderBottom:'0.5px solid #f5f5f5', background:(selectedDate||todayISO)===date?'#f0f7ff':'white', cursor:'pointer', color:'#333' }}>
+                    {date === todayISO ? '📅 Today' : fmtDate(date)}
+                  </button>
+                ))
+              }
+            </div>
           )}
         </div>
+        {isToday && (
+          <button onClick={generate} disabled={generating}
+            style={{ fontSize:12, padding:'6px 14px', background:'#111', color:'white', border:'none', borderRadius:8, cursor:generating?'not-allowed':'pointer', opacity:generating?0.55:1, whiteSpace:'nowrap' }}>
+            {generating ? 'Generating...' : '↺ Regenerate'}
+          </button>
+        )}
       </div>
 
-      {/* Error */}
+      {selectedDate && selectedDate !== todayISO && (
+        <div style={{ fontSize:11, color:'#aaa', marginBottom:16, textAlign:'right' }}>Viewing {fmtDate(selectedDate)}</div>
+      )}
+
       {error && (
-        <div style={{ background:'#fff5f5', border:'0.5px solid #f0a0a0', borderRadius:8, padding:'10px 16px', fontSize:12, color:'#c0392b', marginBottom:16 }}>
+        <div style={{ background:'#fff5f5', border:'0.5px solid #f0a0a0', borderRadius:8, padding:'10px 16px', fontSize:12, color:'#c0392b', marginBottom:20 }}>
           {error}
         </div>
       )}
 
-      {/* Generating spinner */}
-      {generating && !content && (
+      {generating && !briefContent && (
         <div style={{ padding:60, textAlign:'center', color:'#aaa', fontSize:13 }}>Generating your briefing...</div>
       )}
 
-      {/* Briefing content */}
-      {content && (
-        <div style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:12, padding:'28px 32px', opacity:generating?0.5:1, transition:'opacity 0.2s' }}>
-          {renderContent(content)}
+      {briefContent && (
+        <div style={{ opacity:generating?0.45:1, transition:'opacity 0.25s' }}>
+          {renderContent(briefContent)}
         </div>
       )}
 
-      {/* No content + no error */}
-      {!content && !generating && !error && (
+      {!briefContent && !generating && !error && (
         <div style={{ background:'#f7f7f5', border:'0.5px dashed #ccc', borderRadius:12, padding:'48px 32px', textAlign:'center', color:'#bbb', fontSize:13 }}>
           No briefing yet. Click Regenerate to create one.
         </div>
@@ -2925,14 +3014,14 @@ export default function App() {
                       <span style={{ fontSize:11, fontWeight:500, color:domCol.key?'#0C447C':'#aaa', textTransform:'uppercase', letterSpacing:'0.06em' }}>{domCol.lbl}</span>
                       <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{ct.length}</span>
                     </div>
+                    <button onClick={() => { setForm({ domain: domCol.key, status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>
+                      + Add task
+                    </button>
                     {ct.map(t => (
                       <div key={t.id} style={{ marginBottom:8 }}>
                         <TaskCard task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} />
                       </div>
                     ))}
-                    <button onClick={() => { setForm({ domain: domCol.key, status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginTop:4, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>
-                      + Add task
-                    </button>
                   </div>
                 )
               })}
@@ -2954,8 +3043,8 @@ export default function App() {
                 {COLS.filter(c => c.key===mobileCol).map(col => {
                   const ct = getColTasks(col.key)
                   return <div key={col.key} onDragOver={e => { e.preventDefault(); setOverCol(col.key) }} onDragLeave={() => setOverCol(null)} onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }} style={{ background:'#f7f7f5', borderRadius:12, padding:12, minHeight:200 }}>
+                    <button onClick={() => { setForm({ status:col.key }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'10px 0', fontSize:13, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>+ Add task</button>
                     {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} />)}
-                    <button onClick={() => { setForm({ status:col.key }); setIsEdit(false) }} style={{ width:'100%', marginTop:8, padding:'10px 0', fontSize:13, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>+ Add task</button>
                   </div>
                 })}
               </div>
@@ -2977,6 +3066,12 @@ export default function App() {
                           <button onClick={() => toggleMin(col.key)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:16, padding:'0 2px', lineHeight:1 }} onMouseEnter={e => e.currentTarget.style.color='#888'} onMouseLeave={e => e.currentTarget.style.color='#ccc'}>−</button>
                         </div>
                       </div>
+                      <button onClick={() => { setForm({ status:col.key }); setIsEdit(false) }}
+                        style={{ width:'100%', marginBottom:8, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}
+                        onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
+                        onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>
+                        + Add task
+                      </button>
                       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:4, alignItems:'start' }}>
                         {ct.map(t => (
                           <TaskCard key={t.id} task={t}
@@ -2990,12 +3085,6 @@ export default function App() {
                           />
                         ))}
                       </div>
-                      <button onClick={() => { setForm({ status:col.key }); setIsEdit(false) }}
-                        style={{ width:'100%', marginTop:8, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}
-                        onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
-                        onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>
-                        + Add task
-                      </button>
                     </div>
                   )
                 })}
