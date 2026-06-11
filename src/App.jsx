@@ -41,6 +41,7 @@ const CITIES = [
   { name: 'Puebla, MX', tz: 'America/Mexico_City' },
   { name: 'Bornem/Colmar', tz: 'Europe/Paris' },
   { name: 'Rewari, India', tz: 'Asia/Kolkata' },
+  { name: 'Jakarta', tz: 'Asia/Jakarta' },
   { name: 'Suzhou, China', tz: 'Asia/Shanghai' },
   { name: 'Sagamihara, Japan', tz: 'Asia/Tokyo' },
 ]
@@ -220,7 +221,7 @@ function OwnerPip({ name }) {
 }
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
-function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onToggleSubtask, dropIndicator, onDragOver, entityMap = {} }) {
+function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onToggleSubtask, dropIndicator, onDragOver, onComplete, entityMap = {} }) {
   const [notesOpen, setNotesOpen] = useState(false)
   const [subtasksOpen, setSubtasksOpen] = useState(false)
   const done = task.substatus === 'complete'
@@ -264,8 +265,8 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
               <div style={{ marginBottom:6, paddingLeft:2, marginTop:4 }}>
                 {subtasks.map(st => (
                   <div key={st.id} onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
-                    <input type="checkbox" checked={!!st.done} onChange={e => { e.stopPropagation(); onToggleSubtask(task.id, st.id, e.target.checked) }} style={{ width:12, height:12, cursor:'pointer' }} />
-                    <span style={{ fontSize:11, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
+                    <input type="checkbox" checked={!!st.done} disabled={!!st.na} onChange={e => { e.stopPropagation(); onToggleSubtask(task.id, st.id, e.target.checked) }} style={{ width:12, height:12, cursor:st.na?'default':'pointer' }} />
+                    <span style={{ fontSize:11, color:(st.done||st.na)?'#aaa':'#444', textDecoration:(st.done||st.na)?'line-through':'none', opacity:st.na?0.6:1 }}>{st.title}{st.na&&<span style={{ fontSize:9, marginLeft:4, color:'#bbb' }}>N/A</span>}</span>
                   </div>
                 ))}
               </div>
@@ -304,13 +305,23 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
           </>
         )}
       </div>
+      {onComplete && (
+        <button
+          onClick={e => { e.stopPropagation(); onComplete(task.id, !done) }}
+          title={done ? 'Mark incomplete' : 'Mark complete'}
+          style={{ position:'absolute', bottom:6, right:6, width:18, height:18, borderRadius:'50%', border:`1px solid ${done?'#97C459':'#ccc'}`, background:done?'#EAF3DE':'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:done?'#27500A':'#bbb', padding:0, lineHeight:1 }}
+          onMouseEnter={e => { if (!done) { e.currentTarget.style.borderColor='#97C459'; e.currentTarget.style.color='#27500A'; e.currentTarget.style.background='#EAF3DE' } }}
+          onMouseLeave={e => { if (!done) { e.currentTarget.style.borderColor='#ccc'; e.currentTarget.style.color='#bbb'; e.currentTarget.style.background='white' } }}>
+          ✓
+        </button>
+      )}
       {dropIndicator === 'after' && <div style={{ height:2, background:'#378ADD', borderRadius:1, marginTop:-4, marginBottom:4 }} />}
     </div>
   )
 }
 
 // ─── Today Strip ──────────────────────────────────────────────────────────────
-function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, onAdd, entityMap = {} }) {
+function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, onAdd, onComplete, entityMap = {} }) {
   const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete')
   return (
     <div onDragOver={e => { e.preventDefault(); onDragOver('today') }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), 'today') }}
@@ -331,7 +342,7 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8 }}>
           {todayTasks.map(t => (
             <div key={t.id} style={{ position:'relative' }}>
-              <TaskCard task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} compact entityMap={entityMap} />
+              <TaskCard task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} compact onComplete={onComplete} entityMap={entityMap} />
               <button onClick={e => { e.stopPropagation(); onRemove(t.id) }} style={{ position:'absolute', top:4, right:4, background:'none', border:'none', cursor:'pointer', fontSize:11, color:'#ccc' }} onMouseEnter={e => e.currentTarget.style.color='#333'} onMouseLeave={e => e.currentTarget.style.color='#ccc'}>✕</button>
             </div>
           ))}
@@ -564,6 +575,8 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
         onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
+          {project.type === 'bundle' && <span style={{ fontSize:9, fontWeight:500, background:'#EEF4FF', color:'#1a4fa0', padding:'2px 6px', borderRadius:20, border:'0.5px solid #93B8F0', whiteSpace:'nowrap' }}>Bundle</span>}
+          {project.type === 'qualification' && <span style={{ fontSize:9, fontWeight:500, background:'#EEEDFE', color:'#3C3489', padding:'2px 6px', borderRadius:20, border:'0.5px solid #A9A4E8', whiteSpace:'nowrap' }}>Qual</span>}
           {project.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{project.domain}</span>}
           {project.substatus && (() => { const ss = subStyle(project.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
           {project.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
@@ -602,36 +615,90 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
 
 // ─── Projects Section ─────────────────────────────────────────────────────────
 function ProjectsSection({ projects, tasks, onAdd, onOpen }) {
-  const [adding, setAdding] = useState(false)
+  const [step, setStep] = useState(null) // null | 'pick-type' | 'title' | 'qual-template'
+  const [newType, setNewType] = useState('project')
   const [newTitle, setNewTitle] = useState('')
+  const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const templates = JSON.parse(localStorage.getItem('taskr-qual-templates') || '[]')
+
+  const reset = () => { setStep(null); setNewTitle(''); setNewType('project'); setSelectedTemplate(null) }
+
   const handleAdd = () => {
     const title = newTitle.trim()
-    if (!title) { setAdding(false); return }
-    onAdd(title); setNewTitle(''); setAdding(false)
+    if (!title) { reset(); return }
+    onAdd(title, newType, selectedTemplate)
+    reset()
   }
+
+  const TYPE_OPTIONS = [
+    { key:'project', label:'Project', desc:'Track work with tasks', bg:'#f7f7f5', border:'#ddd', tc:'#333' },
+    { key:'bundle', label:'Bundle', desc:'Group related projects', bg:'#EEF4FF', border:'#93B8F0', tc:'#1a4fa0' },
+    { key:'qualification', label:'Qualification', desc:'Template-based record', bg:'#EEEDFE', border:'#A9A4E8', tc:'#3C3489' },
+  ]
+
   return (
     <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-        <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects</span>
-      </div>
       <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
         {projects.map(p => (
           <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} noteCount={Array.isArray(p.notes)?p.notes.length:0} attachCount={Array.isArray(p.attachments)?p.attachments.length:0} onOpen={onOpen} />
         ))}
-        {adding ? (
+
+        {step === null && (
+          <div onClick={() => setStep('pick-type')} style={{ flexShrink:0, width:200, border:'0.5px dashed #ccc', borderRadius:8, padding:'28px 12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#bbb', fontSize:12, minHeight:80, boxSizing:'border-box' }}>
+            + New
+          </div>
+        )}
+
+        {step === 'pick-type' && (
+          <div style={{ flexShrink:0, width:240, background:'white', border:'1px solid #e5e5e5', borderRadius:10, padding:12, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
+            <div style={{ fontSize:11, color:'#aaa', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>What are you creating?</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {TYPE_OPTIONS.map(t => (
+                <button key={t.key} onClick={() => { setNewType(t.key); setStep(t.key === 'qualification' ? 'qual-template' : 'title') }}
+                  style={{ textAlign:'left', background:t.bg, border:`1px solid ${t.border}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
+                  <div style={{ fontSize:12, fontWeight:500, color:t.tc }}>{t.label}</div>
+                  <div style={{ fontSize:11, color:'#888', marginTop:1 }}>{t.desc}</div>
+                </button>
+              ))}
+            </div>
+            <button onClick={reset} style={{ marginTop:8, width:'100%', fontSize:11, background:'none', border:'none', color:'#bbb', cursor:'pointer', padding:'4px 0' }}>Cancel</button>
+          </div>
+        )}
+
+        {step === 'qual-template' && (
+          <div style={{ flexShrink:0, width:240, background:'white', border:'1px solid #e5e5e5', borderRadius:10, padding:12, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
+            <div style={{ fontSize:11, color:'#aaa', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>Select template</div>
+            {templates.length === 0 ? (
+              <div style={{ fontSize:12, color:'#bbb', padding:'8px 0' }}>No templates yet — add them in Settings.</div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                {templates.map(t => (
+                  <button key={t.id} onClick={() => { setSelectedTemplate(t.id); setStep('title') }}
+                    style={{ textAlign:'left', background:'#fafafa', border:`1px solid ${selectedTemplate===t.id?'#A9A4E8':'#e5e5e5'}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
+                    <div style={{ fontSize:12, fontWeight:500, color:'#111' }}>{t.name}</div>
+                    <div style={{ fontSize:10, color:'#aaa' }}>{t.tasks?.length || 0} tasks</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={{ display:'flex', gap:4, marginTop:8 }}>
+              <button onClick={() => setStep('pick-type')} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888' }}>Back</button>
+              {templates.length > 0 && <button onClick={() => { setSelectedTemplate(null); setStep('title') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888' }}>Skip template</button>}
+            </div>
+          </div>
+        )}
+
+        {step === 'title' && (
           <div style={{ flexShrink:0, width:200 }}>
+            <div style={{ fontSize:11, color:'#aaa', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.06em' }}>{newType === 'bundle' ? 'Bundle' : newType === 'qualification' ? 'Qualification' : 'Project'} title</div>
             <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
-              onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewTitle('') } }}
-              placeholder="Project title..."
+              onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') reset() }}
+              placeholder="Title..."
               style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'8px 10px', border:'1.5px solid #111', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
             <div style={{ display:'flex', gap:4, marginTop:4 }}>
               <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
-              <button onClick={() => { setAdding(false); setNewTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
+              <button onClick={reset} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
             </div>
-          </div>
-        ) : (
-          <div onClick={() => setAdding(true)} style={{ flexShrink:0, width:200, border:'0.5px dashed #ccc', borderRadius:8, padding:'28px 12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#bbb', fontSize:12, minHeight:80, boxSizing:'border-box' }}>
-            + New project
           </div>
         )}
       </div>
@@ -1912,6 +1979,27 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
   )
 }
 
+// ─── Subtask Row ──────────────────────────────────────────────────────────────
+function SubtaskRow({ st, onChange, onDelete }) {
+  const faded = st.done || st.na
+  const upd = (field, val) => onChange({ ...st, [field]: val })
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6, padding:'5px 8px', background:'#fafafa', borderRadius:6, border:`0.5px solid ${st.na?'#ddd':'#f0f0f0'}` }}>
+      <input type="checkbox" checked={!!st.done} disabled={!!st.na}
+        onChange={e => upd('done', e.target.checked)}
+        style={{ width:13, height:13, cursor:st.na?'default':'pointer', flexShrink:0 }} />
+      <input value={st.title} onChange={e => upd('title', e.target.value)}
+        style={{ flex:1, fontSize:12, border:'none', outline:'none', background:'transparent', fontFamily:'inherit',
+          color:faded?'#aaa':'#444', textDecoration:faded?'line-through':'none', opacity:st.na?0.6:1 }} />
+      <button onClick={() => upd('na', !st.na)}
+        style={{ background:'none', border:'none', cursor:'pointer', color:st.na?'#888':'#ccc', fontSize:10, padding:'0 1px', fontWeight:500, lineHeight:1, flexShrink:0 }}>N/A</button>
+      <button onClick={onDelete}
+        style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12, lineHeight:1, flexShrink:0 }}
+        onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+    </div>
+  )
+}
+
 function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations, zIndex = 50, members = MEMBERS }) {
   const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, attachments:[] }
   const tempId = useRef(crypto.randomUUID())
@@ -1994,11 +2082,9 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
                 <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
                   <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Subtasks</label>
                   {f.subtasks.map(st => (
-                    <div key={st.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0' }}>
-                      <input type="checkbox" checked={!!st.done} onChange={e => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?{...s,done:e.target.checked}:s) }))} style={{ width:13, height:13, cursor:'pointer' }} />
-                      <span style={{ flex:1, fontSize:12, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
-                      <button onClick={() => setF(p => ({ ...p, subtasks:p.subtasks.filter(s => s.id!==st.id) }))} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
-                    </div>
+                    <SubtaskRow key={st.id} st={st}
+                      onChange={updated => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?updated:s) }))}
+                      onDelete={() => setF(p => ({ ...p, subtasks:p.subtasks.filter(s => s.id!==st.id) }))} />
                   ))}
                   <div style={{ display:'flex', gap:8, marginTop:4 }}>
                     <input type="text" value={newSub} onChange={e => setNewSub(e.target.value)} onKeyDown={e => { if (e.key==='Enter') addSub() }} placeholder="Add a subtask..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
@@ -2028,11 +2114,9 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
             <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
               <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Subtasks</label>
               {f.subtasks.map(st => (
-                <div key={st.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0' }}>
-                  <input type="checkbox" checked={!!st.done} onChange={e => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?{...s,done:e.target.checked}:s) }))} style={{ width:13, height:13, cursor:'pointer' }} />
-                  <span style={{ flex:1, fontSize:12, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
-                  <button onClick={() => setF(p => ({ ...p, subtasks:p.subtasks.filter(s => s.id!==st.id) }))} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
-                </div>
+                <SubtaskRow key={st.id} st={st}
+                  onChange={updated => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?updated:s) }))}
+                  onDelete={() => setF(p => ({ ...p, subtasks:p.subtasks.filter(s => s.id!==st.id) }))} />
               ))}
               <div style={{ display:'flex', gap:8, marginTop:4 }}>
                 <input type="text" value={newSub} onChange={e => setNewSub(e.target.value)} onKeyDown={e => { if (e.key==='Enter') addSub() }} placeholder="Add a subtask..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
@@ -2667,7 +2751,7 @@ const TEAM_MEMBERS = [
   { key: 'Matthew', label: 'Matthew', full: 'Matthew Miller', role: 'Quality Systems Specialist', loc: 'Greenwood, SC' },
 ]
 
-function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, overCol, toggleSubtask, entityMap = {} }) {
+function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, overCol, toggleSubtask, onComplete, entityMap = {} }) {
   const [member, setMember] = useState('all')
   const filtered = member === 'all' ? tasks : tasks.filter(t => (t.owners||['Levi']).includes(member))
   const visible = filtered.filter(t => t.substatus !== 'canceled')
@@ -2719,7 +2803,7 @@ function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDro
                 <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{col.lbl}</span>
                 <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{ct.length}</span>
               </div>
-              {ct.map(t => <TaskCard key={t.id} task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} entityMap={entityMap} />)}
+              {ct.map(t => <TaskCard key={t.id} task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={onComplete} entityMap={entityMap} />)}
             </div>
           )
         })}
@@ -2855,10 +2939,23 @@ export default function App() {
     await loadData(true)
   }
 
-  const addProject = async title => {
-    const { error } = await supabase.from('projects').insert({ title })
-    if (error) console.error('[TASKr] addProject error', error)
-    await loadData()
+  const addProject = async (title, type = 'project', templateId = null) => {
+    const { data: proj, error } = await supabase.from('projects').insert({ title, type }).select().single()
+    if (error || !proj) { console.error('[TASKr] addProject error', error); return }
+    if (type === 'qualification' && templateId) {
+      const templates = JSON.parse(localStorage.getItem('taskr-qual-templates') || '[]')
+      const tpl = templates.find(t => t.id === templateId)
+      if (tpl?.tasks?.length) {
+        const inserts = tpl.tasks.map((t, i) => ({
+          title: t.title, status: 'active', substatus: 'not_started',
+          project_id: proj.id, notes: [], attachments: [], owners: ['Levi'],
+          subtasks: (t.subtasks || []).map((s, j) => ({ id:`st${i}${j}`, title:s, done:false })),
+          sort_order: i + 1, updated_at: new Date().toISOString()
+        }))
+        await supabase.from('tasks').insert(inserts)
+      }
+    }
+    await loadData(true)
   }
 
   const saveProject = async (data, id) => {
@@ -2924,6 +3021,11 @@ export default function App() {
 
   const moveTask = async (id, newSubstatus) => {
     await supabase.from('tasks').update({ substatus: newSubstatus, updated_at: new Date().toISOString() }).eq('id', id)
+    await loadData()
+  }
+
+  const quickComplete = async (id, complete) => {
+    await supabase.from('tasks').update({ substatus: complete ? 'complete' : 'not_started', updated_at: new Date().toISOString() }).eq('id', id)
     await loadData()
   }
 
@@ -3080,12 +3182,12 @@ export default function App() {
 
           {!showTrash && (<>
           {/* Today strip */}
-          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} entityMap={entityMap} />
+          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} />
 
           {/* Projects section */}
           <div style={{ marginBottom:16 }}>
             <button onClick={() => toggleSection('projects')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#888' }}>
-              <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects</span>
+              <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
             </button>
             {isSectionOpen('projects') && <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} />}
@@ -3122,7 +3224,7 @@ export default function App() {
                     </button>
                     {ct.map(t => (
                       <div key={t.id} style={{ marginBottom:8 }}>
-                        <TaskCard task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} entityMap={entityMap} />
+                        <TaskCard task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={quickComplete} entityMap={entityMap} />
                       </div>
                     ))}
                   </div>
@@ -3147,7 +3249,7 @@ export default function App() {
                   const ct = getColTasks(col.key)
                   return <div key={col.key} onDragOver={e => { e.preventDefault(); setOverCol(col.key) }} onDragLeave={() => setOverCol(null)} onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }} style={{ background:'#f7f7f5', borderRadius:12, padding:12, minHeight:200 }}>
                     <button onClick={() => { setForm({ substatus:col.key, status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'10px 0', fontSize:13, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>+ Add task</button>
-                    {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} entityMap={entityMap} />)}
+                    {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={quickComplete} entityMap={entityMap} />)}
                   </div>
                 })}
               </div>
@@ -3183,6 +3285,7 @@ export default function App() {
                             onDragEnd={() => { setDraggingId(null); setOverCol(null); setDropTarget(null) }}
                             dragging={draggingId===t.id}
                             onToggleSubtask={toggleSubtask}
+                            onComplete={quickComplete}
                             dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null}
                             onDragOver={viewMode==='dynamic'?taskId => setDropTarget({ col:col.key, taskId, position:'before' }):null}
                             entityMap={entityMap}
@@ -3258,8 +3361,11 @@ export default function App() {
       {/* ── Settings ── */}
       {tab === 'settings' && (
         <div style={{ display:'flex', flexDirection:'column', gap:32 }}>
-          <DomainSettings domains={domains} onUpdate={loadData} />
-          <TeamSettings teamData={teamData} onUpdate={loadData} />
+          <QualTemplateSettings />
+          <div style={{ display:'flex', gap:32, alignItems:'flex-start' }}>
+            <div style={{ flex:1, minWidth:0 }}><DomainSettings domains={domains} onUpdate={loadData} /></div>
+            <div style={{ flex:1, minWidth:0 }}><TeamSettings teamData={teamData} onUpdate={loadData} /></div>
+          </div>
         </div>
       )}
 
@@ -3283,6 +3389,125 @@ export default function App() {
           members={memberNames}
         />
       )}
+    </div>
+  )
+}
+
+// ─── Qualification Template Settings ─────────────────────────────────────────
+function QualTemplateSettings() {
+  const load = () => JSON.parse(localStorage.getItem('taskr-qual-templates') || '[]')
+  const save = ts => localStorage.setItem('taskr-qual-templates', JSON.stringify(ts))
+
+  const [templates, setTemplates] = useState(load)
+  const [editId, setEditId] = useState(null)
+  const [draft, setDraft] = useState(null) // { name, tasks: [{title, subtasks:[string]}] }
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+
+  const startNew = () => { setDraft({ name:'', tasks:[] }); setEditId('new') }
+  const startEdit = t => { setDraft(JSON.parse(JSON.stringify(t))); setEditId(t.id) }
+  const cancel = () => { setDraft(null); setEditId(null); setNewTaskTitle('') }
+
+  const saveDraft = () => {
+    if (!draft.name.trim()) return
+    const ts = load()
+    if (editId === 'new') {
+      save([...ts, { ...draft, id: crypto.randomUUID(), name: draft.name.trim() }])
+    } else {
+      save(ts.map(t => t.id === editId ? { ...draft, name: draft.name.trim() } : t))
+    }
+    setTemplates(load()); cancel()
+  }
+
+  const deleteTemplate = id => { save(load().filter(t => t.id !== id)); setTemplates(load()) }
+
+  const addTask = () => {
+    const title = newTaskTitle.trim(); if (!title) return
+    setDraft(d => ({ ...d, tasks: [...d.tasks, { title, subtasks:[] }] }))
+    setNewTaskTitle('')
+  }
+  const removeTask = i => setDraft(d => ({ ...d, tasks: d.tasks.filter((_,idx) => idx !== i) }))
+  const updateTaskTitle = (i, v) => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===i?{...t,title:v}:t) }))
+  const addSubtask = (i, v) => { const s = v.trim(); if (!s) return; setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===i?{...t,subtasks:[...t.subtasks,s]}:t) })) }
+  const removeSubtask = (ti, si) => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===ti?{...t,subtasks:t.subtasks.filter((_,j)=>j!==si)}:t) }))
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+        <div>
+          <div style={{ fontSize:14, fontWeight:500, color:'#111', marginBottom:2 }}>Qualification Templates</div>
+          <div style={{ fontSize:12, color:'#aaa' }}>Pre-populate tasks when creating a qualification record.</div>
+        </div>
+        {editId === null && <button onClick={startNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>+ New template</button>}
+      </div>
+
+      {editId !== null && draft && (
+        <div style={{ background:'#fafafa', border:'0.5px solid #e5e5e5', borderRadius:10, padding:14, marginBottom:16 }}>
+          <input value={draft.name} onChange={e => setDraft(d => ({...d, name:e.target.value}))}
+            placeholder="Template name..."
+            style={{ width:'100%', boxSizing:'border-box', fontSize:14, fontWeight:500, border:'none', borderBottom:'1.5px solid #111', outline:'none', background:'transparent', padding:'4px 0', marginBottom:14, fontFamily:'inherit' }} />
+
+          <div style={{ fontSize:11, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Tasks</div>
+          {draft.tasks.map((task, ti) => (
+            <div key={ti} style={{ marginBottom:10, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'8px 10px' }}>
+              <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:4 }}>
+                <input value={task.title} onChange={e => updateTaskTitle(ti, e.target.value)}
+                  style={{ flex:1, fontSize:13, border:'none', outline:'none', background:'transparent', fontFamily:'inherit', fontWeight:500 }} />
+                <button onClick={() => removeTask(ti)} style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:13 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+              </div>
+              <div style={{ paddingLeft:10 }}>
+                {task.subtasks.map((s, si) => (
+                  <div key={si} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
+                    <input value={s} onChange={e => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===ti?{...t,subtasks:t.subtasks.map((sub,j)=>j===si?e.target.value:sub)}:t) }))}
+                      style={{ flex:1, fontSize:11, border:'none', borderBottom:'0.5px solid #e5e5e5', outline:'none', background:'transparent', fontFamily:'inherit', color:'#555', padding:'1px 0' }} />
+                    <button onClick={() => removeSubtask(ti, si)} style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:11 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                  </div>
+                ))}
+                <SubtaskAdder onAdd={s => addSubtask(ti, s)} />
+              </div>
+            </div>
+          ))}
+          <div style={{ display:'flex', gap:6, marginBottom:14 }}>
+            <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+              onKeyDown={e => { if (e.key==='Enter') addTask() }}
+              placeholder="Add a task..."
+              style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6, fontFamily:'inherit', outline:'none' }} />
+            <button onClick={addTask} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+          </div>
+          <div style={{ display:'flex', gap:6 }}>
+            <button onClick={saveDraft} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 16px', cursor:'pointer' }}>Save template</button>
+            <button onClick={cancel} style={{ fontSize:12, background:'none', border:'0.5px solid #ccc', borderRadius:8, padding:'6px 14px', cursor:'pointer', color:'#444' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {templates.length === 0 && editId === null && (
+        <div style={{ fontSize:12, color:'#ccc', padding:'12px 0' }}>No templates yet.</div>
+      )}
+      {templates.map(t => (
+        <div key={t.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, marginBottom:6 }}>
+          <div>
+            <div style={{ fontSize:13, fontWeight:500, color:'#111' }}>{t.name}</div>
+            <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{t.tasks?.length || 0} tasks</div>
+          </div>
+          <div style={{ display:'flex', gap:6 }}>
+            <button onClick={() => startEdit(t)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#444' }}>Edit</button>
+            <button onClick={() => deleteTemplate(t.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#A32D2D' }}>Delete</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SubtaskAdder({ onAdd }) {
+  const [val, setVal] = useState('')
+  return (
+    <div style={{ display:'flex', gap:4, marginTop:4 }}>
+      <input value={val} onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key==='Enter') { onAdd(val); setVal('') } }}
+        placeholder="Add subtask..."
+        style={{ flex:1, fontSize:11, padding:'3px 7px', border:'0.5px solid #e5e5e5', borderRadius:4, fontFamily:'inherit', outline:'none' }} />
+      <button onClick={() => { onAdd(val); setVal('') }} style={{ fontSize:10, background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 8px', cursor:'pointer', color:'#888' }}>+</button>
     </div>
   )
 }
