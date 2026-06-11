@@ -403,8 +403,8 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:30, zIndex:50 }}>
-        <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:520, maxHeight:'88vh', overflowY:'auto' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
+        <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:520, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
 
           {/* Title */}
           <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)}
@@ -2061,8 +2061,8 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
   )
 
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:30, zIndex }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88vh', overflowY:'auto' }}>
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Task title..."
           style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
 
@@ -2167,8 +2167,8 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
   const rd = f.recurrence_data || {}
 
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:30, zIndex:50 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:500, maxHeight:'90vh', overflowY:'auto' }}>
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:500, maxHeight:'90dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Event title..."
           style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
 
