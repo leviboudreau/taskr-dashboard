@@ -4,10 +4,11 @@ import { supabase } from './supabase'
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
 const COLS = [
-  { key: 'active', lbl: 'Active' },
-  { key: 'waiting', lbl: 'Waiting on' },
-  { key: 'someday', lbl: 'Someday' },
-  { key: 'done', lbl: 'Done' },
+  { key: 'not_started', lbl: 'Not started' },
+  { key: 'in_progress', lbl: 'In progress' },
+  { key: 'at_risk',     lbl: 'At risk' },
+  { key: 'on_hold',     lbl: 'On hold' },
+  { key: 'complete',    lbl: 'Complete' },
 ]
 const SUBSTATUS = [
   { key: '', label: '—' },
@@ -220,7 +221,7 @@ function OwnerPip({ name }) {
 function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onToggleSubtask, dropIndicator, onDragOver }) {
   const [notesOpen, setNotesOpen] = useState(false)
   const [subtasksOpen, setSubtasksOpen] = useState(false)
-  const done = task.status === 'done'
+  const done = task.substatus === 'complete'
   const bg = flagBg(task.color), border = flagBorder(task.color)
   const hasNotes = task.notes && task.notes.length > 0
   const attachCount = Array.isArray(task.attachments) ? task.attachments.length : 0
@@ -302,7 +303,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
 
 // ─── Today Strip ──────────────────────────────────────────────────────────────
 function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove }) {
-  const todayTasks = tasks.filter(t => t.today && t.status !== 'done')
+  const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete')
   return (
     <div onDragOver={e => { e.preventDefault(); onDragOver('today') }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), 'today') }}
       style={{ marginBottom:12, background:isOver?'#EEF4FF':'#f7f7f5', border:isOver?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12 }}>
@@ -463,8 +464,8 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
                 style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0', marginBottom:6, cursor:'pointer', boxSizing:'border-box' }}
                 onMouseEnter={e => e.currentTarget.style.background='#f2f2f0'}
                 onMouseLeave={e => e.currentTarget.style.background='#fafafa'}>
-                <span style={{ width:7, height:7, borderRadius:'50%', background:STATUS_DOT[t.status]||'#bbb', flexShrink:0 }} />
-                <span style={{ flex:1, fontSize:13, color:t.status==='done'?'#aaa':'#111', textDecoration:t.status==='done'?'line-through':'none' }}>{t.title}</span>
+                <span style={{ width:7, height:7, borderRadius:'50%', background:subStyle(t.substatus).bg||'#e5e5e5', border:`1px solid ${subStyle(t.substatus).border||'#ccc'}`, flexShrink:0 }} />
+                <span style={{ flex:1, fontSize:13, color:t.substatus==='complete'?'#aaa':'#111', textDecoration:t.substatus==='complete'?'line-through':'none' }}>{t.title}</span>
                 {t.domain && <span style={{ fontSize:9, background:'#E6F1FB', color:'#0C447C', padding:'2px 6px', borderRadius:6, border:'0.5px solid #85B7EB', flexShrink:0, whiteSpace:'nowrap' }}>{t.domain}</span>}
                 {t.priority === 'high' && <span style={{ fontSize:9, background:'#FCEBEB', color:'#791F1F', padding:'2px 5px', borderRadius:6, border:'0.5px solid #F09595', flexShrink:0 }}>High</span>}
                 <span style={{ fontSize:12, color:'#ccc', flexShrink:0 }}>›</span>
@@ -494,7 +495,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
                       style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px', cursor:'pointer', borderBottom:'0.5px solid #f0f0f0' }}
                       onMouseEnter={e => e.currentTarget.style.background='#f0f0ee'}
                       onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                      <span style={{ width:6, height:6, borderRadius:'50%', background:STATUS_DOT[t.status]||'#bbb', flexShrink:0 }} />
+                      <span style={{ width:6, height:6, borderRadius:'50%', background:subStyle(t.substatus).bg||'#e5e5e5', border:`1px solid ${subStyle(t.substatus).border||'#ccc'}`, flexShrink:0 }} />
                       <span style={{ flex:1, fontSize:12, color:'#111' }}>{t.title}</span>
                       {t.domain && <span style={{ fontSize:9, background:'#E6F1FB', color:'#0C447C', padding:'1px 6px', borderRadius:20, border:'0.5px solid #85B7EB', flexShrink:0 }}>{t.domain}</span>}
                       {(t.project_id || t.escalation_id) && <span style={{ fontSize:9, color:'#bbb', flexShrink:0 }}>linked</span>}
@@ -1899,11 +1900,12 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
 }
 
 function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations, zIndex = 50, members = MEMBERS }) {
-  const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], project_id:null, escalation_id:null, attachments:[] }
+  const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, attachments:[] }
   const tempId = useRef(crypto.randomUUID())
   const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:['Levi'], notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[], attachments:Array.isArray(task?.attachments)?task.attachments:[] })
   const [newNote, setNewNote] = useState('')
   const [newSub, setNewSub] = useState('')
+  const [showDetails, setShowDetails] = useState(false)
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
   const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { if (cur.length>1) set('owners', cur.filter(o => o!==m)) } else set('owners', [...cur, m]) }
   const addNote = () => { const text = newNote.trim(); if (!text) return; set('notes', [...f.notes, { id:'n'+Date.now(), text, ts:Date.now() }]); setNewNote('') }
@@ -1911,78 +1913,136 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
   const editNote = (id, text) => { if (!text) removeNote(id); else set('notes', f.notes.map(n => n.id===id?{...n,text}:n)) }
   const addSub = () => { const text = newSub.trim(); if (!text) return; set('subtasks', [...f.subtasks, { id:'st'+Date.now(), title:text, done:false }]); setNewSub('') }
 
+  const detailsSection = (
+    <>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+        <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Priority</label>
+          <select value={f.priority} onChange={e => set('priority', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+            <option value="">Normal</option><option value="high">High</option>
+          </select></div>
+        <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Domain</label>
+          <select value={f.domain} onChange={e => set('domain', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+            <option value="">— none —</option>
+            {(domains||[]).map(d => <option key={d} value={d}>{d}</option>)}
+          </select></div>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+        <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Due date</label>
+          <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
+        <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Flag color</label>
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
+          </div></div>
+      </div>
+      <div style={{ marginBottom:12 }}>
+        <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+          {MEMBERS.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+        </div>
+      </div>
+      <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#444', marginBottom:14, cursor:'pointer' }}>
+        <input type="checkbox" checked={!!f.today} onChange={e => set('today', e.target.checked)} style={{ width:14, height:14 }} />Include in Today
+      </label>
+      <AttachmentSection
+        attachments={f.attachments}
+        entityPath={isEdit && task?.id ? `tasks/${task.id}` : `tasks/tmp-${tempId.current}`}
+        onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
+        onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
+      />
+    </>
+  )
+
+  const expandBtn = (
+    <button onClick={() => setShowDetails(v => !v)}
+      style={{ fontSize:12, color:'#888', background:'none', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'5px 12px', cursor:'pointer', marginBottom:14, display:'block' }}>
+      {showDetails ? '▴ Hide details' : '▾ Add details'}
+    </button>
+  )
+
   return (
     <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:30, zIndex }}>
       <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88vh', overflowY:'auto' }}>
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Task title..."
           style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Status</label>
-            <select value={f.status} onChange={e => set('status', e.target.value)} style={{ width:'100%', fontSize:13 }}>
-              {['active','waiting','someday','done'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
-            </select></div>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Priority</label>
-            <select value={f.priority} onChange={e => set('priority', e.target.value)} style={{ width:'100%', fontSize:13 }}>
-              <option value="">Normal</option><option value="high">High</option>
-            </select></div>
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Sub-status</label>
-            <select value={f.substatus||''} onChange={e => set('substatus', e.target.value)} style={{ width:'100%', fontSize:13 }}>
-              {SUBSTATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-            </select></div>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Domain</label>
-            <select value={f.domain} onChange={e => set('domain', e.target.value)} style={{ width:'100%', fontSize:13 }}>
-              <option value="">— none —</option>
-              {domains.map(d => <option key={d} value={d}>{d}</option>)}
-            </select></div>
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Due date</label>
-            <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Flag color</label>
-            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-              {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
-            </div></div>
-        </div>
-        <div style={{ marginBottom:12 }}>
-          <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {MEMBERS.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
-          </div>
-        </div>
-        <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#444', marginBottom:14, cursor:'pointer' }}>
-          <input type="checkbox" checked={!!f.today} onChange={e => set('today', e.target.checked)} style={{ width:14, height:14 }} />Include in Today
-        </label>
-        <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
-          <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Subtasks</label>
-          {f.subtasks.map(st => (
-            <div key={st.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0' }}>
-              <input type="checkbox" checked={!!st.done} onChange={e => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?{...s,done:e.target.checked}:s) }))} style={{ width:13, height:13, cursor:'pointer' }} />
-              <span style={{ flex:1, fontSize:12, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
-              <button onClick={() => setF(p => ({ ...p, subtasks:p.subtasks.filter(s => s.id!==st.id) }))} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+
+        {!isEdit ? (
+          /* ── New task: title + optional details ── */
+          <>
+            {expandBtn}
+            {showDetails && (
+              <>
+                <div style={{ marginBottom:12 }}>
+                  <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Status</label>
+                  <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+                    {SUBSTATUS.filter(s => s.key && s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </div>
+                {detailsSection}
+                <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
+                  <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Subtasks</label>
+                  {f.subtasks.map(st => (
+                    <div key={st.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0' }}>
+                      <input type="checkbox" checked={!!st.done} onChange={e => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?{...s,done:e.target.checked}:s) }))} style={{ width:13, height:13, cursor:'pointer' }} />
+                      <span style={{ flex:1, fontSize:12, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
+                      <button onClick={() => setF(p => ({ ...p, subtasks:p.subtasks.filter(s => s.id!==st.id) }))} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                    </div>
+                  ))}
+                  <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                    <input type="text" value={newSub} onChange={e => setNewSub(e.target.value)} onKeyDown={e => { if (e.key==='Enter') addSub() }} placeholder="Add a subtask..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+                    <button onClick={addSub} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+                  </div>
+                </div>
+                <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4, marginTop:4 }}>
+                  <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Notes</label>
+                  {f.notes.map(n => <NoteItem key={n.id} note={n} onDelete={removeNote} onSave={editNote} />)}
+                  <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                    <textarea value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key==='Enter'&&(e.metaKey||e.ctrlKey)) addNote() }} placeholder="Add a note... (⌘+Enter to save)" style={{ flex:1, fontSize:12, height:56, resize:'none', fontFamily:'inherit', padding:'7px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+                    <button onClick={addNote} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          /* ── Edit task: key fields visible, rest collapsible ── */
+          <>
+            <div style={{ marginBottom:12 }}>
+              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Status</label>
+              <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+                {SUBSTATUS.filter(s => s.key && s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
             </div>
-          ))}
-          <div style={{ display:'flex', gap:8, marginTop:4 }}>
-            <input type="text" value={newSub} onChange={e => setNewSub(e.target.value)} onKeyDown={e => { if (e.key==='Enter') addSub() }} placeholder="Add a subtask..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
-            <button onClick={addSub} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
-          </div>
-        </div>
-        <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4, marginTop:4 }}>
-          <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Notes</label>
-          {f.notes.map(n => <NoteItem key={n.id} note={n} onDelete={removeNote} onSave={editNote} />)}
-          <div style={{ display:'flex', gap:8, marginTop:4 }}>
-            <textarea value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key==='Enter'&&(e.metaKey||e.ctrlKey)) addNote() }} placeholder="Add a note... (⌘+Enter to save)" style={{ flex:1, fontSize:12, height:56, resize:'none', fontFamily:'inherit', padding:'7px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
-            <button onClick={addNote} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
-          </div>
-        </div>
-        <AttachmentSection
-          attachments={f.attachments}
-          entityPath={isEdit && task?.id ? `tasks/${task.id}` : `tasks/tmp-${tempId.current}`}
-          onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
-          onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
-        />
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16 }}>
+            <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
+              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Subtasks</label>
+              {f.subtasks.map(st => (
+                <div key={st.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0' }}>
+                  <input type="checkbox" checked={!!st.done} onChange={e => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?{...s,done:e.target.checked}:s) }))} style={{ width:13, height:13, cursor:'pointer' }} />
+                  <span style={{ flex:1, fontSize:12, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
+                  <button onClick={() => setF(p => ({ ...p, subtasks:p.subtasks.filter(s => s.id!==st.id) }))} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                </div>
+              ))}
+              <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                <input type="text" value={newSub} onChange={e => setNewSub(e.target.value)} onKeyDown={e => { if (e.key==='Enter') addSub() }} placeholder="Add a subtask..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+                <button onClick={addSub} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+              </div>
+            </div>
+            <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:12, marginTop:4 }}>
+              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Notes</label>
+              {f.notes.map(n => <NoteItem key={n.id} note={n} onDelete={removeNote} onSave={editNote} />)}
+              <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                <textarea value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key==='Enter'&&(e.metaKey||e.ctrlKey)) addNote() }} placeholder="Add a note... (⌘+Enter to save)" style={{ flex:1, fontSize:12, height:56, resize:'none', fontFamily:'inherit', padding:'7px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+                <button onClick={addNote} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+              </div>
+            </div>
+            <button onClick={() => setShowDetails(v => !v)}
+              style={{ fontSize:12, color:'#888', background:'none', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'5px 12px', cursor:'pointer', marginBottom:14, display:'block' }}>
+              {showDetails ? '▴ Hide details' : '▾ Show details'}
+            </button>
+            {showDetails && detailsSection}
+          </>
+        )}
+
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:14 }}>
           <div>{isEdit && <button onClick={() => onDelete(task.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</button>}</div>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={onClose} style={{ fontSize:13, background:'none', border:'0.5px solid #ccc', borderRadius:8, padding:'7px 14px', cursor:'pointer', color:'#444' }}>Cancel</button>
@@ -2597,7 +2657,7 @@ const TEAM_MEMBERS = [
 function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, overCol, toggleSubtask }) {
   const [member, setMember] = useState('all')
   const filtered = member === 'all' ? tasks : tasks.filter(t => (t.owners||['Levi']).includes(member))
-  const visible = filtered.filter(t => t.status !== 'canceled')
+  const visible = filtered.filter(t => t.substatus !== 'canceled')
   const info = TEAM_MEMBERS.find(m => m.key === member)
 
   return (
@@ -2637,11 +2697,11 @@ function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDro
       {/* Board */}
       <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
         {COLS.map(col => {
-          const ct = visible.filter(t => t.status === col.key)
+          const ct = visible.filter(t => (t.substatus||(t.status==='done'?'complete':'not_started')) === col.key)
           const colKey = `team-${col.key}-${member}`
           return (
             <div key={col.key} onDragOver={e => { e.preventDefault(); onDragOver(col.key) }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), col.key) }}
-              style={{ flex:1, minWidth:0, background:overCol===col.key?'#EEF4FF':'#f7f7f5', border:overCol===col.key?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12, minHeight:180 }}>
+              style={{ flex:'1 1 180px', minWidth:180, background:overCol===col.key?'#EEF4FF':'#f7f7f5', border:overCol===col.key?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12, minHeight:180 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
                 <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{col.lbl}</span>
                 <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{ct.length}</span>
@@ -2728,9 +2788,9 @@ export default function App() {
 
   const buildTaskPayload = data => {
     const payload = {
-      title: data.title, status: data.status, domain: data.domain||'',
+      title: data.title, status: 'active', domain: data.domain||'',
       owners: data.owners||['Levi'], due: data.due||'', priority: data.priority||'',
-      color: data.color||'', substatus: data.substatus||'',
+      color: data.color||'', substatus: data.substatus||'not_started',
       notes: data.notes||[], today: !!data.today, subtasks: data.subtasks||[], attachments: data.attachments||[],
       updated_at: new Date().toISOString(),
     }
@@ -2835,15 +2895,12 @@ export default function App() {
   }
 
   const restoreTask = async (task) => {
-    const upd = { updated_at: new Date().toISOString() }
-    if (task.status === 'canceled') upd.status = 'active'
-    if (task.substatus === 'canceled') upd.substatus = ''
-    await supabase.from('tasks').update(upd).eq('id', task.id)
+    await supabase.from('tasks').update({ substatus: 'not_started', updated_at: new Date().toISOString() }).eq('id', task.id)
     await loadData()
   }
 
-  const moveTask = async (id, newStatus) => {
-    await supabase.from('tasks').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
+  const moveTask = async (id, newSubstatus) => {
+    await supabase.from('tasks').update({ substatus: newSubstatus, updated_at: new Date().toISOString() }).eq('id', id)
     await loadData()
   }
 
@@ -2861,7 +2918,7 @@ export default function App() {
   }
 
   const reorderTask = async (dragId, targetId, position, col) => {
-    const colTasks = tasks.filter(t => t.status === col && t.status !== 'canceled').sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
+    const colTasks = tasks.filter(t => (t.substatus||(t.status==='done'?'complete':'not_started')) === col && t.substatus !== 'canceled').sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
     const dragIdx = colTasks.findIndex(t => t.id === dragId)
     const targetIdx = colTasks.findIndex(t => t.id === targetId)
     if (dragIdx === -1) return
@@ -2869,7 +2926,7 @@ export default function App() {
     const insertAt = position === 'before' ? targetIdx : targetIdx + 1
     const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
     colTasks.splice(Math.max(0, adjustedInsert), 0, ...moved)
-    const updates = colTasks.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, status: col, updated_at: new Date().toISOString() }).eq('id', t.id))
+    const updates = colTasks.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, substatus: col, updated_at: new Date().toISOString() }).eq('id', t.id))
     await Promise.all(updates)
     await loadData()
   }
@@ -2903,7 +2960,7 @@ export default function App() {
     setActiveProject(null)
   }
   const openAddTask = (extra = {}) => {
-    setForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], attachments:[], project_id:null, escalation_id:null, ...extra })
+    setForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], attachments:[], project_id:null, escalation_id:null, ...extra })
     setIsEdit(false)
   }
 
@@ -2917,7 +2974,8 @@ export default function App() {
   ).filter(t => filterOwner === 'all' || (t.owners||['Levi']).includes(filterOwner))
    .filter(t => t.substatus !== 'canceled')
 
-  const getColTasks = (colKey) => filteredTasks.filter(t => t.status === colKey && t.status !== 'canceled' && t.substatus !== 'canceled')
+  const taskSubstatus = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
+  const getColTasks = colKey => filteredTasks.filter(t => taskSubstatus(t) === colKey)
 
   if (loading) return (
     <div style={{ fontFamily:'system-ui,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'#888', fontSize:14 }}>
@@ -2929,7 +2987,8 @@ export default function App() {
     <div style={{ fontFamily:'system-ui,sans-serif', padding:isMobile?'0.75rem':'1.25rem 1.5rem', maxWidth:1400, margin:'0 auto' }}>
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'1.25rem', paddingBottom:'1rem', borderBottom:'0.5px solid #e5e5e5' }}>
-        <h1 style={{ fontSize:18, fontWeight:500, color:'#111', margin:0 }}>💪🏻 TASKr Dashboard</h1>
+        <h1 style={{ fontSize:22, fontWeight:700, color:'#111', margin:0, letterSpacing:'-0.5px', animation:'taskrFloat 3s ease-in-out infinite' }}>💪🏻 TASKr</h1>
+        <style>{`@keyframes taskrFloat { 0%,100%{transform:translateY(0);text-shadow:0 4px 12px rgba(0,0,0,0.08)} 50%{transform:translateY(-4px);text-shadow:0 8px 20px rgba(0,0,0,0.14)} }`}</style>
         <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
           <span style={{ fontSize:12, color:'#aaa' }}>{new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
           <span style={{ fontSize:10, color:'#bbb' }}>Live · Supabase</span>
@@ -2983,9 +3042,9 @@ export default function App() {
                 title="Trash"
                 style={{ position:'relative', background:showTrash?'#fff0f0':'white', border:showTrash?'0.5px solid #f09595':'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 10px', cursor:'pointer', height:28, display:'flex', alignItems:'center' }}>
                 <span style={{ fontSize:10 }}>🗑️</span>
-                {tasks.filter(t=>t.status==='canceled'||t.substatus==='canceled').length > 0 && (
+                {tasks.filter(t=>t.substatus==='canceled').length > 0 && (
                   <span style={{ position:'absolute', top:-4, right:-4, background:'#c0392b', color:'white', borderRadius:'50%', fontSize:9, width:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, lineHeight:1 }}>
-                    {tasks.filter(t=>t.status==='canceled'||t.substatus==='canceled').length}
+                    {tasks.filter(t=>t.substatus==='canceled').length}
                   </span>
                 )}
               </button>
@@ -3006,7 +3065,7 @@ export default function App() {
           {viewMode === 'domain' && (
             <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto' }}>
               {[...domains.map(d => ({ key:d, lbl:d })), { key:'', lbl:'No domain' }].map(domCol => {
-                const ct = filteredTasks.filter(t => (t.domain||'') === domCol.key && t.status !== 'canceled' && t.substatus !== 'canceled')
+                const ct = filteredTasks.filter(t => (t.domain||'') === domCol.key)
                 if (ct.length === 0 && domCol.key !== '') return null
                 return (
                   <div key={domCol.key} style={{ flex:'0 0 220px', background:'#f7f7f5', borderRadius:12, padding:12, minHeight:180 }}>
@@ -3043,7 +3102,7 @@ export default function App() {
                 {COLS.filter(c => c.key===mobileCol).map(col => {
                   const ct = getColTasks(col.key)
                   return <div key={col.key} onDragOver={e => { e.preventDefault(); setOverCol(col.key) }} onDragLeave={() => setOverCol(null)} onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }} style={{ background:'#f7f7f5', borderRadius:12, padding:12, minHeight:200 }}>
-                    <button onClick={() => { setForm({ status:col.key }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'10px 0', fontSize:13, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>+ Add task</button>
+                    <button onClick={() => { setForm({ substatus:col.key, status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'10px 0', fontSize:13, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>+ Add task</button>
                     {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} />)}
                   </div>
                 })}
@@ -3066,7 +3125,7 @@ export default function App() {
                           <button onClick={() => toggleMin(col.key)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:16, padding:'0 2px', lineHeight:1 }} onMouseEnter={e => e.currentTarget.style.color='#888'} onMouseLeave={e => e.currentTarget.style.color='#ccc'}>−</button>
                         </div>
                       </div>
-                      <button onClick={() => { setForm({ status:col.key }); setIsEdit(false) }}
+                      <button onClick={() => { setForm({ substatus:col.key, status:'active' }); setIsEdit(false) }}
                         style={{ width:'100%', marginBottom:8, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}
                         onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
                         onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>
@@ -3118,9 +3177,9 @@ export default function App() {
                 <span style={{ fontSize:12, fontWeight:500, color:'#888' }}>🗑️ Trash</span>
                 <span style={{ fontSize:11, color:'#bbb' }}>Canceled tasks — click Restore to recover.</span>
               </div>
-              {tasks.filter(t=>t.status==='canceled'||t.substatus==='canceled').length === 0 && <div style={{ fontSize:13, color:'#ccc', textAlign:'center', padding:'2rem 0' }}>Trash bin is empty</div>}
+              {tasks.filter(t=>t.substatus==='canceled').length === 0 && <div style={{ fontSize:13, color:'#ccc', textAlign:'center', padding:'2rem 0' }}>Trash bin is empty</div>}
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:10 }}>
-                {tasks.filter(t=>t.status==='canceled'||t.substatus==='canceled').map(t => (
+                {tasks.filter(t=>t.substatus==='canceled').map(t => (
                   <div key={t.id} style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'10px 12px', opacity:0.75 }}>
                     <div style={{ fontSize:13, fontWeight:500, color:'#888', textDecoration:'line-through', marginBottom:6 }}>{t.title}</div>
                     {t.domain && <div style={{ fontSize:11, color:'#aaa', marginBottom:8 }}>{t.domain}</div>}
