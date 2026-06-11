@@ -310,7 +310,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
 }
 
 // ─── Today Strip ──────────────────────────────────────────────────────────────
-function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, entityMap = {} }) {
+function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, onAdd, entityMap = {} }) {
   const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete')
   return (
     <div onDragOver={e => { e.preventDefault(); onDragOver('today') }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), 'today') }}
@@ -320,7 +320,12 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
           <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>Today</span>
           <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{todayTasks.length}</span>
         </div>
-        <span style={{ fontSize:11, color:'#bbb' }}>Drag tasks here · or check in with Claude each morning</span>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <button onClick={onAdd} style={{ fontSize:11, color:'#aaa', background:'none', border:'0.5px dashed #ccc', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}
+            onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
+            onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>+ Add task</button>
+          <span style={{ fontSize:11, color:'#bbb' }}>or drag tasks here</span>
+        </div>
       </div>
       {todayTasks.length > 0 ? (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8 }}>
@@ -2744,6 +2749,15 @@ export default function App() {
   const [minimized, setMinimized] = useState(() => {
     try { return JSON.parse(localStorage.getItem('taskr-minimized-cols') || '{}') } catch { return {} }
   })
+  const [sectionsOpen, setSectionsOpen] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('taskr-sections-open') || '{}') } catch { return {} }
+  })
+  const toggleSection = key => setSectionsOpen(prev => {
+    const next = { ...prev, [key]: prev[key] === false ? true : false }
+    localStorage.setItem('taskr-sections-open', JSON.stringify(next))
+    return next
+  })
+  const isSectionOpen = key => sectionsOpen[key] !== false
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
   const [mobileCol, setMobileCol] = useState('active')
   const [viewMode, setViewMode] = useState('order') // 'order' | 'dynamic' | 'domain'
@@ -3066,16 +3080,33 @@ export default function App() {
 
           {!showTrash && (<>
           {/* Today strip */}
-          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} entityMap={entityMap} />
+          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} entityMap={entityMap} />
 
           {/* Projects section */}
-          <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} />
+          <div style={{ marginBottom:16 }}>
+            <button onClick={() => toggleSection('projects')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#888' }}>
+              <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects</span>
+              <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
+            </button>
+            {isSectionOpen('projects') && <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} />}
+          </div>
 
           {/* Escalations section */}
-          <EscalationsSection escalations={filterOwner==='all'?escalations:escalations.filter(e=>(e.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />
+          <div style={{ marginBottom:16 }}>
+            <button onClick={() => toggleSection('escalations')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#888' }}>
+              <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
+              <span style={{ fontSize:11 }}>{isSectionOpen('escalations') ? '▴' : '▾'}</span>
+            </button>
+            {isSectionOpen('escalations') && <EscalationsSection escalations={filterOwner==='all'?escalations:escalations.filter(e=>(e.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />}
+          </div>
 
-          {/* ── Domain grouped view ── */}
-          {viewMode === 'domain' && (
+          {/* ── Tasks kanban ── */}
+          <button onClick={() => toggleSection('kanban')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 10px 0', color:'#888' }}>
+            <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Tasks</span>
+            <span style={{ fontSize:11 }}>{isSectionOpen('kanban') ? '▴' : '▾'}</span>
+          </button>
+
+          {isSectionOpen('kanban') && viewMode === 'domain' && (
             <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto' }}>
               {[...domains.map(d => ({ key:d, lbl:d })), { key:'', lbl:'No domain' }].map(domCol => {
                 const ct = filteredTasks.filter(t => (t.domain||'') === domCol.key)
@@ -3101,7 +3132,7 @@ export default function App() {
           )}
 
           {/* ── Standard / Dynamic column view ── */}
-          {viewMode !== 'domain' && (
+          {isSectionOpen('kanban') && viewMode !== 'domain' && (
             isMobile ? (
               <div>
                 <div style={{ display:'flex', gap:6, marginBottom:10, overflowX:'auto' }}>
@@ -3168,9 +3199,9 @@ export default function App() {
                       const ct = getColTasks(col.key)
                       return (
                         <div key={col.key} onClick={() => toggleMin(col.key)}
-                          style={{ width:28, minHeight:90, background:'#f7f7f5', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, padding:'8px 0', cursor:'pointer', userSelect:'none' }}
-                          onMouseEnter={e => e.currentTarget.style.background='#eeede9'}
-                          onMouseLeave={e => e.currentTarget.style.background='#f7f7f5'}>
+                          style={{ width:28, minHeight:90, background:col.key==='hopper'?'#FFFBE6':'#f7f7f5', border:col.key==='hopper'?'1.5px solid #C9960A':'1.5px solid transparent', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, padding:'8px 0', cursor:'pointer', userSelect:'none' }}
+                          onMouseEnter={e => e.currentTarget.style.background=col.key==='hopper'?'#FFF3B0':'#eeede9'}
+                          onMouseLeave={e => e.currentTarget.style.background=col.key==='hopper'?'#FFFBE6':'#f7f7f5'}>
                           <span style={{ fontSize:10, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'1px 4px', color:'#aaa' }}>{ct.length}</span>
                           <span style={{ fontSize:10, color:'#bbb', fontWeight:500, writingMode:'vertical-rl', transform:'rotate(180deg)', letterSpacing:'0.06em', textTransform:'uppercase' }}>{col.lbl}</span>
                         </div>
