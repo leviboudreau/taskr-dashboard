@@ -309,7 +309,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
         <button
           onClick={e => { e.stopPropagation(); onComplete(task.id, !done) }}
           title={done ? 'Mark incomplete' : 'Mark complete'}
-          style={{ position:'absolute', bottom:6, right:6, width:18, height:18, borderRadius:'50%', border:`1px solid ${done?'#97C459':'#ccc'}`, background:done?'#EAF3DE':'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:done?'#27500A':'#bbb', padding:0, lineHeight:1 }}
+          style={{ position:'absolute', bottom:5, right:5, width:14, height:14, borderRadius:'50%', border:`1px solid ${done?'#97C459':'#ccc'}`, background:done?'#EAF3DE':'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, color:done?'#27500A':'#bbb', padding:0, lineHeight:1 }}
           onMouseEnter={e => { if (!done) { e.currentTarget.style.borderColor='#97C459'; e.currentTarget.style.color='#27500A'; e.currentTarget.style.background='#EAF3DE' } }}
           onMouseLeave={e => { if (!done) { e.currentTarget.style.borderColor='#ccc'; e.currentTarget.style.color='#bbb'; e.currentTarget.style.background='white' } }}>
           ✓
