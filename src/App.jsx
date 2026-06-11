@@ -244,56 +244,60 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
         onMouseEnter={e => { if (!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if (!border) e.currentTarget.style.borderColor='#e5e5e5' }}
       >
-        <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:3, marginBottom:3 }}>
-          {task.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.domain}</span>}
-          {task.substatus && (() => { const ss = subStyle(task.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
-          {task.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
-        </div>
-        <div style={{ fontSize:13, fontWeight:500, color:done?'#999':'#111', textDecoration:done?'line-through':'none', marginBottom:4, lineHeight:1.4, overflowWrap:'break-word', wordBreak:'break-word' }}>{task.title}</div>
-        <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', marginBottom:!compact&&(hasNotes||showOwners||hasSubtasks)?6:0 }}>
-          {task.due && <Badge type="due">{task.due}</Badge>}
-          {done && <Badge type="done">Done</Badge>}
-        </div>
-        {subtasksOpen && !compact && hasSubtasks && (
-          <div style={{ marginBottom:6, paddingLeft:2, marginTop:4 }}>
-            {subtasks.map(st => (
-              <div key={st.id} onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
-                <input type="checkbox" checked={!!st.done} onChange={e => { e.stopPropagation(); onToggleSubtask(task.id, st.id, e.target.checked) }} style={{ width:12, height:12, cursor:'pointer' }} />
-                <span style={{ fontSize:11, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
+        {!done && (
+          <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:3, marginBottom:3 }}>
+            {task.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.domain}</span>}
+            {task.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
+          </div>
+        )}
+        <div style={{ fontSize:done?11:13, fontWeight:500, color:done?'#999':'#111', textDecoration:done?'line-through':'none', marginBottom:done?0:4, lineHeight:1.4, overflowWrap:'break-word', wordBreak:'break-word' }}>{task.title}</div>
+        {!done && (
+          <>
+            <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', marginBottom:!compact&&(hasNotes||showOwners||hasSubtasks)?6:0 }}>
+              {task.due && <Badge type="due">{task.due}</Badge>}
+            </div>
+            {subtasksOpen && !compact && hasSubtasks && (
+              <div style={{ marginBottom:6, paddingLeft:2, marginTop:4 }}>
+                {subtasks.map(st => (
+                  <div key={st.id} onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                    <input type="checkbox" checked={!!st.done} onChange={e => { e.stopPropagation(); onToggleSubtask(task.id, st.id, e.target.checked) }} style={{ width:12, height:12, cursor:'pointer' }} />
+                    <span style={{ fontSize:11, color:st.done?'#aaa':'#444', textDecoration:st.done?'line-through':'none' }}>{st.title}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-        {notesOpen && !compact && hasNotes && (
-          <div style={{ marginBottom:6, borderTop:'0.5px solid #e5e5e5', paddingTop:8, marginTop:4 }}>
-            {task.notes.map(n => (
-              <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:5, lineHeight:1.5 }}>
-                <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+            )}
+            {notesOpen && !compact && hasNotes && (
+              <div style={{ marginBottom:6, borderTop:'0.5px solid #e5e5e5', paddingTop:8, marginTop:4 }}>
+                {task.notes.map(n => (
+                  <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:5, lineHeight:1.5 }}>
+                    <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-        {!compact && showOwners && (
-          <div style={{ display:'flex', gap:3, marginTop:2, marginBottom:hasSubtasks||hasNotes?4:0 }}>
-            {owners.map(o => <OwnerPip key={o} name={o} />)}
-          </div>
-        )}
-        {!compact && (hasSubtasks || hasNotes || attachCount > 0) && (
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:4, marginTop:2 }}>
-            {attachCount > 0 && (
-              <span style={{ fontSize:10, color:'#aaa', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px' }}>📎 {attachCount}</span>
             )}
-            {hasNotes && (
-              <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
-                {notesOpen ? 'hide notes' : `${task.notes.length} note${task.notes.length>1?'s':''}`}
-              </button>
+            {!compact && showOwners && (
+              <div style={{ display:'flex', gap:3, marginTop:2, marginBottom:hasSubtasks||hasNotes?4:0 }}>
+                {owners.map(o => <OwnerPip key={o} name={o} />)}
+              </div>
             )}
-            {hasSubtasks && (
-              <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
-                {subtasksOpen ? 'hide' : `${completedSubs}/${subtasks.length} sub`}
-              </button>
+            {!compact && (hasSubtasks || hasNotes || attachCount > 0) && (
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:4, marginTop:2 }}>
+                {attachCount > 0 && (
+                  <span style={{ fontSize:10, color:'#aaa', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px' }}>📎 {attachCount}</span>
+                )}
+                {hasNotes && (
+                  <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
+                    {notesOpen ? 'hide notes' : `${task.notes.length} note${task.notes.length>1?'s':''}`}
+                  </button>
+                )}
+                {hasSubtasks && (
+                  <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
+                    {subtasksOpen ? 'hide' : `${completedSubs}/${subtasks.length} sub`}
+                  </button>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
       {dropIndicator === 'after' && <div style={{ height:2, background:'#378ADD', borderRadius:1, marginTop:-4, marginBottom:4 }} />}
