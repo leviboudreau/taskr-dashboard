@@ -541,6 +541,8 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
   const [notesOpen, setNotesOpen] = useState(false)
   const notes = Array.isArray(project.notes) ? project.notes : []
   const bg = flagBg(project.color), border = flagBorder(project.color)
+  const owners = project.owners || ['Levi']
+  const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
   return (
     <div style={{ position:'relative', flexShrink:0, width:200 }}>
       <div onClick={() => onOpen(project)}
@@ -560,6 +562,11 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
                 <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
               </div>
             ))}
+          </div>
+        )}
+        {showOwners && (
+          <div style={{ display:'flex', gap:3, marginBottom:5 }}>
+            {owners.map(o => <OwnerPip key={o} name={o} />)}
           </div>
         )}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
@@ -624,6 +631,8 @@ function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0,
   const notes = Array.isArray(escalation.notes) ? escalation.notes : []
   const RED = '#c0392b', REDBORDER = '#f0a0a0'
   const bg = flagBg(escalation.color), border = flagBorder(escalation.color)
+  const owners = escalation.owners || ['Levi']
+  const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
   return (
     <div style={{ position:'relative', flexShrink:0, width:200 }}>
       <div onClick={() => onOpen(escalation)}
@@ -643,6 +652,11 @@ function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0,
                 <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
               </div>
             ))}
+          </div>
+        )}
+        {showOwners && (
+          <div style={{ display:'flex', gap:3, marginBottom:5 }}>
+            {owners.map(o => <OwnerPip key={o} name={o} />)}
           </div>
         )}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
@@ -809,6 +823,43 @@ function RichTextEditor({ initialValue, onChange }) {
   }
 
   const handleKeyDown = e => {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      if (tableCtx) {
+        const { td, tr, table } = tableCtx
+        const rows = Array.from(table.rows)
+        const colIdx = Array.from(tr.cells).indexOf(td)
+        const rowIdx = rows.indexOf(tr)
+        if (e.shiftKey) {
+          const prev = colIdx > 0 ? tr.cells[colIdx - 1]
+            : rowIdx > 0 ? rows[rowIdx - 1].cells[rows[rowIdx - 1].cells.length - 1] : null
+          if (prev) focusCell(prev)
+        } else {
+          if (colIdx < tr.cells.length - 1) {
+            focusCell(tr.cells[colIdx + 1])
+          } else if (rowIdx < rows.length - 1) {
+            focusCell(rows[rowIdx + 1].cells[0])
+          } else {
+            tableOp('row-below')
+            const newRow = Array.from(table.rows)[rowIdx + 1]
+            if (newRow) focusCell(newRow.cells[0])
+          }
+        }
+      } else {
+        let cur = window.getSelection()?.anchorNode
+        let inList = false
+        while (cur && cur !== editorRef.current) {
+          if (cur.nodeName === 'LI') { inList = true; break }
+          cur = cur.parentNode
+        }
+        if (inList) {
+          e.shiftKey ? exec('outdent') : exec('indent')
+        } else {
+          exec('insertText', '    ')
+        }
+      }
+      return
+    }
     if (e.key !== 'Enter' && e.key !== 'Backspace') return
     const ctx = getChecklistCtx()
     if (!ctx) return
@@ -973,7 +1024,7 @@ function RichTextEditor({ initialValue, onChange }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
-      <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}`}</style>
+      <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}.note-editor ul,.note-editor ol{padding-left:18px;margin:2px 0}.note-editor ol{list-style:none;counter-reset:item}.note-editor ol>li{counter-increment:item}.note-editor ol>li::before{content:counters(item,".")". ";margin-right:3px}`}</style>
       {/* Row 1: text formatting + lists + table + size */}
       <div style={{ ...rowStyle, borderTop:'0.5px solid #e5e5e5', borderRadius:'8px 8px 0 0' }}>
         {tbtn('B', 'bold', null, { fontWeight:700 })}
@@ -1092,6 +1143,262 @@ function RichTextEditor({ initialValue, onChange }) {
         onMouseLeave={() => setTableHover([0,0])}
         className="note-editor"
         style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize:13, lineHeight:1.4, overflowY:'auto', color:'#333', minHeight:200 }} />
+    </div>
+  )
+}
+
+// ─── Briefing Tab ─────────────────────────────────────────────────────────────
+function BriefingTab() {
+  const todayISO = toISODate(new Date())
+  const [content, setContent] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState(null)
+  const [history, setHistory] = useState([])
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(null)
+  const histRef = useRef()
+
+  useEffect(() => {
+    checkAndLoad()
+    loadHistory()
+  }, [])
+
+  useEffect(() => {
+    if (!historyOpen) return
+    const handler = e => { if (histRef.current && !histRef.current.contains(e.target)) setHistoryOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [historyOpen])
+
+  const loadHistory = async () => {
+    const { data } = await supabase.from('briefings').select('date').order('date', { ascending: false }).limit(60)
+    if (data) setHistory(data.map(r => r.date))
+  }
+
+  const checkAndLoad = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { data } = await supabase.from('briefings').select('content').eq('date', todayISO).maybeSingle()
+      if (data?.content) {
+        setContent(data.content)
+        setLoading(false)
+      } else {
+        setLoading(false)
+        await generate()
+      }
+    } catch (e) {
+      setError('Could not load briefing: ' + e.message)
+      setLoading(false)
+    }
+  }
+
+  const generate = async () => {
+    setGenerating(true)
+    setError(null)
+    try {
+      const [{ data: tasks }, { data: calRaw }] = await Promise.all([
+        supabase.from('tasks').select('*').eq('status', 'active'),
+        supabase.from('calendar_events').select('*'),
+      ])
+
+      const todayDate = fromISODate(todayISO)
+      const todayEvents = getEventsForRange(calRaw || [], todayDate, todayDate)
+        .filter(ev => ev.start_date === todayISO && ev.type !== 'travel')
+        .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+      const travelEvents = getEventsForRange(calRaw || [], todayDate, todayDate)
+        .filter(ev => ev.type === 'travel')
+
+      // Horizon: tasks + events in next 14 days
+      const horizon = new Date(todayDate); horizon.setDate(horizon.getDate() + 14)
+      const horizonEvents = getEventsForRange(calRaw || [], new Date(todayDate.getTime() + 86400000), horizon)
+        .filter(ev => ev.type === 'travel' || ev.start_date > todayISO)
+
+      const dateStr = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
+
+      const calLines = [...travelEvents.map(ev => `- [Travel] ${ev.title}`), ...todayEvents.map(ev => {
+        const t = ev.all_day ? 'All day' : (ev.start_time ? ev.start_time.slice(0,5) : '')
+        const dur = (!ev.all_day && ev.start_time && ev.end_time)
+          ? Math.round((new Date(`2000-01-01T${ev.end_time}`) - new Date(`2000-01-01T${ev.start_time}`)) / 60000)
+          : null
+        return `- [${t}] ${ev.title}${dur ? ` (${dur} min)` : ''}`
+      })].join('\n') || 'None scheduled.'
+
+      const taskLines = (tasks || []).map(t => {
+        const parts = [`- [${t.title}]`]
+        if ((t.owners||[]).length) parts.push(`owners: ${t.owners.join(', ')}`)
+        if (t.substatus) parts.push(`substatus: ${t.substatus}`)
+        if (t.color) parts.push(`flag: ${t.color}`)
+        if (t.due) parts.push(`due: ${t.due}`)
+        const openSubs = (Array.isArray(t.subtasks) ? t.subtasks : []).filter(s => !s.done).length
+        if (openSubs) parts.push(`open subtasks: ${openSubs}`)
+        return parts.join(' | ')
+      }).join('\n') || 'None.'
+
+      const horizonLines = horizonEvents.length
+        ? horizonEvents.map(ev => `- ${ev.start_date} ${ev.title}${ev.type==='travel'?' (travel)':''}`).join('\n')
+        : ''
+
+      const systemPrompt = `You are a personal assistant to a Global Quality Systems Director at a pharmaceutical and nutraceutical contract manufacturing company. You generate concise, professional daily briefings based on live task and calendar data. Your tone is direct and collaborative. No em dashes. Short paragraphs. Bullets for multiple items. Never use the words "KPI" or "KQI" — always say "KQM" (Key Quality Metrics).`
+
+      const userPrompt = `Generate a daily briefing for today, ${dateStr}.
+
+Today's calendar events:
+${calLines}
+
+Active tasks:
+${taskLines}${horizonLines ? `\n\nUpcoming (next 14 days):\n${horizonLines}` : ''}
+
+Format the briefing with these sections:
+1. Today at a glance — 2-3 sentences summarizing the day's tone and priority focus.
+2. On your calendar — bullet list of today's events with times.
+3. Action required — tasks flagged red, substatus at_risk, or with open subtasks. If none, omit this section.
+4. Active tasks by owner — group tasks by owner (Levi, Illya, Margarita, Matthew). List title and substatus for each.
+5. On the horizon — anything with a due date in the next 14 days or upcoming travel.
+
+Keep the full briefing under 400 words. Use actual task titles and names, not generic descriptions.`
+
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 1024,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        throw new Error(err.error?.message || `HTTP ${resp.status}`)
+      }
+      const result = await resp.json()
+      const text = result.content[0].text
+
+      await supabase.from('briefings').upsert({ date: todayISO, content: text }, { onConflict: 'date' })
+      setContent(text)
+      setSelectedDate(null)
+      await loadHistory()
+    } catch (e) {
+      setError('Failed to generate briefing: ' + e.message)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const loadHistoryEntry = async date => {
+    setHistoryOpen(false)
+    const { data } = await supabase.from('briefings').select('content').eq('date', date).maybeSingle()
+    if (data?.content) { setContent(data.content); setSelectedDate(date) }
+  }
+
+  const fmtDate = iso => {
+    if (!iso) return ''
+    const d = fromISODate(iso)
+    return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' })
+  }
+
+  const renderInline = text =>
+    text.split(/\*\*(.*?)\*\*/g).map((p, i) => i % 2 === 1 ? <strong key={i}>{p}</strong> : p)
+
+  const renderContent = text => {
+    if (!text) return null
+    return text.split('\n').map((line, i) => {
+      if (/^#{1,3} /.test(line)) {
+        const lvl = line.match(/^(#+)/)[1].length
+        const t = line.replace(/^#+\s/, '')
+        return <div key={i} style={{ fontSize: lvl===1?16:14, fontWeight:700, color:'#111', marginTop: lvl===1?0:20, marginBottom:6 }}>{renderInline(t)}</div>
+      }
+      if (/^\d+\.\s/.test(line)) {
+        return <div key={i} style={{ fontSize:14, fontWeight:600, color:'#111', marginTop:20, marginBottom:5 }}>{renderInline(line)}</div>
+      }
+      if (/^[-*]\s/.test(line)) {
+        return (
+          <div key={i} style={{ display:'flex', gap:8, fontSize:13, color:'#333', marginBottom:3, paddingLeft:8, lineHeight:1.5 }}>
+            <span style={{ color:'#bbb', flexShrink:0, marginTop:1 }}>•</span>
+            <span>{renderInline(line.slice(2))}</span>
+          </div>
+        )
+      }
+      if (line.trim() === '') return <div key={i} style={{ height:8 }} />
+      return <p key={i} style={{ fontSize:13, color:'#333', margin:'0 0 6px', lineHeight:1.55 }}>{renderInline(line)}</p>
+    })
+  }
+
+  const isToday = !selectedDate || selectedDate === todayISO
+
+  if (loading) return <div style={{ padding:60, textAlign:'center', color:'#aaa', fontSize:13 }}>Loading briefing...</div>
+
+  return (
+    <div style={{ maxWidth:720, margin:'0 auto' }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20, gap:12 }}>
+        <div>
+          <div style={{ fontSize:22, fontWeight:700, color:'#111' }}>Daily Briefing</div>
+          <div style={{ fontSize:12, color:'#aaa', marginTop:3 }}>{fmtDate(selectedDate || todayISO)}</div>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
+          {/* History */}
+          <div ref={histRef} style={{ position:'relative' }}>
+            <button onClick={() => setHistoryOpen(o => !o)}
+              style={{ fontSize:12, padding:'6px 12px', border:'0.5px solid #e5e5e5', borderRadius:8, background:'white', cursor:'pointer', color:'#555', display:'flex', alignItems:'center', gap:4 }}>
+              History <span style={{ fontSize:10, color:'#aaa' }}>▾</span>
+            </button>
+            {historyOpen && (
+              <div style={{ position:'absolute', right:0, top:'calc(100% + 4px)', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 20px rgba(0,0,0,0.1)', zIndex:50, minWidth:180, maxHeight:260, overflowY:'auto' }}>
+                {history.length === 0
+                  ? <div style={{ padding:'12px 16px', fontSize:12, color:'#aaa' }}>No past briefings</div>
+                  : history.map(date => (
+                    <button key={date} onClick={() => loadHistoryEntry(date)}
+                      style={{ display:'block', width:'100%', textAlign:'left', fontSize:12, padding:'9px 14px', border:'none', borderBottom:'0.5px solid #f5f5f5', background:(selectedDate||todayISO)===date?'#f0f7ff':'white', cursor:'pointer', color:'#333' }}>
+                      {date === todayISO ? '📅 Today' : fmtDate(date)}
+                    </button>
+                  ))
+                }
+              </div>
+            )}
+          </div>
+          {/* Regenerate */}
+          {isToday && (
+            <button onClick={generate} disabled={generating}
+              style={{ fontSize:12, padding:'6px 14px', background:'#111', color:'white', border:'none', borderRadius:8, cursor:generating?'not-allowed':'pointer', opacity:generating?0.55:1, whiteSpace:'nowrap' }}>
+              {generating ? 'Generating...' : '↺ Regenerate'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div style={{ background:'#fff5f5', border:'0.5px solid #f0a0a0', borderRadius:8, padding:'10px 16px', fontSize:12, color:'#c0392b', marginBottom:16 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Generating spinner */}
+      {generating && !content && (
+        <div style={{ padding:60, textAlign:'center', color:'#aaa', fontSize:13 }}>Generating your briefing...</div>
+      )}
+
+      {/* Briefing content */}
+      {content && (
+        <div style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:12, padding:'28px 32px', opacity:generating?0.5:1, transition:'opacity 0.2s' }}>
+          {renderContent(content)}
+        </div>
+      )}
+
+      {/* No content + no error */}
+      {!content && !generating && !error && (
+        <div style={{ background:'#f7f7f5', border:'0.5px dashed #ccc', borderRadius:12, padding:'48px 32px', textAlign:'center', color:'#bbb', fontSize:13 }}>
+          No briefing yet. Click Regenerate to create one.
+        </div>
+      )}
     </div>
   )
 }
@@ -1443,6 +1750,27 @@ function DatePicker({ value, onChange }) {
   )
 }
 
+function DatePickerISO({ value, onChange }) {
+  const toDisplay = iso => {
+    if (!iso) return ''
+    const [y, m, d] = iso.split('-')
+    if (!y || !m || !d) return iso
+    return `${m}/${d}/${y.slice(-2)}`
+  }
+  const toISO = v => {
+    if (!v) return ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v
+    const p = v.split('/')
+    if (p.length === 3) {
+      const [mm, dd, yy] = p
+      const year = yy.length === 2 ? (parseInt(yy) < 50 ? `20${yy}` : `19${yy}`) : yy
+      return `${year}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+    }
+    return ''
+  }
+  return <DatePicker value={toDisplay(value)} onChange={v => onChange(toISO(v))} />
+}
+
 function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
   const fileRef = useRef()
   const [uploading, setUploading] = useState(false)
@@ -1611,9 +1939,9 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
         {/* Dates */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
           <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Start date</label>
-            <input type="date" value={f.start_date} onChange={e => set('start_date', e.target.value)} style={{ width:'100%', fontSize:13 }} /></div>
+            <DatePickerISO value={f.start_date} onChange={v => set('start_date', v)} /></div>
           <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>{f.type==='travel'?'End date':'End date (optional)'}</label>
-            <input type="date" value={f.end_date} onChange={e => set('end_date', e.target.value)} style={{ width:'100%', fontSize:13 }} /></div>
+            <DatePickerISO value={f.end_date} onChange={v => set('end_date', v)} /></div>
         </div>
 
         {/* Times + all day */}
@@ -1650,7 +1978,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
               </div>
               {f.recurrence_type === 'biweekly' && (
                 <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Starting from (anchor week)</label>
-                  <input type="date" value={f.recurrence_start||f.start_date} onChange={e => set('recurrence_start', e.target.value)} style={{ width:'100%', fontSize:13 }} /></div>
+                  <DatePickerISO value={f.recurrence_start||f.start_date} onChange={v => set('recurrence_start', v)} /></div>
               )}
             </div>
           )}
@@ -1693,7 +2021,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
           {f.recurrence_type && (
             <div style={{ marginTop:8 }}>
               <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Recurrence ends (optional)</label>
-              <input type="date" value={f.recurrence_end||''} onChange={e => set('recurrence_end', e.target.value)} style={{ width:'50%', fontSize:13 }} />
+              <DatePickerISO value={f.recurrence_end||''} onChange={v => set('recurrence_end', v)} />
             </div>
           )}
         </div>
@@ -2248,7 +2576,7 @@ export default function App() {
   const [followUps, setFollowUps] = useState([])
   const [calEvents, setCalEvents] = useState([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('tasks')
+  const [tab, setTab] = useState('briefing')
   const [activeEscalation, setActiveEscalation] = useState(null)
   const [activePopup, setActivePopup] = useState(null) // { entity, type: 'project' | 'escalation' }
   const [form, setForm] = useState(null)
@@ -2524,6 +2852,7 @@ export default function App() {
       {/* Tabs */}
       <div style={{ display:'flex', gap:3, marginBottom:'1.25rem', background:'#f2f2f0', borderRadius:12, padding:4, width:'fit-content' }}>
         {[
+          { key:'briefing', label:'📰 Briefing' },
           { key:'tasks', label:'📋 Tasks' },
           { key:'followups', label:'🔄 Follow Ups' },
           { key:'notes', label:'📝 Notes' },
@@ -2536,6 +2865,9 @@ export default function App() {
           </button>
         ))}
       </div>
+
+      {/* ── Briefing ── */}
+      {tab === 'briefing' && <BriefingTab />}
 
       {/* ── Task Board ── */}
       {tab === 'tasks' && (
