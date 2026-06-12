@@ -189,14 +189,14 @@ function WorldClock() {
   const [now, setNow] = useState(new Date())
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t) }, [])
   return (
-    <div style={{ display:'flex', marginBottom:'1rem', background:'#f7f7f5', borderRadius:8, overflow:'hidden', border:'0.5px solid #e5e5e5' }}>
+    <div style={{ display:'flex', marginBottom:'1rem', background:'#f7f7f5', borderRadius:8, border:'0.5px solid #e5e5e5', overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
       {CITIES.map((c, i) => {
         const timeStr = now.toLocaleTimeString('en-US', { timeZone:c.tz, hour:'numeric', minute:'2-digit', hour12:true })
         const dayStr = now.toLocaleDateString('en-US', { timeZone:c.tz, weekday:'short' })
         const homeDay = now.toLocaleDateString('en-US', { timeZone:'America/New_York', weekday:'short' })
         const isNext = dayStr !== homeDay && i > 1
         return (
-          <div key={c.name} style={{ flex:1, padding:'6px 10px', borderRight:i<CITIES.length-1?'0.5px solid #e5e5e5':'none', textAlign:'center' }}>
+          <div key={c.name} style={{ flex:'1 0 80px', padding:'6px 10px', borderRight:i<CITIES.length-1?'0.5px solid #e5e5e5':'none', textAlign:'center' }}>
             <div style={{ fontSize:10, color:'#aaa', marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.name.split(',')[0]}</div>
             <div style={{ fontSize:13, fontWeight:500, color:'#111', whiteSpace:'nowrap' }}>
               {timeStr}{isNext && <span style={{ fontSize:9, color:'#aaa', marginLeft:3 }}>+1</span>}
@@ -3116,8 +3116,7 @@ export default function App() {
     <div style={{ fontFamily:'system-ui,sans-serif', padding:isMobile?'0.75rem':'1.25rem 1.5rem', maxWidth:1400, margin:'0 auto' }}>
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'1.25rem', paddingBottom:'1rem', borderBottom:'0.5px solid #e5e5e5' }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:'#111', margin:0, letterSpacing:'-0.5px', animation:'taskrFloat 3s ease-in-out infinite' }}>💪🏻 TASKr</h1>
-        <style>{`@keyframes taskrFloat { 0%,100%{transform:translateY(0);text-shadow:0 4px 12px rgba(0,0,0,0.08)} 50%{transform:translateY(-4px);text-shadow:0 8px 20px rgba(0,0,0,0.14)} }`}</style>
+        <h1 style={{ fontSize:22, fontWeight:700, color:'#111', margin:0, letterSpacing:'-0.5px' }}>💪🏻 TASKr</h1>
         <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
           <span style={{ fontSize:12, color:'#aaa' }}>{new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
           <span style={{ fontSize:10, color:'#bbb' }}>Live · Supabase</span>
@@ -3127,7 +3126,7 @@ export default function App() {
       <WorldClock />
 
       {/* Tabs */}
-      <div style={{ display:'flex', gap:3, marginBottom:'1.25rem', background:'#f2f2f0', borderRadius:12, padding:4, width:'fit-content' }}>
+      <div style={{ display:'flex', gap:3, marginBottom:'1.25rem', background:'#f2f2f0', borderRadius:12, padding:4, overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
         {[
           { key:'briefing', label:'📰 Briefing' },
           { key:'tasks', label:'📋 Tasks' },
@@ -3137,7 +3136,7 @@ export default function App() {
           { key:'settings', label:'⚙️ Settings' },
         ].map(t => (
           <button key={t.key} onClick={() => switchTab(t.key)}
-            style={{ fontSize:13, padding:'6px 14px', cursor:'pointer', background:tab===t.key?'white':'transparent', border:'none', borderRadius:8, color:tab===t.key?'#111':'#777', fontWeight:tab===t.key?500:400, boxShadow:tab===t.key?'0 1px 3px rgba(0,0,0,0.09)':'none', whiteSpace:'nowrap' }}>
+            style={{ fontSize:13, padding:'6px 14px', cursor:'pointer', background:tab===t.key?'white':'transparent', border:'none', borderRadius:8, color:tab===t.key?'#111':'#777', fontWeight:tab===t.key?500:400, boxShadow:tab===t.key?'0 1px 3px rgba(0,0,0,0.09)':'none', whiteSpace:'nowrap', flexShrink:0 }}>
             {t.label}
           </button>
         ))}
