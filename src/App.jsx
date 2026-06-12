@@ -798,7 +798,7 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
 }
 
 // ─── Rich Text Editor ─────────────────────────────────────────────────────────
-function RichTextEditor({ initialValue, onChange }) {
+function RichTextEditor({ initialValue, onChange, isMobile = false }) {
   const editorRef = useRef(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [tableHover, setTableHover] = useState([0, 0])
@@ -1106,6 +1106,8 @@ function RichTextEditor({ initialValue, onChange }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
       <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}.note-editor ul,.note-editor ol{padding-left:18px;margin:2px 0}.note-editor ol{list-style:none;counter-reset:item}.note-editor ol>li{counter-increment:item}.note-editor ol>li::before{content:counters(item,".")". ";margin-right:3px}`}</style>
+      {/* Toolbar — sticky so it stays above keyboard on mobile */}
+      <div style={{ position:'sticky', top:0, zIndex:5, background:'white' }}>
       {/* Row 1: text formatting + lists + table + size */}
       <div style={{ ...rowStyle, borderTop:'0.5px solid #e5e5e5', borderRadius:'8px 8px 0 0' }}>
         {tbtn('B', 'bold', null, { fontWeight:700 })}
@@ -1162,31 +1164,33 @@ function RichTextEditor({ initialValue, onChange }) {
         <div style={sep} />
         {tbtn('✕ fmt', 'removeFormat', null, { color:'#aaa', fontSize:11 })}
       </div>
-      {/* Row 2: colors */}
-      <div style={{ ...rowStyle, borderTop:'0.5px solid #f0f0f0', gap:5 }}>
-        <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Text</span>
-        <div style={sep} />
-        {COLORS.map(c => (
-          <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
-            style={{ width:14, height:14, borderRadius:'50%', background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
-            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
-            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
-        ))}
-        <div style={{ ...sep, margin:'0 5px' }} />
-        <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Highlight</span>
-        <div style={sep} />
-        {HIGHLIGHTS.map(c => (
-          <button key={c} onMouseDown={e => { e.preventDefault(); exec('hiliteColor', c) }}
-            style={{ width:16, height:14, borderRadius:3, background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
-            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
-            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
-        ))}
-        <button onMouseDown={e => { e.preventDefault(); exec('hiliteColor', 'transparent') }}
-          style={{ fontSize:10, padding:'1px 5px', border:'0.5px solid #e0e0e0', borderRadius:3, background:'white', cursor:'pointer', color:'#aaa', lineHeight:1.4 }}
-          title="Remove highlight">✕</button>
-      </div>
-      {/* Row 3: table context controls (shown when cursor is inside a table) */}
-      {tableCtx && (
+      {/* Row 2: colors — hidden on mobile */}
+      {!isMobile && (
+        <div style={{ ...rowStyle, borderTop:'0.5px solid #f0f0f0', gap:5 }}>
+          <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Text</span>
+          <div style={sep} />
+          {COLORS.map(c => (
+            <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
+              style={{ width:14, height:14, borderRadius:'50%', background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
+              onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
+              onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
+          ))}
+          <div style={{ ...sep, margin:'0 5px' }} />
+          <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Highlight</span>
+          <div style={sep} />
+          {HIGHLIGHTS.map(c => (
+            <button key={c} onMouseDown={e => { e.preventDefault(); exec('hiliteColor', c) }}
+              style={{ width:16, height:14, borderRadius:3, background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
+              onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
+              onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
+          ))}
+          <button onMouseDown={e => { e.preventDefault(); exec('hiliteColor', 'transparent') }}
+            style={{ fontSize:10, padding:'1px 5px', border:'0.5px solid #e0e0e0', borderRadius:3, background:'white', cursor:'pointer', color:'#aaa', lineHeight:1.4 }}
+            title="Remove highlight">✕</button>
+        </div>
+      )}
+      {/* Row 3: table context controls (hidden on mobile) */}
+      {!isMobile && tableCtx && (
         <div style={{ ...rowStyle, borderTop:'0.5px solid #dbeafe', background:'#eff6ff', gap:4 }}>
           <span style={{ fontSize:10, color:'#3b82f6', fontWeight:500, marginRight:2, flexShrink:0 }}>Table</span>
           <div style={{ ...sep, background:'#bfdbfe' }} />
@@ -1214,6 +1218,7 @@ function RichTextEditor({ initialValue, onChange }) {
           ))}
         </div>
       )}
+      </div>{/* end sticky toolbar */}
       <div ref={editorRef} contentEditable suppressContentEditableWarning
         onInput={() => onChange(editorRef.current.innerHTML)}
         onKeyDown={handleKeyDown}
@@ -1223,7 +1228,7 @@ function RichTextEditor({ initialValue, onChange }) {
         }}
         onMouseLeave={() => setTableHover([0,0])}
         className="note-editor"
-        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize:13, lineHeight:1.4, overflowY:'auto', color:'#333', minHeight:200 }} />
+        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 13, lineHeight:1.4, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200 }} />
     </div>
   )
 }
@@ -1697,6 +1702,21 @@ function NotesTab({ notes, onSave, onDelete }) {
   const [sortKey, setSortKey] = useState('date')
   const [sortDir, setSortDir] = useState('desc')
   const [search, setSearch] = useState('')
+  const [mobileView, setMobileView] = useState('list') // 'list' | 'editor'
+  const [swipeState, setSwipeState] = useState({}) // { [id]: { x, swiped } }
+  const [editorHeight, setEditorHeight] = useState(null)
+  const isMobileNotes = window.innerWidth < 640
+
+  // Keyboard-aware height via visualViewport
+  useEffect(() => {
+    if (!isMobileNotes) return
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => setEditorHeight(vv.height)
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update) }
+  }, [isMobileNotes])
 
   useEffect(() => {
     if (notes.length > 0 && !selectedId) {
@@ -1708,11 +1728,20 @@ function NotesTab({ notes, onSave, onDelete }) {
   const handleSelect = n => {
     if (dirty) onSave(draft, selectedId)
     setSelectedId(n.id); setDraft({ title: n.title, body: n.body || '' }); setDirty(false)
+    if (isMobileNotes) setMobileView('editor')
   }
 
   const handleSave = async () => { if (draft && selectedId) { await onSave(draft, selectedId); setDirty(false) } }
 
-  const handleNew = () => onSave({ title: `Note — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`, body: '' }, null)
+  const handleNew = async () => {
+    await onSave({ title: `Note — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`, body: '' }, null)
+    if (isMobileNotes) setMobileView('editor')
+  }
+
+  const handleBack = () => {
+    if (dirty) handleSave()
+    setMobileView('list')
+  }
 
   const handleCopy = () => {
     if (!draft) return
@@ -1720,6 +1749,30 @@ function NotesTab({ notes, onSave, onDelete }) {
     const plain = div.textContent || ''
     navigator.clipboard.writeText(`${draft.title}\n\n${plain}`)
     setCopied(true); setTimeout(() => setCopied(false), 1500)
+  }
+
+  // Swipe-to-delete handlers
+  const onTouchStart = (id, e) => {
+    setSwipeState(s => ({ ...s, [id]: { startX: e.touches[0].clientX, x: 0, swiped: false } }))
+  }
+  const onTouchMove = (id, e) => {
+    const st = swipeState[id]
+    if (!st) return
+    const dx = e.touches[0].clientX - st.startX
+    if (dx < -10) {
+      setSwipeState(s => ({ ...s, [id]: { ...s[id], x: Math.max(dx, -80), swiped: dx < -60 } }))
+    }
+  }
+  const onTouchEnd = (id) => {
+    const st = swipeState[id]
+    if (st?.swiped) return // leave revealed for tap-delete
+    setSwipeState(s => ({ ...s, [id]: { x: 0, swiped: false } }))
+  }
+  const confirmDelete = async (id) => {
+    await onDelete(id)
+    if (selectedId === id) { setSelectedId(null); setDraft(null); setDirty(false) }
+    setSwipeState(s => { const n = {...s}; delete n[id]; return n })
+    if (isMobileNotes) setMobileView('list')
   }
 
   const stripHtml = html => { const d = document.createElement('div'); d.innerHTML = html||''; return d.textContent||'' }
@@ -1737,64 +1790,83 @@ function NotesTab({ notes, onSave, onDelete }) {
     })
 
   const sidebar = (
-    <div style={{ width:220, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+    <div style={{ width: isMobileNotes ? '100%' : 220, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
       <div style={{ padding:'8px 12px', borderBottom:'0.5px solid #f0f0f0' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:7 }}>
           <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>All Notes</span>
-          <button onClick={handleNew} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>+ New</button>
+          <button onClick={handleNew} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'6px 12px', cursor:'pointer' }}>+ New</button>
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notes…"
-          style={{ width:'100%', boxSizing:'border-box', fontSize:11, padding:'5px 8px', border:'0.5px solid #e0e0e0', borderRadius:6, outline:'none', marginBottom:6, color:'#333' }} />
+          style={{ width:'100%', boxSizing:'border-box', fontSize:16, padding:'7px 10px', border:'0.5px solid #e0e0e0', borderRadius:6, outline:'none', marginBottom:6, color:'#333' }} />
         <div style={{ display:'flex', alignItems:'center', gap:3 }}>
           {[{k:'date',l:'Date'},{k:'alpha',l:'A–Z'}].map(o => (
             <button key={o.k} onClick={() => { if (sortKey===o.k) setSortDir(d => d==='asc'?'desc':'asc'); else { setSortKey(o.k); setSortDir('desc') } }}
-              style={{ fontSize:10, padding:'2px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:sortKey===o.k?'#111':'white', color:sortKey===o.k?'white':'#666', cursor:'pointer' }}>
+              style={{ fontSize:10, padding:'5px 10px', border:'0.5px solid #e0e0e0', borderRadius:4, background:sortKey===o.k?'#111':'white', color:sortKey===o.k?'white':'#666', cursor:'pointer' }}>
               {o.l}{sortKey===o.k ? (sortDir==='asc'?' ↑':' ↓') : ''}
             </button>
           ))}
         </div>
       </div>
-      <div style={{ flex:1, overflowY:'auto' }}>
-        {visibleNotes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>{search ? 'No matches.' : 'No notes yet.'}<br/>{!search && 'Click + New to start.'}</div>}
-        {visibleNotes.map(n => (
-          <div key={n.id} onClick={() => handleSelect(n)}
-            style={{ padding:'10px 12px', cursor:'pointer', borderBottom:'0.5px solid #f5f5f5', background:selectedId===n.id?'#f5f5f3':'transparent' }}
-            onMouseEnter={e => { if (selectedId!==n.id) e.currentTarget.style.background='#fafafa' }}
-            onMouseLeave={e => { if (selectedId!==n.id) e.currentTarget.style.background='transparent' }}>
-            <div style={{ fontSize:12, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
-            <div style={{ fontSize:10, color:'#bbb', marginTop:2 }}>{new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
-          </div>
-        ))}
+      <div style={{ flex:1, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
+        {visibleNotes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>{search ? 'No matches.' : 'No notes yet.'}<br/>{!search && 'Tap + New to start.'}</div>}
+        {visibleNotes.map(n => {
+          const sw = swipeState[n.id] || {}
+          return (
+            <div key={n.id} style={{ position:'relative', overflow:'hidden', borderBottom:'0.5px solid #f5f5f5' }}>
+              {/* Swipe-to-delete red background */}
+              <div style={{ position:'absolute', right:0, top:0, bottom:0, width:80, background:'#E24B4A', display:'flex', alignItems:'center', justifyContent:'center' }}
+                onClick={() => confirmDelete(n.id)}>
+                <span style={{ color:'white', fontSize:12, fontWeight:500 }}>Delete</span>
+              </div>
+              <div
+                onTouchStart={e => onTouchStart(n.id, e)}
+                onTouchMove={e => onTouchMove(n.id, e)}
+                onTouchEnd={() => onTouchEnd(n.id)}
+                onClick={() => { if (sw.swiped) { setSwipeState(s => ({...s, [n.id]: {x:0,swiped:false}})); return } handleSelect(n) }}
+                style={{ position:'relative', padding:'14px 12px', cursor:'pointer', background:selectedId===n.id?'#f5f5f3':'white', transform:`translateX(${sw.x||0}px)`, transition: sw.startX ? 'none' : 'transform 0.2s ease', minHeight:60, boxSizing:'border-box' }}
+                onMouseEnter={e => { if (selectedId!==n.id && !isMobileNotes) e.currentTarget.style.background='#fafafa' }}
+                onMouseLeave={e => { if (selectedId!==n.id && !isMobileNotes) e.currentTarget.style.background='white' }}>
+                <div style={{ fontSize:13, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
+                <div style={{ fontSize:11, color:'#bbb', marginTop:3 }}>{new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 
   const editorPane = (
-    <div style={{ flex:1, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+    <div style={{ flex:1, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden', ...(isMobileNotes && editorHeight ? { height: editorHeight } : {}) }}>
       {!draft ? (
         <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
           <div style={{ fontSize:36 }}>📝</div>
           <div style={{ fontSize:13, color:'#bbb' }}>Select a note or create a new one</div>
-          <button onClick={handleNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:'pointer' }}>+ New Note</button>
+          <button onClick={handleNew} style={{ fontSize:14, background:'#111', color:'white', border:'none', borderRadius:8, padding:'10px 20px', cursor:'pointer' }}>+ New Note</button>
         </div>
       ) : (
         <>
-          <div style={{ padding:'10px 14px', borderBottom:'0.5px solid #f0f0f0', display:'flex', flexDirection:'column', gap:4 }}>
+          <div style={{ padding:'10px 14px', borderBottom:'0.5px solid #f0f0f0', display:'flex', flexDirection:'column', gap:4, position:'sticky', top:0, background:'white', zIndex:10 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              {isMobileNotes && (
+                <button onClick={handleBack} style={{ fontSize:20, background:'none', border:'none', cursor:'pointer', color:'#555', padding:'0 4px', lineHeight:1, flexShrink:0 }}>‹</button>
+              )}
               <input value={draft.title} onChange={e => { setDraft(p => ({...p, title:e.target.value})); setDirty(true) }}
-                style={{ flex:1, fontSize:15, fontWeight:600, border:'none', outline:'none', color:'#111', background:'transparent' }}
+                style={{ flex:1, fontSize:16, fontWeight:600, border:'none', outline:'none', color:'#111', background:'transparent' }}
                 placeholder="Note title..." />
               <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-                <button onClick={() => setFocused(f => !f)}
-                  title={focused ? 'Exit focus mode' : 'Focus mode'}
-                  style={{ fontSize:13, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#555', lineHeight:1 }}>
-                  {focused ? '⤡' : '⤢'}
+                {!isMobileNotes && (
+                  <button onClick={() => setFocused(f => !f)}
+                    title={focused ? 'Exit focus mode' : 'Focus mode'}
+                    style={{ fontSize:13, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#555', lineHeight:1 }}>
+                    {focused ? '⤡' : '⤢'}
+                  </button>
+                )}
+                <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
+                  {copied ? '✓' : '📋'}
                 </button>
-                <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'4px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
-                  {copied ? '✓ Copied' : '📋 Copy'}
-                </button>
-                {dirty && <button onClick={handleSave} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Save</button>}
-                {selectedId && <button onClick={async () => { await onDelete(selectedId); setSelectedId(null); setDraft(null); setDirty(false) }} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Delete</button>}
+                {dirty && <button onClick={handleSave} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'6px 10px', cursor:'pointer' }}>Save</button>}
+                {selectedId && <button onClick={() => confirmDelete(selectedId)} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'6px 10px', cursor:'pointer' }}>Delete</button>}
               </div>
             </div>
             {(() => {
@@ -1808,12 +1880,21 @@ function NotesTab({ notes, onSave, onDelete }) {
               ) : null
             })()}
           </div>
-          <RichTextEditor key={selectedId} initialValue={draft.body}
+          <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
             onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }} />
         </>
       )}
     </div>
   )
+
+  // Mobile: single-panel navigation
+  if (isMobileNotes) {
+    return mobileView === 'list' ? sidebar : (
+      <div style={{ display:'flex', flexDirection:'column', height: editorHeight || '100dvh' }}>
+        {editorPane}
+      </div>
+    )
+  }
 
   const layout = (
     <div style={{ display:'flex', gap:16, height: focused ? 'calc(100vh - 72px)' : 'calc(100vh - 220px)', minHeight:400 }}>
