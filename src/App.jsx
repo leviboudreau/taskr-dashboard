@@ -614,12 +614,11 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
 }
 
 // ─── Projects Section ─────────────────────────────────────────────────────────
-function ProjectsSection({ projects, tasks, onAdd, onOpen }) {
+function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
   const [step, setStep] = useState(null) // null | 'pick-type' | 'title' | 'qual-template'
   const [newType, setNewType] = useState('project')
   const [newTitle, setNewTitle] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState(null)
-  const templates = JSON.parse(localStorage.getItem('taskr-qual-templates') || '[]')
 
   const reset = () => { setStep(null); setNewTitle(''); setNewType('project'); setSelectedTemplate(null) }
 
@@ -2900,6 +2899,7 @@ export default function App() {
   const [notes, setNotes] = useState([])
   const [followUps, setFollowUps] = useState([])
   const [calEvents, setCalEvents] = useState([])
+  const [qualTemplates, setQualTemplates] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(() => localStorage.getItem('taskr-tab') || 'tasks')
   const switchTab = t => { setTab(t); localStorage.setItem('taskr-tab', t) }
@@ -2941,7 +2941,7 @@ export default function App() {
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*'),
@@ -2950,6 +2950,7 @@ export default function App() {
       supabase.from('notes').select('*').order('updated_at', { ascending: false }),
       supabase.from('follow_ups').select('*').order('created_at', { ascending: true }),
       supabase.from('team_members').select('*').order('sort_order', { ascending: true }),
+      supabase.from('qual_templates').select('*').order('created_at', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) setDomains(domainsData.map(d => d.name))
@@ -2959,6 +2960,7 @@ export default function App() {
     setNotes(notesData || [])
     setFollowUps(followUpsData || [])
     if (teamMembersData && teamMembersData.length > 0) setTeamData(teamMembersData)
+    setQualTemplates(qualTemplatesData || [])
     setLoading(false)
   }, [])
 
@@ -3022,8 +3024,7 @@ export default function App() {
     const { data: proj, error } = await supabase.from('projects').insert({ title, type }).select().single()
     if (error || !proj) { console.error('[TASKr] addProject error', error); return }
     if (type === 'qualification' && templateId) {
-      const templates = JSON.parse(localStorage.getItem('taskr-qual-templates') || '[]')
-      const tpl = templates.find(t => t.id === templateId)
+      const tpl = qualTemplates.find(t => t.id === templateId)
       if (tpl?.tasks?.length) {
         const inserts = tpl.tasks.map((t, i) => ({
           title: t.title, status: 'active', substatus: 'not_started',
@@ -3268,7 +3269,7 @@ export default function App() {
               <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
             </button>
-            {isSectionOpen('projects') && <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} />}
+            {isSectionOpen('projects') && <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} />}
           </div>
 
           {/* Escalations section */}
@@ -3439,7 +3440,7 @@ export default function App() {
       {/* ── Settings ── */}
       {tab === 'settings' && (
         <div style={{ display:'flex', flexDirection:'column', gap:32 }}>
-          <QualTemplateSettings />
+          <QualTemplateSettings onUpdate={loadData} />
           <div style={{ display:'flex', gap:32, alignItems:'flex-start' }}>
             <div style={{ flex:1, minWidth:0 }}><DomainSettings domains={domains} onUpdate={loadData} /></div>
             <div style={{ flex:1, minWidth:0 }}><TeamSettings teamData={teamData} onUpdate={loadData} /></div>
@@ -3472,31 +3473,40 @@ export default function App() {
 }
 
 // ─── Qualification Template Settings ─────────────────────────────────────────
-function QualTemplateSettings() {
-  const load = () => JSON.parse(localStorage.getItem('taskr-qual-templates') || '[]')
-  const save = ts => localStorage.setItem('taskr-qual-templates', JSON.stringify(ts))
-
-  const [templates, setTemplates] = useState(load)
+function QualTemplateSettings({ onUpdate }) {
+  const [templates, setTemplates] = useState([])
   const [editId, setEditId] = useState(null)
   const [draft, setDraft] = useState(null) // { name, tasks: [{title, subtasks:[string]}] }
   const [newTaskTitle, setNewTaskTitle] = useState('')
+
+  useEffect(() => {
+    supabase.from('qual_templates').select('*').order('created_at', { ascending: true })
+      .then(({ data }) => { if (data) setTemplates(data) })
+  }, [])
 
   const startNew = () => { setDraft({ name:'', tasks:[] }); setEditId('new') }
   const startEdit = t => { setDraft(JSON.parse(JSON.stringify(t))); setEditId(t.id) }
   const cancel = () => { setDraft(null); setEditId(null); setNewTaskTitle('') }
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (!draft.name.trim()) return
-    const ts = load()
+    const payload = { name: draft.name.trim(), tasks: draft.tasks }
     if (editId === 'new') {
-      save([...ts, { ...draft, id: crypto.randomUUID(), name: draft.name.trim() }])
+      await supabase.from('qual_templates').insert(payload)
     } else {
-      save(ts.map(t => t.id === editId ? { ...draft, name: draft.name.trim() } : t))
+      await supabase.from('qual_templates').update(payload).eq('id', editId)
     }
-    setTemplates(load()); cancel()
+    const { data } = await supabase.from('qual_templates').select('*').order('created_at', { ascending: true })
+    if (data) setTemplates(data)
+    onUpdate?.()
+    cancel()
   }
 
-  const deleteTemplate = id => { save(load().filter(t => t.id !== id)); setTemplates(load()) }
+  const deleteTemplate = async id => {
+    await supabase.from('qual_templates').delete().eq('id', id)
+    setTemplates(ts => ts.filter(t => t.id !== id))
+    onUpdate?.()
+  }
 
   const addTask = () => {
     const title = newTaskTitle.trim(); if (!title) return
