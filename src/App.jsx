@@ -1259,8 +1259,8 @@ function BriefingTab() {
     setLoading(true); setError(null)
     try {
       const { data } = await supabase.from('briefings').select('content').eq('date', todayISO).maybeSingle()
-      if (data?.content) { setBriefContent(data.content); setLoading(false) }
-      else { setLoading(false); await generate() }
+      setBriefContent(data?.content || null)
+      setLoading(false)
     } catch (e) { setError('Could not load briefing: ' + e.message); setLoading(false) }
   }
 
@@ -1539,7 +1539,7 @@ Important rules:
         {isToday && (
           <button onClick={generate} disabled={generating}
             style={{ fontSize:12, padding:'6px 14px', background:'#111', color:'white', border:'none', borderRadius:8, cursor:generating?'not-allowed':'pointer', opacity:generating?0.55:1, whiteSpace:'nowrap' }}>
-            {generating ? 'Generating...' : '↺ Regenerate'}
+            {generating ? 'Generating...' : briefContent ? '↺ Regenerate' : 'Generate'}
           </button>
         )}
       </div>
@@ -1566,7 +1566,7 @@ Important rules:
 
       {!briefContent && !generating && !error && (
         <div style={{ background:'#f7f7f5', border:'0.5px dashed #ccc', borderRadius:12, padding:'48px 32px', textAlign:'center', color:'#bbb', fontSize:13 }}>
-          No briefing yet. Click Regenerate to create one.
+          No briefing yet for today. Click Generate to create one.
         </div>
       )}
     </div>
@@ -1962,11 +1962,11 @@ const DUE_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct',
 const DUE_MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
 function formatDue(d) { const dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0'), yy=String(d.getFullYear()).slice(-2); return `${mm}/${dd}/${yy}` }
 
-function DatePicker({ value, onChange }) {
+function DatePicker({ value, onChange, initialMonth, minDate }) {
   const [open, setOpen] = useState(false)
   const ref = useRef()
   const parseView = () => {
-    const d = value ? new Date(value) : new Date()
+    const d = value ? new Date(value) : initialMonth ? new Date(initialMonth) : new Date()
     return isNaN(d) ? new Date() : d
   }
   const [view, setView] = useState(() => { const d = parseView(); return new Date(d.getFullYear(), d.getMonth(), 1) })
@@ -1980,7 +1980,15 @@ function DatePicker({ value, onChange }) {
   const firstDow = new Date(yr, mo, 1).getDay()
   const days = new Date(yr, mo + 1, 0).getDate()
   const todayStr = formatDue(new Date())
-  const selectDay = d => { onChange(formatDue(new Date(yr, mo, d))); setOpen(false) }
+  const selectDay = d => {
+    const str = formatDue(new Date(yr, mo, d))
+    if (minDate) {
+      const [my,mm,md] = minDate.split('-').map(Number)
+      const minStr = formatDue(new Date(my,mm-1,md))
+      if (str < minStr) return
+    }
+    onChange(str); setOpen(false)
+  }
   return (
     <div ref={ref} style={{ position:'relative', width:'100%' }}>
       <div style={{ display:'flex', alignItems:'center', border:'0.5px solid #ddd', borderRadius:6, overflow:'hidden' }}>
@@ -2007,8 +2015,9 @@ function DatePicker({ value, onChange }) {
             {Array.from({length:days}).map((_,i) => {
               const d = i+1, str = formatDue(new Date(yr,mo,d))
               const sel = str === value, isToday = str === todayStr
+              const disabled = !!minDate && (() => { const [my,mm,md]=minDate.split('-').map(Number); return str < formatDue(new Date(my,mm-1,md)) })()
               return <button key={d} onClick={() => selectDay(d)}
-                style={{ fontSize:12, border:'none', borderRadius:6, padding:'5px 2px', cursor:'pointer', textAlign:'center', background:sel?'#111':isToday?'#f0f0f0':'transparent', color:sel?'white':isToday?'#111':'#444', fontFamily:'inherit' }}>
+                style={{ fontSize:12, border:'none', borderRadius:6, padding:'5px 2px', cursor:disabled?'default':'pointer', textAlign:'center', background:sel?'#111':isToday?'#f0f0f0':'transparent', color:sel?'white':disabled?'#ddd':isToday?'#111':'#444', fontFamily:'inherit' }}>
                 {d}
               </button>
             })}
@@ -2020,7 +2029,7 @@ function DatePicker({ value, onChange }) {
   )
 }
 
-function DatePickerISO({ value, onChange }) {
+function DatePickerISO({ value, onChange, initialMonth, minDate }) {
   const toDisplay = iso => {
     if (!iso) return ''
     const [y, m, d] = iso.split('-')
@@ -2038,7 +2047,7 @@ function DatePickerISO({ value, onChange }) {
     }
     return ''
   }
-  return <DatePicker value={toDisplay(value)} onChange={v => onChange(toISO(v))} />
+  return <DatePicker value={toDisplay(value)} onChange={v => onChange(toISO(v))} initialMonth={initialMonth} minDate={minDate} />
 }
 
 function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
@@ -2285,9 +2294,9 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
         {/* Dates */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
           <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Start date</label>
-            <DatePickerISO value={f.start_date} onChange={v => set('start_date', v)} /></div>
+            <DatePickerISO value={f.start_date} onChange={v => { set('start_date', v); if (f.end_date && f.end_date < v) set('end_date', '') }} /></div>
           <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>{f.type==='travel'?'End date':'End date (optional)'}</label>
-            <DatePickerISO value={f.end_date} onChange={v => set('end_date', v)} /></div>
+            <DatePickerISO value={f.end_date} onChange={v => set('end_date', v)} initialMonth={f.start_date||undefined} minDate={f.start_date||undefined} /></div>
         </div>
 
         {/* Times + all day */}
@@ -2734,6 +2743,69 @@ function CalendarYearView({ events, year, onDayClick, onEventClick }) {
   )
 }
 
+function CalendarListView({ events, onEventClick }) {
+  const todayISO = toISODate(new Date())
+  const sorted = [...events]
+    .filter(ev => (ev.end_date || ev.start_date) >= todayISO)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date) || (a.start_time||'').localeCompare(b.start_time||''))
+
+  const groups = {}
+  sorted.forEach(ev => {
+    const key = ev.start_date.slice(0, 7) // YYYY-MM
+    if (!groups[key]) groups[key] = []
+    groups[key].push(ev)
+  })
+
+  if (sorted.length === 0) {
+    return <div style={{ textAlign:'center', padding:'60px 0', color:'#bbb', fontSize:13 }}>No upcoming events</div>
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      {Object.entries(groups).map(([key, evs]) => {
+        const [y, m] = key.split('-')
+        return (
+          <div key={key}>
+            <div style={{ fontSize:11, fontWeight:600, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8, paddingBottom:4, borderBottom:'0.5px solid #f0f0f0' }}>
+              {MONTH_NAMES[parseInt(m)-1]} {y}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+              {evs.map((ev, i) => {
+                const isTravel = ev.type === 'travel'
+                const colorHex = ev.color ? FLAG_COLORS.find(c => c.key === ev.color)?.hex : isTravel ? '#FAC775' : '#e0e0e0'
+                const dow = DOW_SHORT[fromISODate(ev.start_date).getDay()]
+                const day = parseInt(ev.start_date.split('-')[2])
+                const timeLabel = ev.all_day || isTravel
+                  ? (ev.end_date && ev.end_date !== ev.start_date ? `${MONTH_NAMES[parseInt(ev.end_date.split('-')[1])-1].slice(0,3)} ${parseInt(ev.end_date.split('-')[2])}` : 'All day')
+                  : ev.start_time ? `${fmtTime(ev.start_time)}${ev.end_time ? ' – ' + fmtTime(ev.end_time) : ''}` : ''
+                return (
+                  <div key={ev.id || `${ev.start_date}-${i}`} onClick={() => onEventClick(ev)}
+                    style={{ display:'flex', alignItems:'stretch', gap:10, padding:'9px 10px', background:'white', border:'0.5px solid #ebebeb', borderRadius:8, cursor:'pointer' }}
+                    onMouseEnter={e => e.currentTarget.style.background='#fafafa'}
+                    onMouseLeave={e => e.currentTarget.style.background='white'}>
+                    <div style={{ minWidth:32, textAlign:'center', flexShrink:0 }}>
+                      <div style={{ fontSize:17, fontWeight:700, color:'#111', lineHeight:1.1 }}>{day}</div>
+                      <div style={{ fontSize:10, color:'#aaa', textTransform:'uppercase' }}>{dow}</div>
+                    </div>
+                    <div style={{ width:3, borderRadius:2, background:colorHex, flexShrink:0 }} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:500, color:'#111', display:'flex', alignItems:'center', gap:6 }}>
+                        {isTravel && <span style={{ fontSize:10 }}>✈</span>}
+                        {ev.title}
+                      </div>
+                      {timeLabel && <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{timeLabel}</div>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
   const [calView, setCalView] = useState('month')
   const [travelFilter, setTravelFilter] = useState(false)
@@ -2764,6 +2836,7 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
   const headerLabel = calView === 'week'
     ? (() => { const wd = getWeekDates(calDate); return `${wd[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${wd[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}` })()
     : calView === 'year' ? String(year)
+    : calView === 'list' ? 'Upcoming'
     : `${MONTH_NAMES[month]} ${year}`
 
   const handleDayClick = d => setEventForm({ ...CAL_EMPTY, start_date: toISODate(d) })
@@ -2813,7 +2886,7 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
         </div>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
           <div style={{ display:'flex', background:'#efefed', borderRadius:8, padding:2, gap:1 }}>
-            {['week','month','year'].map(v => (
+            {['week','month','year','list'].map(v => (
               <button key={v} onClick={() => setCalView(v)} style={{ fontSize:12, padding:'5px 12px', border:'none', background:calView===v?'white':'transparent', color:calView===v?'#111':'#888', fontWeight:calView===v?500:400, cursor:'pointer', borderRadius:6, boxShadow:calView===v?'0 1px 2px rgba(0,0,0,0.08)':'none' }}>
                 {v.charAt(0).toUpperCase()+v.slice(1)}
               </button>
@@ -2833,6 +2906,8 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
         ? <CalendarWeekView events={events} weekStart={weekStart} onDayClick={handleDayClick} onEventClick={handleEventClick} />
         : calView === 'month'
         ? <CalendarMonthView events={events} year={year} month={month} onDayClick={handleDayClick} onEventClick={handleEventClick} />
+        : calView === 'list'
+        ? <CalendarListView events={events} onEventClick={handleEventClick} />
         : <CalendarYearView events={travelFilter ? events.filter(e => e.type === 'travel') : events} year={year} onDayClick={handleDayClick} onEventClick={handleEventClick} />}
 
       {eventForm !== null && (
