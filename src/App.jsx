@@ -1164,31 +1164,29 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
         <div style={sep} />
         {tbtn('✕ fmt', 'removeFormat', null, { color:'#aaa', fontSize:11 })}
       </div>
-      {/* Row 2: colors — hidden on mobile */}
-      {!isMobile && (
-        <div style={{ ...rowStyle, borderTop:'0.5px solid #f0f0f0', gap:5 }}>
-          <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Text</span>
-          <div style={sep} />
-          {COLORS.map(c => (
-            <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
-              style={{ width:14, height:14, borderRadius:'50%', background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
-              onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
-              onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
-          ))}
-          <div style={{ ...sep, margin:'0 5px' }} />
-          <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Highlight</span>
-          <div style={sep} />
-          {HIGHLIGHTS.map(c => (
-            <button key={c} onMouseDown={e => { e.preventDefault(); exec('hiliteColor', c) }}
-              style={{ width:16, height:14, borderRadius:3, background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
-              onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
-              onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
-          ))}
-          <button onMouseDown={e => { e.preventDefault(); exec('hiliteColor', 'transparent') }}
-            style={{ fontSize:10, padding:'1px 5px', border:'0.5px solid #e0e0e0', borderRadius:3, background:'white', cursor:'pointer', color:'#aaa', lineHeight:1.4 }}
-            title="Remove highlight">✕</button>
-        </div>
-      )}
+      {/* Row 2: colors — scrollable on mobile */}
+      <div style={{ ...rowStyle, borderTop:'0.5px solid #f0f0f0', gap:5, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling:'touch' }}>
+        <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Text</span>
+        <div style={sep} />
+        {COLORS.map(c => (
+          <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
+            style={{ width: isMobile ? 20 : 14, height: isMobile ? 20 : 14, borderRadius:'50%', background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
+            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
+            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
+        ))}
+        <div style={{ ...sep, margin:'0 5px' }} />
+        <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Highlight</span>
+        <div style={sep} />
+        {HIGHLIGHTS.map(c => (
+          <button key={c} onMouseDown={e => { e.preventDefault(); exec('hiliteColor', c) }}
+            style={{ width: isMobile ? 22 : 16, height: isMobile ? 20 : 14, borderRadius:3, background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
+            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
+            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
+        ))}
+        <button onMouseDown={e => { e.preventDefault(); exec('hiliteColor', 'transparent') }}
+          style={{ fontSize:10, padding: isMobile ? '4px 8px' : '1px 5px', border:'0.5px solid #e0e0e0', borderRadius:3, background:'white', cursor:'pointer', color:'#aaa', lineHeight:1.4, flexShrink:0 }}
+          title="Remove highlight">✕</button>
+      </div>
       {/* Row 3: table context controls (hidden on mobile) */}
       {!isMobile && tableCtx && (
         <div style={{ ...rowStyle, borderTop:'0.5px solid #dbeafe', background:'#eff6ff', gap:4 }}>
@@ -1580,14 +1578,14 @@ Important rules:
 
 // ─── Follow Ups Tab ───────────────────────────────────────────────────────────
 const DEFAULT_FOLLOW_UP_PEOPLE = ['Margarita', 'Illya', 'Matthew', 'Kaat']
-function FollowUpsTab({ followUps, onAdd, onToggle, onDelete }) {
+function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, people = DEFAULT_FOLLOW_UP_PEOPLE }) {
   const [activePerson, setActivePerson] = useState(null)
   const [showDone, setShowDone] = useState(false)
   const [addingFor, setAddingFor] = useState(null)
   const [newText, setNewText] = useState('')
 
-  const extraPeople = [...new Set(followUps.map(f => f.person))].filter(p => p && !DEFAULT_FOLLOW_UP_PEOPLE.includes(p))
-  const allPeople = [...DEFAULT_FOLLOW_UP_PEOPLE, ...extraPeople]
+  const extraPeople = [...new Set(followUps.map(f => f.person))].filter(p => p && !people.includes(p))
+  const allPeople = [...people, ...extraPeople]
 
   const pendingFor = p => followUps.filter(f => f.person === p && !f.done).length
   const itemsFor = p => followUps.filter(f => f.person === p && (showDone || !f.done))
@@ -2119,7 +2117,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
       <div style={{ marginBottom:12 }}>
         <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-          {MEMBERS.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+          {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
         </div>
       </div>
       <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#444', marginBottom:14, cursor:'pointer' }}>
@@ -2235,7 +2233,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
 // ─── Calendar Event Form ──────────────────────────────────────────────────────
 const CAL_EMPTY = { title:'', type:'event', start_date:today(), end_date:'', start_time:'09:00', end_time:'10:00', all_day:false, recurrence_type:'', recurrence_data:{}, recurrence_start:'', recurrence_end:'', owners:['Levi'], color:'', description:'' }
 
-function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
+function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members = MEMBERS }) {
   const [f, setF] = useState({ ...CAL_EMPTY, ...event, recurrence_data: event?.recurrence_data || {} })
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
   const setRd = (k, v) => setF(p => ({ ...p, recurrence_data:{ ...p.recurrence_data, [k]:v } }))
@@ -2357,7 +2355,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose }) {
         <div style={{ marginBottom:12 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Attendees</label>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {MEMBERS.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+            {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
           </div>
         </div>
 
@@ -2715,7 +2713,7 @@ function CalendarYearView({ events, year, onDayClick, onEventClick }) {
   )
 }
 
-function CalendarTab({ events, onSave, onDelete }) {
+function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
   const [calView, setCalView] = useState('month')
   const [travelFilter, setTravelFilter] = useState(false)
   const [calDate, setCalDate] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1) })
@@ -2817,7 +2815,7 @@ function CalendarTab({ events, onSave, onDelete }) {
         : <CalendarYearView events={travelFilter ? events.filter(e => e.type === 'travel') : events} year={year} onDayClick={handleDayClick} onEventClick={handleEventClick} />}
 
       {eventForm !== null && (
-        <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} />
+        <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} members={members} />
       )}
     </div>
   )
@@ -3243,8 +3241,8 @@ export default function App() {
               <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)}
                 style={{ fontSize:11, padding:'4px 8px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', color:filterOwner==='all'?'#888':'#111', height:28, outline:'none' }}>
                 <option value="all">👥 All people</option>
-                {TEAM_MEMBERS.filter(m => m.key !== 'all').map(m => (
-                  <option key={m.key} value={m.key}>{m.label}</option>
+                {memberNames.map(name => (
+                  <option key={name} value={name}>{name}</option>
                 ))}
               </select>
               <button onClick={() => { setShowTrash(v => { const next=!v; if(next) setTimeout(()=>trashRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),50); return next; }) }}
@@ -3425,7 +3423,7 @@ export default function App() {
 
       {/* ── Calendar ── */}
       {tab === 'calendar' && (
-        <CalendarTab events={calEvents} onSave={() => loadData(true)} onDelete={() => loadData(true)} />
+        <CalendarTab events={calEvents} onSave={() => loadData(true)} onDelete={() => loadData(true)} members={memberNames} />
       )}
 
       {/* ── Notes ── */}
@@ -3435,7 +3433,7 @@ export default function App() {
 
       {/* ── Follow Ups ── */}
       {tab === 'followups' && (
-        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} />
+        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} people={memberNames} />
       )}
 
       {/* ── Settings ── */}
