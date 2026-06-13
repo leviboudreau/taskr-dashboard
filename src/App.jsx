@@ -576,7 +576,6 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
         onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
           {project.type === 'bundle' && <span style={{ fontSize:9, fontWeight:500, background:'#EEF4FF', color:'#1a4fa0', padding:'2px 6px', borderRadius:20, border:'0.5px solid #93B8F0', whiteSpace:'nowrap' }}>Bundle</span>}
-          {project.type === 'qualification' && <span style={{ fontSize:9, fontWeight:500, background:'#EEEDFE', color:'#3C3489', padding:'2px 6px', borderRadius:20, border:'0.5px solid #A9A4E8', whiteSpace:'nowrap' }}>Qual</span>}
           {project.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{project.domain}</span>}
           {project.substatus && (() => { const ss = subStyle(project.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
           {project.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
@@ -615,7 +614,7 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
 
 // ─── Projects Section ─────────────────────────────────────────────────────────
 function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
-  const [step, setStep] = useState(null) // null | 'pick-type' | 'title' | 'qual-template'
+  const [step, setStep] = useState(null) // null | 'pick-type' | 'title' | 'bundle-template'
   const [newType, setNewType] = useState('project')
   const [newTitle, setNewTitle] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState(null)
@@ -632,7 +631,6 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
   const TYPE_OPTIONS = [
     { key:'project', label:'Project', desc:'Track work with tasks', bg:'#f7f7f5', border:'#ddd', tc:'#333' },
     { key:'bundle', label:'Bundle', desc:'Group related projects', bg:'#EEF4FF', border:'#93B8F0', tc:'#1a4fa0' },
-    { key:'qualification', label:'Qualification', desc:'Template-based record', bg:'#EEEDFE', border:'#A9A4E8', tc:'#3C3489' },
   ]
 
   return (
@@ -653,7 +651,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
             <div style={{ fontSize:11, color:'#aaa', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>What are you creating?</div>
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
               {TYPE_OPTIONS.map(t => (
-                <button key={t.key} onClick={() => { setNewType(t.key); setStep(t.key === 'qualification' ? 'qual-template' : 'title') }}
+                <button key={t.key} onClick={() => { setNewType(t.key); setStep(t.key === 'bundle' ? 'bundle-template' : 'title') }}
                   style={{ textAlign:'left', background:t.bg, border:`1px solid ${t.border}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
                   <div style={{ fontSize:12, fontWeight:500, color:t.tc }}>{t.label}</div>
                   <div style={{ fontSize:11, color:'#888', marginTop:1 }}>{t.desc}</div>
@@ -664,7 +662,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
           </div>
         )}
 
-        {step === 'qual-template' && (
+        {step === 'bundle-template' && (
           <div style={{ flexShrink:0, width:240, background:'white', border:'1px solid #e5e5e5', borderRadius:10, padding:12, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
             <div style={{ fontSize:11, color:'#aaa', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>Select template</div>
             {templates.length === 0 ? (
@@ -673,7 +671,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
               <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
                 {templates.map(t => (
                   <button key={t.id} onClick={() => { setSelectedTemplate(t.id); setStep('title') }}
-                    style={{ textAlign:'left', background:'#fafafa', border:`1px solid ${selectedTemplate===t.id?'#A9A4E8':'#e5e5e5'}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
+                    style={{ textAlign:'left', background:'#fafafa', border:`1px solid ${selectedTemplate===t.id?'#93B8F0':'#e5e5e5'}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
                     <div style={{ fontSize:12, fontWeight:500, color:'#111' }}>{t.name}</div>
                     <div style={{ fontSize:10, color:'#aaa' }}>{t.tasks?.length || 0} tasks</div>
                   </button>
@@ -689,7 +687,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
 
         {step === 'title' && (
           <div style={{ flexShrink:0, width:200 }}>
-            <div style={{ fontSize:11, color:'#aaa', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.06em' }}>{newType === 'bundle' ? 'Bundle' : newType === 'qualification' ? 'Qualification' : 'Project'} title</div>
+            <div style={{ fontSize:11, color:'#aaa', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.06em' }}>{newType === 'bundle' ? 'Bundle' : 'Project'} title</div>
             <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
               onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') reset() }}
               placeholder="Title..."
@@ -1577,11 +1575,20 @@ Important rules:
 
 // ─── Follow Ups Tab ───────────────────────────────────────────────────────────
 const DEFAULT_FOLLOW_UP_PEOPLE = ['Margarita', 'Illya', 'Matthew', 'Kaat']
-function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, people = DEFAULT_FOLLOW_UP_PEOPLE }) {
+function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, people = DEFAULT_FOLLOW_UP_PEOPLE }) {
   const [activePerson, setActivePerson] = useState(null)
   const [showDone, setShowDone] = useState(false)
   const [addingFor, setAddingFor] = useState(null)
   const [newText, setNewText] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [editText, setEditText] = useState('')
+
+  const startEdit = item => { setEditingId(item.id); setEditText(item.text) }
+  const commitEdit = id => {
+    const trimmed = editText.trim()
+    if (trimmed) onUpdate(id, trimmed)
+    setEditingId(null); setEditText('')
+  }
 
   const extraPeople = [...new Set(followUps.map(f => f.person))].filter(p => p && !people.includes(p))
   const allPeople = [...people, ...extraPeople]
@@ -1661,14 +1668,29 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, people = DEFAULT_F
               {items.map(item => (
                 <div key={item.id}
                   style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', background:item.done?'transparent':'white', borderRadius:6, border:item.done?'none':'0.5px solid #ebebeb', marginBottom:4 }}
-                  onMouseEnter={e => { const d = e.currentTarget.querySelector('.fu-del'); if(d) d.style.opacity='1' }}
-                  onMouseLeave={e => { const d = e.currentTarget.querySelector('.fu-del'); if(d) d.style.opacity='0' }}>
+                  onMouseEnter={e => { e.currentTarget.querySelectorAll('.fu-action').forEach(el => el.style.opacity='1') }}
+                  onMouseLeave={e => { e.currentTarget.querySelectorAll('.fu-action').forEach(el => el.style.opacity='0') }}>
                   <input type="checkbox" checked={!!item.done} onChange={e => onToggle(item.id, e.target.checked)} style={{ width:14, height:14, cursor:'pointer', flexShrink:0 }} />
-                  <span style={{ flex:1, fontSize:13, color:item.done?'#bbb':'#333', textDecoration:item.done?'line-through':'none' }}>{item.text}</span>
-                  <button className="fu-del" onClick={() => onDelete(item.id)}
-                    style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
-                    onMouseEnter={e => e.currentTarget.style.color='#E24B4A'}
-                    onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                  {editingId === item.id ? (
+                    <input autoFocus value={editText} onChange={e => setEditText(e.target.value)}
+                      onKeyDown={e => { if (e.key==='Enter') commitEdit(item.id); if (e.key==='Escape') { setEditingId(null); setEditText('') } }}
+                      onBlur={() => commitEdit(item.id)}
+                      style={{ flex:1, fontSize:13, padding:'2px 4px', border:'none', borderBottom:'1.5px solid #111', outline:'none', background:'transparent', fontFamily:'inherit', color:'#333' }} />
+                  ) : (
+                    <span onClick={() => !item.done && startEdit(item)} style={{ flex:1, fontSize:13, color:item.done?'#bbb':'#333', textDecoration:item.done?'line-through':'none', cursor:item.done?'default':'text' }}>{item.text}</span>
+                  )}
+                  {editingId !== item.id && (
+                    <>
+                      <button className="fu-action" onClick={() => startEdit(item)}
+                        style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
+                        onMouseEnter={e => e.currentTarget.style.color='#555'}
+                        onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✎</button>
+                      <button className="fu-action" onClick={() => onDelete(item.id)}
+                        style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
+                        onMouseEnter={e => e.currentTarget.style.color='#E24B4A'}
+                        onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
@@ -3023,7 +3045,7 @@ export default function App() {
   const addProject = async (title, type = 'project', templateId = null) => {
     const { data: proj, error } = await supabase.from('projects').insert({ title, type }).select().single()
     if (error || !proj) { console.error('[TASKr] addProject error', error); return }
-    if (type === 'qualification' && templateId) {
+    if (type === 'bundle' && templateId) {
       const tpl = qualTemplates.find(t => t.id === templateId)
       if (tpl?.tasks?.length) {
         const inserts = tpl.tasks.map((t, i) => ({
@@ -3091,6 +3113,10 @@ export default function App() {
   }
   const deleteFollowUp = async id => {
     await supabase.from('follow_ups').delete().eq('id', id)
+    await loadData(true)
+  }
+  const updateFollowUp = async (id, text) => {
+    await supabase.from('follow_ups').update({ text }).eq('id', id)
     await loadData(true)
   }
 
@@ -3434,7 +3460,7 @@ export default function App() {
 
       {/* ── Follow Ups ── */}
       {tab === 'followups' && (
-        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} people={memberNames} />
+        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={memberNames} />
       )}
 
       {/* ── Settings ── */}
@@ -3522,8 +3548,8 @@ function QualTemplateSettings({ onUpdate }) {
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
         <div>
-          <div style={{ fontSize:14, fontWeight:500, color:'#111', marginBottom:2 }}>Qualification Templates</div>
-          <div style={{ fontSize:12, color:'#aaa' }}>Pre-populate tasks when creating a qualification record.</div>
+          <div style={{ fontSize:14, fontWeight:500, color:'#111', marginBottom:2 }}>Bundle Templates</div>
+          <div style={{ fontSize:12, color:'#aaa' }}>Pre-populate tasks when creating a bundle.</div>
         </div>
         {editId === null && <button onClick={startNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>+ New template</button>}
       </div>
