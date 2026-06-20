@@ -373,10 +373,20 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
     attachments: Array.isArray(entity.attachments) ? entity.attachments : [],
   })
   const [newNote, setNewNote] = useState('')
+  const [editingNoteId, setEditingNoteId] = useState(null)
+  const [editNoteText, setEditNoteText] = useState('')
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
   const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { set('owners', cur.filter(o=>o!==m)) } else set('owners', [...cur,m]) }
   const addNote = () => { const text=newNote.trim(); if(!text) return; set('notes',[...f.notes,{id:'n'+Date.now(),text,ts:Date.now()}]); setNewNote('') }
   const removeNote = id => set('notes', f.notes.filter(n=>n.id!==id))
+  const startEditNote = n => { setEditingNoteId(n.id); setEditNoteText(n.text) }
+  const commitEditNote = () => {
+    if (!editingNoteId) return
+    const text = editNoteText.trim()
+    if (text) set('notes', f.notes.map(n => n.id===editingNoteId ? {...n, text} : n))
+    else set('notes', f.notes.filter(n => n.id!==editingNoteId))
+    setEditingNoteId(null); setEditNoteText('')
+  }
 
   const linkedTasks = isProject
     ? tasks.filter(t => t.project_id === entity.id)
@@ -403,8 +413,8 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
-        <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:520, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
+      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
+        <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:520, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
 
           {/* Title */}
           <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)}
@@ -460,7 +470,18 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
             {f.notes.map(n => (
               <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
                 <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
-                <span style={{ flex:1 }}>{n.text}</span>
+                {editingNoteId === n.id ? (
+                  <input
+                    autoFocus
+                    value={editNoteText}
+                    onChange={e => setEditNoteText(e.target.value)}
+                    onBlur={commitEditNote}
+                    onKeyDown={e => { if (e.key==='Enter') commitEditNote(); if (e.key==='Escape') { setEditingNoteId(null); setEditNoteText('') } }}
+                    style={{ flex:1, fontSize:11, padding:'2px 4px', border:'0.5px solid #bbb', borderRadius:4 }}
+                  />
+                ) : (
+                  <span style={{ flex:1, cursor:'text' }} onClick={() => startEditNote(n)}>{n.text}</span>
+                )}
                 <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
               </div>
             ))}
@@ -635,7 +656,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
 
   return (
     <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
-      <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
         {projects.map(p => (
           <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} noteCount={Array.isArray(p.notes)?p.notes.length:0} attachCount={Array.isArray(p.attachments)?p.attachments.length:0} onOpen={onOpen} />
         ))}
@@ -766,10 +787,7 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
   }
   return (
     <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-        <span style={{ fontSize:10, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
-      </div>
-      <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, alignItems:'flex-start' }}>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
         {escalations.map(e => (
           <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} noteCount={Array.isArray(e.notes)?e.notes.length:0} attachCount={Array.isArray(e.attachments)?e.attachments.length:0} onOpen={onOpen} />
         ))}
@@ -2171,8 +2189,8 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
   )
 
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex }}>
+      <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Task title..."
           style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
 
@@ -2277,14 +2295,14 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
   const rd = f.recurrence_data || {}
 
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:500, maxHeight:'90dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
+      <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:500, maxHeight:'90dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Event title..."
           style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
 
         {/* Type */}
         <div style={{ display:'flex', gap:8, marginBottom:14 }}>
-          {[{ key:'event', label:'Event' }, { key:'travel', label:'✈ Travel block' }].map(t => (
+          {[{ key:'event', label:'Event' }, { key:'travel', label:'✈ Travel block' }, { key:'audit', label:'🔍 Audit' }, { key:'vacation', label:'🌴 Vacation' }].map(t => (
             <button key={t.key} onClick={() => set('type', t.key)}
               style={{ fontSize:12, padding:'5px 14px', borderRadius:16, cursor:'pointer', border:f.type===t.key?'1.5px solid #111':'0.5px solid #e5e5e5', background:f.type===t.key?'#111':'white', color:f.type===t.key?'white':'#888', fontWeight:f.type===t.key?500:400 }}>
               {t.label}
@@ -2296,12 +2314,12 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
           <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Start date</label>
             <DatePickerISO value={f.start_date} onChange={v => { set('start_date', v); if (f.end_date && f.end_date < v) set('end_date', '') }} /></div>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>{f.type==='travel'?'End date':'End date (optional)'}</label>
+          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>{['travel','audit','vacation'].includes(f.type)?'End date':'End date (optional)'}</label>
             <DatePickerISO value={f.end_date} onChange={v => set('end_date', v)} initialMonth={f.start_date||undefined} minDate={f.start_date||undefined} /></div>
         </div>
 
         {/* Times + all day */}
-        {f.type !== 'travel' && (
+        {!['travel','audit','vacation'].includes(f.type) && (
           <div style={{ marginBottom:12 }}>
             <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#444', marginBottom:8, cursor:'pointer' }}>
               <input type="checkbox" checked={!!f.all_day} onChange={e => set('all_day', e.target.checked)} style={{ width:14, height:14 }} />All day
@@ -2425,8 +2443,8 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
   const allExpanded = getEventsForRange(events, rangeStart, rangeEnd)
   const todayStr = today()
 
-  const allDayEvs = allExpanded.filter(ev => ev.all_day || ev.type === 'travel' || (ev.end_date && ev.end_date !== ev.start_date))
-  const timedEvs = allExpanded.filter(ev => !ev.all_day && ev.type !== 'travel' && ev.start_time && !(ev.end_date && ev.end_date !== ev.start_date))
+  const allDayEvs = allExpanded.filter(ev => ev.all_day || ['travel','audit','vacation'].includes(ev.type) || (ev.end_date && ev.end_date !== ev.start_date))
+  const timedEvs = allExpanded.filter(ev => !ev.all_day && !['travel','audit','vacation'].includes(ev.type) && ev.start_time && !(ev.end_date && ev.end_date !== ev.start_date))
 
   const evsByDay = weekDates.map(d => {
     const ds = toISODate(d)
@@ -2468,11 +2486,11 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
                 const dispE = evE > rangeEnd ? rangeEnd : evE
                 const sc = Math.max(0, weekDates.findIndex(d => toISODate(d) === toISODate(dispS))) + 1
                 const ec = Math.min(7, weekDates.findIndex(d => toISODate(d) === toISODate(dispE))) + 2
-                const bg = ev.type === 'travel' ? '#FAEEDA' : (flagBg(ev.color) || '#E6F1FB')
-                const bdr = ev.type === 'travel' ? '#FAC775' : (flagBorder(ev.color) || '#85B7EB')
+                const bg = ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':(flagBg(ev.color)||'#E6F1FB')
+                const bdr = ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':(flagBorder(ev.color)||'#85B7EB')
                 return (
                   <div key={i} onClick={() => onEventClick(ev)} style={{ gridColumn:`${sc}/${ec}`, fontSize:10, padding:'3px 6px', borderRadius:4, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>
-                    {ev.type === 'travel' && '✈ '}{ev.title}
+                    {ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''}{ev.title}
                   </div>
                 )
               })}
@@ -2628,12 +2646,13 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
               {Array.from({ length: laneCount }, (_, li) => {
                 const ev = byLane[li]
                 if (!ev) return <div key={`sp-${li}`} style={{ height:20, marginBottom:2 }} />
-                const bg = ev.type==='travel'?'#FAEEDA':(flagBg(ev.color)||'#E6F1FB')
-                const bdr = ev.type==='travel'?'#FAC775':(flagBorder(ev.color)||'#85B7EB')
+                const bg = ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':(flagBg(ev.color)||'#E6F1FB')
+                const bdr = ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':(flagBorder(ev.color)||'#85B7EB')
                 const isStart = ev._spanDay === ev._spanStart
                 const isEnd = ev._spanDay === ev._spanEnd
                 const isSun = d.getDay() === 0
                 const showLabel = isStart || isSun
+                const typeIcon = ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''
                 return (
                   <div key={`ln-${li}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
                     style={{
@@ -2647,7 +2666,7 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
                       marginLeft: !isStart && !isSun ? -4 : 0,
                       marginRight: !isEnd ? -4 : 0,
                     }}>
-                    {showLabel ? (ev.type==='travel'?'✈ ':'')+( ev.start_time&&!ev.all_day?`${fmtTime(ev.start_time)} `:'')+ev.title : ' '}
+                    {showLabel ? typeIcon+( ev.start_time&&!ev.all_day?`${fmtTime(ev.start_time)} `:'')+ev.title : ' '}
                   </div>
                 )
               })}
@@ -2722,12 +2741,12 @@ function CalendarYearView({ events, year, onDayClick, onEventClick }) {
                   onMouseEnter={e => { if (!isToday) e.currentTarget.style.background=isWknd?'#eceae5':'#f0f0ee' }}
                   onMouseLeave={e => { e.currentTarget.style.background=cellNormalBg }}>
                   {cellEvs.slice(0, 2).map((ev, i) => {
-                    const bg = flagBg(ev.color)||(ev.type==='travel'?'#FAEEDA':'#E6F1FB')
-                    const tc = ev.type==='travel'?'#633806':'#0C447C'
+                    const bg = flagBg(ev.color)||(ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':'#E6F1FB')
+                    const tc = ev.type==='travel'?'#633806':ev.type==='audit'?'#5B21B6':ev.type==='vacation'?'#065F46':'#0C447C'
                     return (
                       <div key={i} onClick={e => { e.stopPropagation(); onEventClick(ev) }} title={ev.title}
                         style={{ fontSize:7, lineHeight:'8px', padding:'0 3px', height:8, borderRadius:2, background:bg, color:tc, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'pointer', flexShrink:0, fontWeight:500 }}>
-                        {ev.type==='travel'?'✈ ':''}{ev.title}
+                        {ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''}{ev.title}
                       </div>
                     )
                   })}
@@ -2771,7 +2790,9 @@ function CalendarListView({ events, onEventClick }) {
             <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
               {evs.map((ev, i) => {
                 const isTravel = ev.type === 'travel'
-                const colorHex = ev.color ? FLAG_COLORS.find(c => c.key === ev.color)?.hex : isTravel ? '#FAC775' : '#e0e0e0'
+                const isAudit = ev.type === 'audit'
+                const isVacation = ev.type === 'vacation'
+                const colorHex = ev.color ? FLAG_COLORS.find(c => c.key === ev.color)?.hex : isTravel ? '#FAC775' : isAudit ? '#A78BFA' : isVacation ? '#6EE7B7' : '#e0e0e0'
                 const dow = DOW_SHORT[fromISODate(ev.start_date).getDay()]
                 const day = parseInt(ev.start_date.split('-')[2])
                 const timeLabel = ev.all_day || isTravel
@@ -2790,6 +2811,8 @@ function CalendarListView({ events, onEventClick }) {
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:13, fontWeight:500, color:'#111', display:'flex', alignItems:'center', gap:6 }}>
                         {isTravel && <span style={{ fontSize:10 }}>✈</span>}
+                        {isAudit && <span style={{ fontSize:10 }}>🔍</span>}
+                        {isVacation && <span style={{ fontSize:10 }}>🌴</span>}
                         {ev.title}
                       </div>
                       {timeLabel && <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{timeLabel}</div>}
@@ -2846,9 +2869,9 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
     const payload = {
       title: data.title, type: data.type||'event',
       start_date: data.start_date, end_date: data.end_date||null,
-      start_time: data.all_day||data.type==='travel'?null:(data.start_time||null),
-      end_time: data.all_day||data.type==='travel'?null:(data.end_time||null),
-      all_day: !!data.all_day || data.type==='travel',
+      start_time: data.all_day||['travel','audit','vacation'].includes(data.type)?null:(data.start_time||null),
+      end_time: data.all_day||['travel','audit','vacation'].includes(data.type)?null:(data.end_time||null),
+      all_day: !!data.all_day || ['travel','audit','vacation'].includes(data.type),
       recurrence_type: data.recurrence_type||null,
       recurrence_data: data.recurrence_type?data.recurrence_data:{},
       recurrence_start: data.recurrence_type?(data.recurrence_start||data.start_date):null,
@@ -3366,15 +3389,6 @@ export default function App() {
           {/* Today strip */}
           <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} />
 
-          {/* Projects section */}
-          <div style={{ marginBottom:16 }}>
-            <button onClick={() => toggleSection('projects')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#888' }}>
-              <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
-              <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
-            </button>
-            {isSectionOpen('projects') && <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} />}
-          </div>
-
           {/* Escalations section */}
           <div style={{ marginBottom:16 }}>
             <button onClick={() => toggleSection('escalations')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#888' }}>
@@ -3382,6 +3396,15 @@ export default function App() {
               <span style={{ fontSize:11 }}>{isSectionOpen('escalations') ? '▴' : '▾'}</span>
             </button>
             {isSectionOpen('escalations') && <EscalationsSection escalations={filterOwner==='all'?escalations:escalations.filter(e=>(e.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />}
+          </div>
+
+          {/* Projects section */}
+          <div style={{ marginBottom:16 }}>
+            <button onClick={() => toggleSection('projects')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#888' }}>
+              <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
+              <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
+            </button>
+            {isSectionOpen('projects') && <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} />}
           </div>
 
           {/* ── Tasks kanban ── */}
