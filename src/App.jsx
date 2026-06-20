@@ -242,7 +242,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
         draggable
         onDragStart={e => { e.dataTransfer.setData('text/plain', String(task.id)); onDragStart(task.id) }}
         onDragEnd={onDragEnd}
-        onDragOver={onDragOver ? e => { e.preventDefault(); onDragOver(task.id) } : undefined}
+        onDragOver={onDragOver ? e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); onDragOver(task.id, e.clientY < r.top + r.height / 2 ? 'before' : 'after') } : undefined}
         onClick={() => onEdit(task)}
         style={{ background:bg||'white', border:border?`1px solid ${border}`:'0.5px solid #e5e5e5', borderRadius:8, padding:compact?'8px 10px':'10px 12px', marginBottom:4, userSelect:'none', opacity:dragging?0.4:1, cursor:'grab', width:'100%', boxSizing:'border-box' }}
         onMouseEnter={e => { if (!border) e.currentTarget.style.borderColor='#bbb' }}
@@ -374,7 +374,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
   })
   const [newNote, setNewNote] = useState('')
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
-  const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { if (cur.length>1) set('owners', cur.filter(o=>o!==m)) } else set('owners', [...cur,m]) }
+  const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { set('owners', cur.filter(o=>o!==m)) } else set('owners', [...cur,m]) }
   const addNote = () => { const text=newNote.trim(); if(!text) return; set('notes',[...f.notes,{id:'n'+Date.now(),text,ts:Date.now()}]); setNewNote('') }
   const removeNote = id => set('notes', f.notes.filter(n=>n.id!==id))
 
@@ -1361,7 +1361,7 @@ Important rules:
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1200,
           system: systemPrompt,
           messages: [{ role: 'user', content: userPrompt }],
@@ -2042,7 +2042,8 @@ function DatePickerISO({ value, onChange, initialMonth, minDate }) {
     const p = v.split('/')
     if (p.length === 3) {
       const [mm, dd, yy] = p
-      const year = yy.length === 2 ? (parseInt(yy) < 50 ? `20${yy}` : `19${yy}`) : yy
+      const currentCentury = Math.floor(new Date().getFullYear() / 100) * 100
+      const year = yy.length === 2 ? String(currentCentury + parseInt(yy)) : yy
       return `${year}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
     }
     return ''
@@ -2109,7 +2110,7 @@ function SubtaskRow({ st, onChange, onDelete }) {
   )
 }
 
-function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, escalations, zIndex = 50, members = MEMBERS }) {
+function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 50, members = MEMBERS }) {
   const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, attachments:[] }
   const tempId = useRef(crypto.randomUUID())
   const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:['Levi'], notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[], attachments:Array.isArray(task?.attachments)?task.attachments:[] })
@@ -2117,7 +2118,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
   const [newSub, setNewSub] = useState('')
   const [showDetails, setShowDetails] = useState(false)
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
-  const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { if (cur.length>1) set('owners', cur.filter(o => o!==m)) } else set('owners', [...cur, m]) }
+  const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { set('owners', cur.filter(o => o!==m)) } else set('owners', [...cur, m]) }
   const addNote = () => { const text = newNote.trim(); if (!text) return; set('notes', [...f.notes, { id:'n'+Date.now(), text, ts:Date.now() }]); setNewNote('') }
   const removeNote = id => set('notes', f.notes.filter(n => n.id!==id))
   const editNote = (id, text) => { if (!text) removeNote(id); else set('notes', f.notes.map(n => n.id===id?{...n,text}:n)) }
@@ -2252,7 +2253,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, projects, 
           <div>{isEdit && <button onClick={() => onDelete(task.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</button>}</div>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={onClose} style={{ fontSize:13, background:'none', border:'0.5px solid #ccc', borderRadius:8, padding:'7px 14px', cursor:'pointer', color:'#444' }}>Cancel</button>
-            <button onClick={() => { if (f.title.trim()) onSave(f) }} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:'pointer' }}>Save</button>
+            <button onClick={() => { if (f.title.trim()) onSave(f) }} disabled={!f.title.trim()} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:f.title.trim()?'pointer':'not-allowed', opacity:f.title.trim()?1:0.4 }}>Save</button>
           </div>
         </div>
       </div>
@@ -2267,7 +2268,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
   const [f, setF] = useState({ ...CAL_EMPTY, ...event, recurrence_data: event?.recurrence_data || {} })
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
   const setRd = (k, v) => setF(p => ({ ...p, recurrence_data:{ ...p.recurrence_data, [k]:v } }))
-  const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { if (cur.length>1) set('owners', cur.filter(o => o!==m)) } else set('owners', [...cur, m]) }
+  const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { set('owners', cur.filter(o => o!==m)) } else set('owners', [...cur, m]) }
   const toggleDay = d => {
     const days = f.recurrence_data.days||[]
     setRd('days', days.includes(d) ? days.filter(x => x!==d) : [...days, d])
@@ -2408,7 +2409,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
           <div>{isEdit && <button onClick={() => onDelete(event.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</button>}</div>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={onClose} style={{ fontSize:13, background:'none', border:'0.5px solid #ccc', borderRadius:8, padding:'7px 14px', cursor:'pointer', color:'#444' }}>Cancel</button>
-            <button onClick={() => { if (f.title.trim()) onSave(f) }} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:'pointer' }}>Save</button>
+            <button onClick={() => { if (f.title.trim()) onSave(f) }} disabled={!f.title.trim()} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:f.title.trim()?'pointer':'not-allowed', opacity:f.title.trim()?1:0.4 }}>Save</button>
           </div>
         </div>
       </div>
@@ -2536,71 +2537,69 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
   const dates = getMonthDates(year, month)
   const todayStr = today()
   const rangeStart = dates[0], rangeEnd = dates[41]
-  const expanded = getEventsForRange(events, rangeStart, rangeEnd)
 
-  // Separate multi-day (span > 1 day) from single-day
-  const multiDay = expanded.filter(ev => ev.end_date && fromISODate(ev.end_date) > fromISODate(ev.start_date))
-  const singleDay = expanded.filter(ev => !ev.end_date || fromISODate(ev.end_date) <= fromISODate(ev.start_date))
+  const { multiByDay, singleByDay, maxLanePerWeek } = useMemo(() => {
+    const expanded = getEventsForRange(events, rangeStart, rangeEnd)
+    const multiDay = expanded.filter(ev => ev.end_date && fromISODate(ev.end_date) > fromISODate(ev.start_date))
+    const singleDay = expanded.filter(ev => !ev.end_date || fromISODate(ev.end_date) <= fromISODate(ev.start_date))
 
-  // O(1) date-to-grid-index lookup
-  const dateIdx = {}
-  dates.forEach((d, i) => { dateIdx[toISODate(d)] = i })
+    const dateIdx = {}
+    dates.forEach((d, i) => { dateIdx[toISODate(d)] = i })
 
-  // Assign lanes per week row so ribbons stay horizontally aligned.
-  // laneMap[ev.id][weekRow] = lane number
-  const laneMap = {}
-  const maxLanePerWeek = new Array(6).fill(-1)
-  for (let wi = 0; wi < 6; wi++) {
-    const wS = dates[wi * 7], wE = dates[wi * 7 + 6]
-    const weekEvs = multiDay
-      .filter(ev => fromISODate(ev.end_date) >= wS && fromISODate(ev.start_date) <= wE)
-      .sort((a, b) => {
-        const aS = fromISODate(a.start_date), bS = fromISODate(b.start_date)
-        const aClip = aS < wS ? wS : aS, bClip = bS < wS ? wS : bS
-        if (aClip < bClip) return -1
-        if (aClip > bClip) return 1
-        return (fromISODate(b.end_date) - fromISODate(b.start_date)) - (fromISODate(a.end_date) - fromISODate(a.start_date))
+    const laneMap = {}
+    const maxLanePerWeek = new Array(6).fill(-1)
+    for (let wi = 0; wi < 6; wi++) {
+      const wS = dates[wi * 7], wE = dates[wi * 7 + 6]
+      const weekEvs = multiDay
+        .filter(ev => fromISODate(ev.end_date) >= wS && fromISODate(ev.start_date) <= wE)
+        .sort((a, b) => {
+          const aS = fromISODate(a.start_date), bS = fromISODate(b.start_date)
+          const aClip = aS < wS ? wS : aS, bClip = bS < wS ? wS : bS
+          if (aClip < bClip) return -1
+          if (aClip > bClip) return 1
+          return (fromISODate(b.end_date) - fromISODate(b.start_date)) - (fromISODate(a.end_date) - fromISODate(a.start_date))
+        })
+      const laneEnds = []
+      weekEvs.forEach(ev => {
+        const evS = fromISODate(ev.start_date), evE = fromISODate(ev.end_date)
+        const clipS = evS < wS ? wS : evS
+        let lane = 0
+        while (lane < laneEnds.length && laneEnds[lane] >= clipS) lane++
+        if (!laneMap[ev.id]) laneMap[ev.id] = {}
+        laneMap[ev.id][wi] = lane
+        laneEnds[lane] = evE > wE ? wE : evE
+        if (lane > maxLanePerWeek[wi]) maxLanePerWeek[wi] = lane
       })
-    const laneEnds = []
-    weekEvs.forEach(ev => {
-      const evS = fromISODate(ev.start_date), evE = fromISODate(ev.end_date)
-      const clipS = evS < wS ? wS : evS
-      let lane = 0
-      while (lane < laneEnds.length && laneEnds[lane] >= clipS) lane++
-      if (!laneMap[ev.id]) laneMap[ev.id] = {}
-      laneMap[ev.id][wi] = lane
-      laneEnds[lane] = evE > wE ? wE : evE
-      if (lane > maxLanePerWeek[wi]) maxLanePerWeek[wi] = lane
-    })
-  }
-
-  // Build per-day multi-day lookup with lane assignments
-  const multiByDay = {}
-  multiDay.forEach(ev => {
-    const evS = fromISODate(ev.start_date), evE = fromISODate(ev.end_date)
-    let cur = new Date(evS)
-    while (cur <= evE) {
-      const ds = toISODate(cur)
-      if (dateIdx[ds] !== undefined) {
-        const lane = laneMap[ev.id]?.[Math.floor(dateIdx[ds] / 7)] ?? 0
-        if (!multiByDay[ds]) multiByDay[ds] = []
-        multiByDay[ds].push({ ...ev, _lane: lane, _spanStart: ev.start_date, _spanEnd: toISODate(evE), _spanDay: ds })
-      }
-      cur.setDate(cur.getDate() + 1)
     }
-  })
 
-  // Build per-day single-day lookup, all-day/no-time first then by start_time
-  const singleByDay = {}
-  singleDay.forEach(ev => {
-    if (!singleByDay[ev.start_date]) singleByDay[ev.start_date] = []
-    singleByDay[ev.start_date].push(ev)
-  })
-  Object.values(singleByDay).forEach(arr => arr.sort((a, b) => {
-    if (!a.start_time && b.start_time) return -1
-    if (a.start_time && !b.start_time) return 1
-    return (a.start_time||'').localeCompare(b.start_time||'')
-  }))
+    const multiByDay = {}
+    multiDay.forEach(ev => {
+      const evS = fromISODate(ev.start_date), evE = fromISODate(ev.end_date)
+      let cur = new Date(evS)
+      while (cur <= evE) {
+        const ds = toISODate(cur)
+        if (dateIdx[ds] !== undefined) {
+          const lane = laneMap[ev.id]?.[Math.floor(dateIdx[ds] / 7)] ?? 0
+          if (!multiByDay[ds]) multiByDay[ds] = []
+          multiByDay[ds].push({ ...ev, _lane: lane, _spanStart: ev.start_date, _spanEnd: toISODate(evE), _spanDay: ds })
+        }
+        cur.setDate(cur.getDate() + 1)
+      }
+    })
+
+    const singleByDay = {}
+    singleDay.forEach(ev => {
+      if (!singleByDay[ev.start_date]) singleByDay[ev.start_date] = []
+      singleByDay[ev.start_date].push(ev)
+    })
+    Object.values(singleByDay).forEach(arr => arr.sort((a, b) => {
+      if (!a.start_time && b.start_time) return -1
+      if (a.start_time && !b.start_time) return 1
+      return (a.start_time||'').localeCompare(b.start_time||'')
+    }))
+
+    return { multiByDay, singleByDay, maxLanePerWeek }
+  }, [events, year, month])
 
   return (
     <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden', background:'white' }}>
@@ -2918,14 +2917,6 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
 }
 
 // ─── Team Board Tab ───────────────────────────────────────────────────────────
-const TEAM_MEMBERS = [
-  { key: 'all', label: 'All' },
-  { key: 'Levi', label: 'Levi' },
-  { key: 'Margarita', label: 'Margarita', full: 'Margarita Vulfova', role: 'Direct Report', loc: 'Brooklyn, NY' },
-  { key: 'Illya', label: 'Illya', full: 'Illya Ostrenko', role: 'Sr. Quality Systems Specialist', loc: 'Morristown, NJ' },
-  { key: 'Matthew', label: 'Matthew', full: 'Matthew Miller', role: 'Quality Systems Specialist', loc: 'Greenwood, SC' },
-]
-
 function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, overCol, toggleSubtask, onComplete, entityMap = {} }) {
   const [member, setMember] = useState('all')
   const filtered = member === 'all' ? tasks : tasks.filter(t => (t.owners||['Levi']).includes(member))
@@ -3024,9 +3015,7 @@ export default function App() {
   const [filterOwner, setFilterOwner] = useState('all')
   const [showTrash, setShowTrash] = useState(false)
   const trashRef = useRef(null)
-  const [teamData, setTeamData] = useState(
-    TEAM_MEMBERS.filter(m => m.key !== 'all').map((m, i) => ({ id:m.key, name:m.label, full_name:m.full||'', role:m.role||'', location:m.loc||'', sort_order:i+1 }))
-  )
+  const [teamData, setTeamData] = useState([])
   const [activeProject, setActiveProject] = useState(null)
   const [dropTarget, setDropTarget] = useState(null) // { col, taskId, position }
 
@@ -3051,9 +3040,9 @@ export default function App() {
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) setDomains(domainsData.map(d => d.name))
-    setProjects(projectsData || [])
+    setProjects((projectsData || []).map(p => ({ ...p, notes: p.notes||[], attachments: p.attachments||[], owners: p.owners||[] })))
     if (calData) setCalEvents(calData)
-    setEscalations(escalationsData || [])
+    setEscalations((escalationsData || []).map(e => ({ ...e, notes: e.notes||[], attachments: e.attachments||[], owners: e.owners||[] })))
     setNotes(notesData || [])
     setFollowUps(followUpsData || [])
     if (teamMembersData && teamMembersData.length > 0) setTeamData(teamMembersData)
@@ -3086,12 +3075,14 @@ export default function App() {
 
   const saveTask = async data => {
     const payload = buildTaskPayload(data)
+    let error
     if (isEdit && form?.id) {
-      await supabase.from('tasks').update(payload).eq('id', form.id)
+      ({ error } = await supabase.from('tasks').update(payload).eq('id', form.id))
     } else {
-      const maxOrder = tasks.length ? Math.max(...tasks.map(t => t.sort_order||0)) : 0
-      await supabase.from('tasks').insert({ ...payload, sort_order: maxOrder+1 })
+      const maxOrder = tasks.length ? Math.max(...tasks.map(t => t.sort_order||0)) : 0;
+      ({ error } = await supabase.from('tasks').insert({ ...payload, sort_order: maxOrder+1 }))
     }
+    if (error) { console.error('[TASKr] saveTask error', error); return }
     setForm(null)
     await loadData()
   }
@@ -3108,7 +3099,8 @@ export default function App() {
   }
 
   const deleteTask = async id => {
-    await supabase.from('tasks').delete().eq('id', id)
+    const { error } = await supabase.from('tasks').delete().eq('id', id)
+    if (error) { console.error('[TASKr] deleteTask error', error); return }
     setForm(null); await loadData()
   }
 
@@ -3168,35 +3160,43 @@ export default function App() {
 
   const saveNote = async (data, id) => {
     const payload = { title: data.title, body: data.body || '', updated_at: new Date().toISOString() }
-    if (id) await supabase.from('notes').update(payload).eq('id', id)
-    else await supabase.from('notes').insert(payload)
+    const { error } = id
+      ? await supabase.from('notes').update(payload).eq('id', id)
+      : await supabase.from('notes').insert(payload)
+    if (error) { console.error('[TASKr] saveNote error', error); return }
     await loadData(true)
   }
 
   const deleteNote = async id => {
-    await supabase.from('notes').delete().eq('id', id)
+    const { error } = await supabase.from('notes').delete().eq('id', id)
+    if (error) { console.error('[TASKr] deleteNote error', error); return }
     await loadData(true)
   }
 
   const addFollowUp = async (text, person) => {
-    await supabase.from('follow_ups').insert({ text, person, done: false })
+    const { error } = await supabase.from('follow_ups').insert({ text, person, done: false })
+    if (error) { console.error('[TASKr] addFollowUp error', error); return }
     await loadData(true)
   }
   const toggleFollowUp = async (id, done) => {
-    await supabase.from('follow_ups').update({ done }).eq('id', id)
+    const { error } = await supabase.from('follow_ups').update({ done }).eq('id', id)
+    if (error) { console.error('[TASKr] toggleFollowUp error', error); return }
     await loadData(true)
   }
   const deleteFollowUp = async id => {
-    await supabase.from('follow_ups').delete().eq('id', id)
+    const { error } = await supabase.from('follow_ups').delete().eq('id', id)
+    if (error) { console.error('[TASKr] deleteFollowUp error', error); return }
     await loadData(true)
   }
   const updateFollowUp = async (id, text) => {
-    await supabase.from('follow_ups').update({ text }).eq('id', id)
+    const { error } = await supabase.from('follow_ups').update({ text }).eq('id', id)
+    if (error) { console.error('[TASKr] updateFollowUp error', error); return }
     await loadData(true)
   }
 
   const restoreTask = async (task) => {
-    await supabase.from('tasks').update({ substatus: 'not_started', updated_at: new Date().toISOString() }).eq('id', task.id)
+    const subtasks = (task.subtasks||[]).map(s => ({ ...s, done: false }))
+    await supabase.from('tasks').update({ substatus: 'not_started', subtasks, updated_at: new Date().toISOString() }).eq('id', task.id)
     await loadData()
   }
 
@@ -3206,7 +3206,9 @@ export default function App() {
   }
 
   const quickComplete = async (id, complete) => {
-    await supabase.from('tasks').update({ substatus: complete ? 'complete' : 'not_started', updated_at: new Date().toISOString() }).eq('id', id)
+    const prior = tasks.find(t => t.id === id)
+    const substatus = complete ? 'complete' : (prior?.substatus && prior.substatus !== 'complete' ? prior.substatus : 'not_started')
+    await supabase.from('tasks').update({ substatus, updated_at: new Date().toISOString() }).eq('id', id)
     await loadData()
   }
 
@@ -3467,7 +3469,7 @@ export default function App() {
                             onToggleSubtask={toggleSubtask}
                             onComplete={quickComplete}
                             dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null}
-                            onDragOver={viewMode==='dynamic'?taskId => setDropTarget({ col:col.key, taskId, position:'before' }):null}
+                            onDragOver={viewMode==='dynamic'?(taskId, position) => setDropTarget({ col:col.key, taskId, position }):null}
                             entityMap={entityMap}
                           />
                         ))}
