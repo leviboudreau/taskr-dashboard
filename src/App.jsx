@@ -662,9 +662,11 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
         ))}
 
         {step === null && (
-          <div onClick={() => setStep('pick-type')} style={{ flexShrink:0, width:200, border:'0.5px dashed #ccc', borderRadius:8, padding:'28px 12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#bbb', fontSize:12, minHeight:80, boxSizing:'border-box' }}>
-            + New
-          </div>
+          <button onClick={() => setStep('pick-type')} style={{ alignSelf:'center', background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:12, padding:'4px 2px', fontFamily:'inherit' }}
+            onMouseEnter={e => e.currentTarget.style.color='#888'}
+            onMouseLeave={e => e.currentTarget.style.color='#ccc'}>
+            + new
+          </button>
         )}
 
         {step === 'pick-type' && (
@@ -803,9 +805,11 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
             </div>
           </div>
         ) : (
-          <div onClick={() => setAdding(true)} style={{ flexShrink:0, width:200, border:`0.5px dashed ${REDBORDER}`, borderRadius:8, padding:'28px 12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#bbb', fontSize:12, minHeight:80, boxSizing:'border-box' }}>
-            + New escalation
-          </div>
+          <button onClick={() => setAdding(true)} style={{ alignSelf:'center', background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:12, padding:'4px 2px', fontFamily:'inherit' }}
+            onMouseEnter={e => e.currentTarget.style.color='#888'}
+            onMouseLeave={e => e.currentTarget.style.color='#ccc'}>
+            + new
+          </button>
         )}
       </div>
     </div>
