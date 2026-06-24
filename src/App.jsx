@@ -2674,12 +2674,17 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
                   </div>
                 )
               })}
-              {singles.slice(0, singlesSlots).map((ev, ei) => (
-                <div key={`s-${ei}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
-                  style={{ fontSize:10, padding:'1px 5px', borderRadius:3, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background:flagBg(ev.color)||'#E6F1FB', border:`0.5px solid ${flagBorder(ev.color)||'#85B7EB'}`, color:'#333', cursor:'pointer' }}>
-                  {ev.start_time?`${fmtTime(ev.start_time)} `:''}{ev.title}
-                </div>
-              ))}
+              {singles.slice(0, singlesSlots).map((ev, ei) => {
+                const sBg = ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':(flagBg(ev.color)||'#E6F1FB')
+                const sBdr = ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':(flagBorder(ev.color)||'#85B7EB')
+                const sIcon = ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''
+                return (
+                  <div key={`s-${ei}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
+                    style={{ fontSize:10, padding:'1px 5px', borderRadius:3, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background:sBg, border:`0.5px solid ${sBdr}`, color:'#333', cursor:'pointer' }}>
+                    {sIcon}{ev.start_time?`${fmtTime(ev.start_time)} `:''}{ev.title}
+                  </div>
+                )
+              })}
               {overflow > 0 && <div style={{ fontSize:9, color:'#888', paddingLeft:4 }}>+{overflow} more</div>}
             </div>
           )
