@@ -378,13 +378,14 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
   const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { set('owners', cur.filter(o=>o!==m)) } else set('owners', [...cur,m]) }
   const addNote = () => { const text=newNote.trim(); if(!text) return; set('notes',[...f.notes,{id:'n'+Date.now(),text,ts:Date.now()}]); setNewNote('') }
-  const removeNote = id => set('notes', f.notes.filter(n=>n.id!==id))
+  const removeNote = id => setF(p => ({ ...p, notes: p.notes.filter(n=>n.id!==id) }))
   const startEditNote = n => { setEditingNoteId(n.id); setEditNoteText(n.text) }
   const commitEditNote = () => {
     if (!editingNoteId) return
     const text = editNoteText.trim()
-    if (text) set('notes', f.notes.map(n => n.id===editingNoteId ? {...n, text} : n))
-    else set('notes', f.notes.filter(n => n.id!==editingNoteId))
+    const eid = editingNoteId
+    if (text) setF(p => ({ ...p, notes: p.notes.map(n => n.id===eid ? {...n, text} : n) }))
+    else setF(p => ({ ...p, notes: p.notes.filter(n => n.id!==eid) }))
     setEditingNoteId(null); setEditNoteText('')
   }
 
@@ -1609,6 +1610,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
   const commitEdit = id => {
     const trimmed = editText.trim()
     if (trimmed) onUpdate(id, trimmed)
+    else onDelete(id)
     setEditingId(null); setEditText('')
   }
 
@@ -2011,9 +2013,8 @@ function DatePicker({ value, onChange, initialMonth, minDate }) {
   const selectDay = d => {
     const str = formatDue(new Date(yr, mo, d))
     if (minDate) {
-      const [my,mm,md] = minDate.split('-').map(Number)
-      const minStr = formatDue(new Date(my,mm-1,md))
-      if (str < minStr) return
+      const isoStr = `${yr}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+      if (isoStr < minDate) return
     }
     onChange(str); setOpen(false)
   }
@@ -2043,7 +2044,7 @@ function DatePicker({ value, onChange, initialMonth, minDate }) {
             {Array.from({length:days}).map((_,i) => {
               const d = i+1, str = formatDue(new Date(yr,mo,d))
               const sel = str === value, isToday = str === todayStr
-              const disabled = !!minDate && (() => { const [my,mm,md]=minDate.split('-').map(Number); return str < formatDue(new Date(my,mm-1,md)) })()
+              const disabled = !!minDate && (`${yr}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}` < minDate)
               return <button key={d} onClick={() => selectDay(d)}
                 style={{ fontSize:12, border:'none', borderRadius:6, padding:'5px 2px', cursor:disabled?'default':'pointer', textAlign:'center', background:sel?'#111':isToday?'#f0f0f0':'transparent', color:sel?'white':disabled?'#ddd':isToday?'#111':'#444', fontFamily:'inherit' }}>
                 {d}
@@ -2781,7 +2782,9 @@ function CalendarYearView({ events, year, onDayClick, onShowDay, onEventClick })
 
 function CalendarListView({ events, onEventClick }) {
   const todayISO = toISODate(new Date())
-  const sorted = [...events]
+  const horizonEnd = new Date(); horizonEnd.setFullYear(horizonEnd.getFullYear() + 2)
+  const expanded = getEventsForRange(events, fromISODate(todayISO), horizonEnd)
+  const sorted = expanded
     .filter(ev => (ev.end_date || ev.start_date) >= todayISO)
     .sort((a, b) => a.start_date.localeCompare(b.start_date) || (a.start_time||'').localeCompare(b.start_time||''))
 
@@ -3573,7 +3576,7 @@ export default function App() {
                   style={{ display:'grid', gridTemplateColumns:COL_GRID, padding:'8px 12px', alignItems:'center', borderBottom: last ? 'none' : '0.5px solid #f0f0f0', cursor:'pointer', background:'white' }}
                   onMouseEnter={e => e.currentTarget.style.background='#fafafa'}
                   onMouseLeave={e => e.currentTarget.style.background='white'}>
-                  <div onClick={e => { e.stopPropagation(); quickComplete(t.id) }} style={{ width:14, height:14, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: taskSubstatus(t)==='complete'?(ss.bg||'#eee'):'white', cursor:'pointer', flexShrink:0 }} />
+                  <div onClick={e => { e.stopPropagation(); quickComplete(t.id, taskSubstatus(t) !== 'complete') }} style={{ width:14, height:14, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: taskSubstatus(t)==='complete'?(ss.bg||'#eee'):'white', cursor:'pointer', flexShrink:0 }} />
                   <span style={{ fontSize:13, color:taskSubstatus(t)==='complete'?'#aaa':'#111', textDecoration:taskSubstatus(t)==='complete'?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:8 }}>
                     {t.today && <span style={{ fontSize:9, color:'#E24B4A', marginRight:5, fontWeight:600 }}>TODAY</span>}
                     {t.title}
@@ -3655,7 +3658,7 @@ export default function App() {
                   const ct = getColTasks(col.key)
                   return <div key={col.key} onDragOver={e => { e.preventDefault(); setOverCol(col.key) }} onDragLeave={() => setOverCol(null)} onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }} style={{ background:'#f7f7f5', borderRadius:12, padding:12, minHeight:200 }}>
                     <button onClick={() => { setForm({ substatus:col.key, status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'10px 0', fontSize:13, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>+ Add task</button>
-                    {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={quickComplete} entityMap={entityMap} />)}
+                    {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={quickComplete} entityMap={entityMap} dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null} onDragOver={viewMode==='dynamic'?(taskId,position)=>setDropTarget({col:col.key,taskId,position}):null} />)}
                   </div>
                 })}
               </div>
