@@ -1597,7 +1597,7 @@ Important rules:
 
 // ─── Follow Ups Tab ───────────────────────────────────────────────────────────
 const DEFAULT_FOLLOW_UP_PEOPLE = ['Margarita', 'Illya', 'Matthew', 'Kaat']
-function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, people = DEFAULT_FOLLOW_UP_PEOPLE }) {
+function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, people = DEFAULT_FOLLOW_UP_PEOPLE }) {
   const [activePerson, setActivePerson] = useState(null)
   const [showDone, setShowDone] = useState(false)
   const [addingFor, setAddingFor] = useState(null)
@@ -1703,6 +1703,12 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, people =
                   )}
                   {editingId !== item.id && (
                     <>
+                      {!item.done && onCreateTask && (
+                        <button className="fu-action" onClick={() => onCreateTask(item)} title="Create task"
+                          style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
+                          onMouseEnter={e => e.currentTarget.style.color='#0C447C'}
+                          onMouseLeave={e => e.currentTarget.style.color='#ddd'}>+task</button>
+                      )}
                       <button className="fu-action" onClick={() => startEdit(item)}
                         style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
                         onMouseEnter={e => e.currentTarget.style.color='#555'}
@@ -2555,7 +2561,7 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
 }
 
 // ─── Calendar Month View ──────────────────────────────────────────────────────
-function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
+function CalendarMonthView({ events, year, month, onDayClick, onShowDay, onEventClick }) {
   const dates = getMonthDates(year, month)
   const todayStr = today()
   const rangeStart = dates[0], rangeEnd = dates[41]
@@ -2644,7 +2650,10 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
               style={{ minHeight:80, padding:'6px 4px 4px', borderTop:i>=7?'0.5px solid #d8d8d8':undefined, borderLeft:i%7!==0?'0.5px solid #d8d8d8':undefined, cursor:'pointer', background:d.getDay()===0||d.getDay()===6?'#f5f4f0':'transparent' }}
               onMouseEnter={e => e.currentTarget.style.background=d.getDay()===0||d.getDay()===6?'#eceae5':'#f5f5f3'}
               onMouseLeave={e => e.currentTarget.style.background=d.getDay()===0||d.getDay()===6?'#f5f4f0':'transparent'}>
-              <div style={{ width:22, height:22, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:12, marginBottom:3, background:isToday?'#111':'transparent', color:isToday?'white':inMonth?'#111':'#ccc', fontWeight:isToday?500:400 }}>
+              <div onClick={e => { e.stopPropagation(); onShowDay(d) }}
+                style={{ width:22, height:22, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:12, marginBottom:3, background:isToday?'#111':'transparent', color:isToday?'white':inMonth?'#111':'#ccc', fontWeight:isToday?500:400, cursor:'pointer' }}
+                onMouseEnter={e => { if (!isToday) e.currentTarget.style.background='#e8e8e8' }}
+                onMouseLeave={e => { if (!isToday) e.currentTarget.style.background='transparent' }}>
                 {d.getDate()}
               </div>
               {Array.from({ length: laneCount }, (_, li) => {
@@ -2685,7 +2694,7 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
                   </div>
                 )
               })}
-              {overflow > 0 && <div style={{ fontSize:9, color:'#888', paddingLeft:4 }}>+{overflow} more</div>}
+              {overflow > 0 && <div onClick={e => { e.stopPropagation(); onShowDay(d) }} style={{ fontSize:9, color:'#888', paddingLeft:4, cursor:'pointer' }} onMouseEnter={e => e.currentTarget.style.color='#111'} onMouseLeave={e => e.currentTarget.style.color='#888'}>+{overflow} more</div>}
             </div>
           )
         })}
@@ -2696,7 +2705,7 @@ function CalendarMonthView({ events, year, month, onDayClick, onEventClick }) {
 
 
 // ─── Calendar Tab ─────────────────────────────────────────────────────────────
-function CalendarYearView({ events, year, onDayClick, onEventClick }) {
+function CalendarYearView({ events, year, onDayClick, onShowDay, onEventClick }) {
   const todayStr = today()
   const yearStart = new Date(year, 0, 1)
   const yearEnd = new Date(year, 11, 31)
@@ -2759,7 +2768,7 @@ function CalendarYearView({ events, year, onDayClick, onEventClick }) {
                       </div>
                     )
                   })}
-                  {cellEvs.length > 2 && <div style={{ fontSize:6, color:'#aaa', lineHeight:'7px', paddingLeft:2, flexShrink:0 }}>+{cellEvs.length-2}</div>}
+                  {cellEvs.length > 2 && <div onClick={e => { e.stopPropagation(); onShowDay(fromISODate(ds)) }} style={{ fontSize:6, color:'#aaa', lineHeight:'7px', paddingLeft:2, flexShrink:0, cursor:'pointer' }}>+{cellEvs.length-2}</div>}
                 </div>
               )
             })
@@ -2837,12 +2846,70 @@ function CalendarListView({ events, onEventClick }) {
   )
 }
 
+function DayScheduleModal({ date, events, onClose, onEventClick, onAddEvent }) {
+  const dayEvs = getEventsForRange(events, date, date)
+    .sort((a, b) => {
+      const aAllDay = a.all_day || ['travel','audit','vacation'].includes(a.type)
+      const bAllDay = b.all_day || ['travel','audit','vacation'].includes(b.type)
+      if (aAllDay !== bAllDay) return aAllDay ? -1 : 1
+      return (a.start_time||'').localeCompare(b.start_time||'')
+    })
+  const label = date.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' })
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:55 }}>
+      <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+          <span style={{ fontSize:15, fontWeight:500, color:'#111' }}>{label}</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#aaa', fontSize:18, padding:0, lineHeight:1 }}>×</button>
+        </div>
+
+        <button onClick={() => onAddEvent(date)} style={{ width:'100%', marginBottom:12, padding:'8px 0', fontSize:12, color:'#888', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>
+          + Add event
+        </button>
+
+        {dayEvs.length === 0 ? (
+          <div style={{ textAlign:'center', padding:'30px 0', color:'#ccc', fontSize:13 }}>No events</div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {dayEvs.map((ev, i) => {
+              const isTravel = ev.type === 'travel', isAudit = ev.type === 'audit', isVacation = ev.type === 'vacation'
+              const colorHex = ev.color ? FLAG_COLORS.find(c => c.key === ev.color)?.hex : isTravel ? '#FAC775' : isAudit ? '#A78BFA' : isVacation ? '#6EE7B7' : '#e0e0e0'
+              const timeLabel = ev.all_day || isTravel || isAudit || isVacation
+                ? (ev.end_date && ev.end_date !== ev.start_date ? `Through ${MONTH_NAMES[parseInt(ev.end_date.split('-')[1])-1].slice(0,3)} ${parseInt(ev.end_date.split('-')[2])}` : 'All day')
+                : ev.start_time ? `${fmtTime(ev.start_time)}${ev.end_time ? ' – ' + fmtTime(ev.end_time) : ''}` : ''
+              return (
+                <div key={ev.id || i} onClick={() => onEventClick(ev)}
+                  style={{ display:'flex', alignItems:'stretch', gap:10, padding:'9px 10px', background:'#fafafa', border:'0.5px solid #ebebeb', borderRadius:8, cursor:'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#f2f2f0'}
+                  onMouseLeave={e => e.currentTarget.style.background='#fafafa'}>
+                  <div style={{ width:3, borderRadius:2, background:colorHex, flexShrink:0 }} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500, color:'#111', display:'flex', alignItems:'center', gap:6 }}>
+                      {isTravel && <span style={{ fontSize:10 }}>✈</span>}
+                      {isAudit && <span style={{ fontSize:10 }}>🔍</span>}
+                      {isVacation && <span style={{ fontSize:10 }}>🌴</span>}
+                      {ev.title}
+                    </div>
+                    {timeLabel && <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{timeLabel}</div>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
   const [calView, setCalView] = useState('month')
   const [travelFilter, setTravelFilter] = useState(false)
   const [calDate, setCalDate] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1) })
   const [eventForm, setEventForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
+  const [daySchedule, setDaySchedule] = useState(null) // Date | null
 
   const weekStart = startOfWeek(calDate)
   const year = calDate.getFullYear(), month = calDate.getMonth()
@@ -2871,6 +2938,8 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
     : `${MONTH_NAMES[month]} ${year}`
 
   const handleDayClick = d => setEventForm({ ...CAL_EMPTY, start_date: toISODate(d) })
+
+  const handleShowDay = d => setDaySchedule(d)
 
   const handleEventClick = ev => { setEventForm({ ...ev }); setIsEdit(true) }
 
@@ -2936,13 +3005,22 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
       {calView === 'week'
         ? <CalendarWeekView events={events} weekStart={weekStart} onDayClick={handleDayClick} onEventClick={handleEventClick} />
         : calView === 'month'
-        ? <CalendarMonthView events={events} year={year} month={month} onDayClick={handleDayClick} onEventClick={handleEventClick} />
+        ? <CalendarMonthView events={events} year={year} month={month} onDayClick={handleDayClick} onShowDay={handleShowDay} onEventClick={handleEventClick} />
         : calView === 'list'
         ? <CalendarListView events={events} onEventClick={handleEventClick} />
-        : <CalendarYearView events={travelFilter ? events.filter(e => e.type === 'travel') : events} year={year} onDayClick={handleDayClick} onEventClick={handleEventClick} />}
+        : <CalendarYearView events={travelFilter ? events.filter(e => e.type === 'travel') : events} year={year} onDayClick={handleDayClick} onShowDay={handleShowDay} onEventClick={handleEventClick} />}
 
       {eventForm !== null && (
         <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} members={members} />
+      )}
+      {daySchedule !== null && (
+        <DayScheduleModal
+          date={daySchedule}
+          events={events}
+          onClose={() => setDaySchedule(null)}
+          onEventClick={ev => { setDaySchedule(null); handleEventClick(ev) }}
+          onAddEvent={d => { setDaySchedule(null); handleDayClick(d) }}
+        />
       )}
     </div>
   )
@@ -3368,7 +3446,7 @@ export default function App() {
             <div style={{ display:'flex', gap:6, alignItems:'center' }}>
               {/* View mode */}
               <div style={{ display:'flex', background:'#efefed', borderRadius:8, padding:2, gap:1 }}>
-                {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }].map(v => (
+                {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }, { k:'list', l:'List' }].map(v => (
                   <button key={v.k} onClick={() => setViewMode(v.k)} style={{ fontSize:11, padding:'4px 10px', border:'none', background:viewMode===v.k?'white':'transparent', color:viewMode===v.k?'#111':'#888', fontWeight:viewMode===v.k?500:400, cursor:'pointer', borderRadius:6, boxShadow:viewMode===v.k?'0 1px 2px rgba(0,0,0,0.08)':'none' }}>
                     {v.l}
                   </button>
@@ -3395,6 +3473,7 @@ export default function App() {
           </div>
 
           {!showTrash && (<>
+          {viewMode !== 'list' && <>
           {/* Today strip */}
           <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} />
 
@@ -3447,8 +3526,121 @@ export default function App() {
             </div>
           )}
 
+          {isSectionOpen('kanban') && viewMode === 'owner' && (
+            <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto' }}>
+              {[...memberNames.map(m => ({ key:m, lbl:m })), { key:'', lbl:'Unassigned' }].map(ownerCol => {
+                const ct = filteredTasks.filter(t => {
+                  const owners = t.owners || []
+                  return ownerCol.key ? owners.includes(ownerCol.key) : owners.length === 0
+                })
+                if (ct.length === 0 && ownerCol.key !== '') return null
+                return (
+                  <div key={ownerCol.key || '__unassigned'} style={{ flex:'0 0 220px', background:'#f7f7f5', borderRadius:12, padding:12, minHeight:180 }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                      <span style={{ fontSize:11, fontWeight:500, color:ownerCol.key?'#085041':'#aaa', textTransform:'uppercase', letterSpacing:'0.06em' }}>{ownerCol.lbl}</span>
+                      <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{ct.length}</span>
+                    </div>
+                    <button onClick={() => { setForm({ owners: ownerCol.key ? [ownerCol.key] : [], status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>
+                      + Add task
+                    </button>
+                    {ct.map(t => (
+                      <div key={t.id} style={{ marginBottom:8 }}>
+                        <TaskCard task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={quickComplete} entityMap={entityMap} />
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          </>}
+
+          {/* ── List / Table view ── */}
+          {viewMode === 'list' && (() => {
+            const COL_GRID = '24px 1fr 110px 90px 80px 80px'
+            const TableHeader = () => (
+              <div style={{ display:'grid', gridTemplateColumns:COL_GRID, background:'#f7f7f5', borderBottom:'0.5px solid #e5e5e5', padding:'6px 12px', alignItems:'center' }}>
+                {['', 'Task', 'Status', 'Domain', 'Due', 'Owner'].map((h, i) => (
+                  <span key={i} style={{ fontSize:10, fontWeight:600, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.06em' }}>{h}</span>
+                ))}
+              </div>
+            )
+            const TaskRow = ({ t, last }) => {
+              const ss = subStyle(taskSubstatus(t))
+              const owners = t.owners || []
+              return (
+                <div onClick={() => { setForm({...t}); setIsEdit(true) }}
+                  style={{ display:'grid', gridTemplateColumns:COL_GRID, padding:'8px 12px', alignItems:'center', borderBottom: last ? 'none' : '0.5px solid #f0f0f0', cursor:'pointer', background:'white' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#fafafa'}
+                  onMouseLeave={e => e.currentTarget.style.background='white'}>
+                  <div onClick={e => { e.stopPropagation(); quickComplete(t.id) }} style={{ width:14, height:14, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: taskSubstatus(t)==='complete'?(ss.bg||'#eee'):'white', cursor:'pointer', flexShrink:0 }} />
+                  <span style={{ fontSize:13, color:taskSubstatus(t)==='complete'?'#aaa':'#111', textDecoration:taskSubstatus(t)==='complete'?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:8 }}>
+                    {t.today && <span style={{ fontSize:9, color:'#E24B4A', marginRight:5, fontWeight:600 }}>TODAY</span>}
+                    {t.title}
+                  </span>
+                  <span style={{ fontSize:10, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'2px 7px', whiteSpace:'nowrap', width:'fit-content' }}>{ss.label||'—'}</span>
+                  <span style={{ fontSize:10, color:t.domain?'#0C447C':'#ccc', background:t.domain?'#E6F1FB':'transparent', border:t.domain?'0.5px solid #85B7EB':'none', borderRadius:20, padding:t.domain?'2px 7px':'0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.domain||'—'}</span>
+                  <span style={{ fontSize:11, color:t.due?(t.due<today()?'#c0392b':'#888'):'#ccc' }}>{t.due||'—'}</span>
+                  <div style={{ display:'flex', gap:3, flexWrap:'wrap' }}>
+                    {owners.length ? owners.map(o => <OwnerPip key={o} name={o} />) : <span style={{ fontSize:11, color:'#ccc' }}>—</span>}
+                  </div>
+                </div>
+              )
+            }
+            const GroupHeader = ({ label, type, count }) => (
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:'#fafafa', borderBottom:'0.5px solid #e5e5e5' }}>
+                <span style={{ fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color: type==='escalation'?'#791F1F':type==='project'?'#0C447C':'#888' }}>{label}</span>
+                <span style={{ fontSize:10, color:'#bbb', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{count}</span>
+              </div>
+            )
+
+            const visibleEscalations = filterOwner==='all' ? escalations : escalations.filter(e=>(e.owners||[]).includes(filterOwner))
+            const visibleProjects = filterOwner==='all' ? projects : projects.filter(p=>(p.owners||[]).includes(filterOwner))
+            const ungrouped = filteredTasks.filter(t => !t.escalation_id && !t.project_id)
+
+            return (
+              <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:16 }}>
+                {/* Escalations */}
+                {visibleEscalations.map(e => {
+                  const et = filteredTasks.filter(t => t.escalation_id === e.id)
+                  if (et.length === 0) return null
+                  return (
+                    <div key={e.id} style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden' }}>
+                      <TableHeader />
+                      <GroupHeader label={e.title} type="escalation" count={et.length} />
+                      {et.map((t, i) => <TaskRow key={t.id} t={t} last={i===et.length-1} />)}
+                    </div>
+                  )
+                })}
+                {/* Projects & Bundles */}
+                {visibleProjects.map(p => {
+                  const pt = filteredTasks.filter(t => t.project_id === p.id)
+                  if (pt.length === 0) return null
+                  return (
+                    <div key={p.id} style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden' }}>
+                      <TableHeader />
+                      <GroupHeader label={p.title} type="project" count={pt.length} />
+                      {pt.map((t, i) => <TaskRow key={t.id} t={t} last={i===pt.length-1} />)}
+                    </div>
+                  )
+                })}
+                {/* Ungrouped tasks */}
+                {ungrouped.length > 0 && (
+                  <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden' }}>
+                    <TableHeader />
+                    <GroupHeader label="No project" type="none" count={ungrouped.length} />
+                    {ungrouped.map((t, i) => <TaskRow key={t.id} t={t} last={i===ungrouped.length-1} />)}
+                  </div>
+                )}
+                {visibleEscalations.every(e=>filteredTasks.filter(t=>t.escalation_id===e.id).length===0) && visibleProjects.every(p=>filteredTasks.filter(t=>t.project_id===p.id).length===0) && ungrouped.length===0 && (
+                  <div style={{ padding:'32px 12px', fontSize:13, color:'#ccc', textAlign:'center' }}>No tasks</div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* ── Standard / Dynamic column view ── */}
-          {isSectionOpen('kanban') && viewMode !== 'domain' && (
+          {isSectionOpen('kanban') && viewMode !== 'domain' && viewMode !== 'owner' && viewMode !== 'list' && (
             isMobile ? (
               <div>
                 <div style={{ display:'flex', gap:6, marginBottom:10, overflowX:'auto' }}>
@@ -3569,7 +3761,8 @@ export default function App() {
 
       {/* ── Follow Ups ── */}
       {tab === 'followups' && (
-        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={memberNames} />
+        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={memberNames}
+          onCreateTask={item => { setForm({ title:item.text, status:'active', owners:[item.person], substatus:'not_started' }); setIsEdit(false) }} />
       )}
 
       {/* ── Settings ── */}
