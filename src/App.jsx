@@ -818,12 +818,15 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
 }
 
 // ─── Rich Text Editor ─────────────────────────────────────────────────────────
-function RichTextEditor({ initialValue, onChange, isMobile = false, storagePath = 'notes' }) {
+function RichTextEditor({ initialValue, onChange, isMobile = false }) {
   const editorRef = useRef(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [tableHover, setTableHover] = useState([0, 0])
   const [tableCtx, setTableCtx] = useState(null)
-  const [imgUploading, setImgUploading] = useState(false)
+  const [imgSel, setImgSel] = useState(null)
+  const [imgBar, setImgBar] = useState(null)
+  const wrapperRef = useRef(null)
+  const pasteInProgressRef = useRef(false)
 
   const handlePaste = async e => {
     const items = Array.from(e.clipboardData?.items || [])
@@ -832,15 +835,101 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, storagePath 
     e.preventDefault()
     const file = imageItem.getAsFile()
     if (!file) return
-    setImgUploading(true)
-    const ext = file.type.split('/')[1] || 'png'
-    const path = `${storagePath}/${Date.now()}.${ext}`
-    const { error } = await supabase.storage.from('taskr-attachments').upload(path, file)
-    if (error) { console.error('[TASKr] image paste upload error', error); setImgUploading(false); return }
-    const { data: { publicUrl } } = supabase.storage.from('taskr-attachments').getPublicUrl(path)
-    document.execCommand('insertHTML', false, `<img src="${publicUrl}" style="max-width:100%;border-radius:6px;margin:4px 0" />`)
+
+    // Show blob URL immediately so the image appears with zero delay
+    const objectUrl = URL.createObjectURL(file)
+    const phId = `imgph${Date.now()}`
+    pasteInProgressRef.current = true
+    editorRef.current.focus()
+    document.execCommand('insertHTML', false,
+      `<img id="${phId}" src="${objectUrl}" style="max-width:100%;border-radius:6px;margin:4px 0;display:block">`)
+
+    // Convert to compressed base64 — stored directly in note body, no Supabase Storage needed
+    const dataUrl = await new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onload = ev => {
+        const imgEl = new Image()
+        imgEl.onload = () => {
+          const maxW = 1200
+          const scale = Math.min(1, maxW / imgEl.naturalWidth)
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(imgEl.naturalWidth * scale)
+          canvas.height = Math.round(imgEl.naturalHeight * scale)
+          canvas.getContext('2d').drawImage(imgEl, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/jpeg', 0.82))
+        }
+        imgEl.src = ev.target.result
+      }
+      reader.readAsDataURL(file)
+    })
+
+    pasteInProgressRef.current = false
+    URL.revokeObjectURL(objectUrl)
+
+    const img = editorRef.current?.querySelector(`#${phId}`)
+    if (img) {
+      img.src = dataUrl
+      img.removeAttribute('id')
+    } else if (editorRef.current) {
+      const newImg = document.createElement('img')
+      newImg.src = dataUrl
+      newImg.style.cssText = 'max-width:100%;border-radius:6px;margin:4px 0;display:block'
+      editorRef.current.appendChild(newImg)
+    }
+
+    if (editorRef.current) onChange(editorRef.current.innerHTML)
+  }
+
+  const computeImgBar = (imgEl) => {
+    if (!wrapperRef.current) return
+    const wRect = wrapperRef.current.getBoundingClientRect()
+    const iRect = imgEl.getBoundingClientRect()
+    setImgBar({ top: iRect.top - wRect.top, left: iRect.left - wRect.left, width: iRect.width, height: iRect.height })
+  }
+
+  const selectImg = (imgEl) => {
+    if (imgSel) imgSel.style.outline = ''
+    if (imgEl) { imgEl.style.outline = '2px solid #3b82f6'; imgEl.style.outlineOffset = '2px' }
+    setImgSel(imgEl)
+    if (imgEl) computeImgBar(imgEl)
+    else setImgBar(null)
+  }
+
+  const setImgWidth = (w) => {
+    if (!imgSel) return
+    imgSel.style.width = w
+    imgSel.style.maxWidth = '100%'
+    imgSel.removeAttribute('height')
     onChange(editorRef.current.innerHTML)
-    setImgUploading(false)
+    computeImgBar(imgSel)
+  }
+
+  const removeSelectedImg = () => {
+    if (!imgSel) return
+    imgSel.style.outline = ''
+    imgSel.remove()
+    onChange(editorRef.current.innerHTML)
+    setImgSel(null); setImgBar(null)
+  }
+
+  const startDragResize = (e) => {
+    e.preventDefault()
+    const el = imgSel
+    if (!el) return
+    const startX = e.clientX
+    const startW = el.getBoundingClientRect().width
+    const onMove = (mv) => {
+      el.style.width = Math.max(50, startW + mv.clientX - startX) + 'px'
+      el.style.maxWidth = '100%'
+      computeImgBar(el)
+    }
+    const onUp = () => {
+      onChange(editorRef.current.innerHTML)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
   }
 
   useLayoutEffect(() => { if (editorRef.current) editorRef.current.innerHTML = initialValue || '' }, [])
@@ -1143,7 +1232,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, storagePath 
   const rowStyle = { display:'flex', gap:3, padding:'5px 10px', background:'#f7f7f5', borderLeft:'0.5px solid #e5e5e5', borderRight:'0.5px solid #e5e5e5', flexWrap:'wrap', alignItems:'center' }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0, position:'relative' }}>
+    <div ref={wrapperRef} style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0, position:'relative' }}>
       <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}.note-editor ul,.note-editor ol{padding-left:18px;margin:2px 0}.note-editor ol{list-style:none;counter-reset:item}.note-editor ol>li{counter-increment:item}.note-editor ol>li::before{content:counters(item,".")". ";margin-right:3px}`}</style>
       {/* Toolbar — sticky so it stays above keyboard on mobile */}
       <div style={{ position:'sticky', top:0, zIndex:5, background:'white' }}>
@@ -1257,19 +1346,44 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, storagePath 
       )}
       </div>{/* end sticky toolbar */}
       <div ref={editorRef} contentEditable suppressContentEditableWarning
-        onInput={() => onChange(editorRef.current.innerHTML)}
+        onInput={() => { if (!pasteInProgressRef.current) onChange(editorRef.current.innerHTML) }}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
+        onScroll={() => { if (imgSel) computeImgBar(imgSel) }}
         onClick={e => {
           if (e.target.type === 'checkbox') setTimeout(() => onChange(editorRef.current.innerHTML), 0)
           setShowTablePicker(false)
+          if (e.target.tagName === 'IMG') { selectImg(e.target) }
+          else { selectImg(null) }
         }}
         onMouseLeave={() => setTableHover([0,0])}
         className="note-editor"
-        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 13, lineHeight:1.4, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200, opacity: imgUploading ? 0.6 : 1 }} />
-      {imgUploading && (
-        <div style={{ position:'absolute', bottom:12, right:16, fontSize:11, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'3px 10px' }}>Uploading image…</div>
-      )}
+        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 13, lineHeight:1.4, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200 }} />
+      {imgSel && imgBar && (<>
+        <div onMouseDown={e => e.preventDefault()} style={{
+          position:'absolute', top: Math.max(2, imgBar.top - 34), left: imgBar.left,
+          zIndex:200, background:'#1c1c1e', borderRadius:6,
+          display:'flex', alignItems:'center', gap:1, padding:'3px 5px',
+          boxShadow:'0 2px 8px rgba(0,0,0,0.3)', pointerEvents:'auto'
+        }}>
+          {['25%','50%','75%','100%'].map(w => (
+            <button key={w} onMouseDown={e => { e.preventDefault(); setImgWidth(w) }}
+              style={{ background:'none', border:'none', color:'#fff', fontSize:11, cursor:'pointer', padding:'1px 6px', borderRadius:3, lineHeight:1.6 }}
+              onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.15)'}
+              onMouseLeave={e => e.currentTarget.style.background='none'}>{w}</button>
+          ))}
+          <div style={{ width:1, background:'#555', height:14, margin:'0 2px' }} />
+          <button onMouseDown={e => { e.preventDefault(); removeSelectedImg() }}
+            style={{ background:'none', border:'none', color:'#ff6b6b', fontSize:11, cursor:'pointer', padding:'1px 6px', borderRadius:3, lineHeight:1.6 }}
+            onMouseEnter={e => e.currentTarget.style.background='rgba(255,80,80,0.15)'}
+            onMouseLeave={e => e.currentTarget.style.background='none'}>✕</button>
+        </div>
+        <div onMouseDown={startDragResize} style={{
+          position:'absolute', top: imgBar.top + imgBar.height - 8, left: imgBar.left + imgBar.width - 8,
+          width:16, height:16, background:'#3b82f6', borderRadius:'0 0 4px 0',
+          cursor:'se-resize', zIndex:200, border:'2px solid white', boxShadow:'0 1px 3px rgba(0,0,0,0.25)'
+        }} />
+      </>)}
     </div>
   )
 }
@@ -1803,7 +1917,10 @@ function NotesTab({ notes, onSave, onDelete }) {
     if (isMobileNotes) setMobileView('editor')
   }
 
-  const handleSave = async () => { if (draft && selectedId) { await onSave(draft, selectedId); setDirty(false) } }
+  const handleSave = async () => {
+    if (!draft || !selectedId) return
+    await onSave(draft, selectedId); setDirty(false)
+  }
 
   const handleNew = async () => {
     await onSave({ title: `Note — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`, body: '' }, null)
@@ -1953,7 +2070,6 @@ function NotesTab({ notes, onSave, onDelete }) {
             })()}
           </div>
           <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
-            storagePath={`notes/${selectedId || 'new'}`}
             onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }} />
         </>
       )}
@@ -3296,7 +3412,8 @@ export default function App() {
   }
 
   const saveNote = async (data, id) => {
-    const payload = { title: data.title, body: data.body || '', updated_at: new Date().toISOString() }
+    const body = data.body || ''
+    const payload = { title: data.title, body, updated_at: new Date().toISOString() }
     const { error } = id
       ? await supabase.from('notes').update(payload).eq('id', id)
       : await supabase.from('notes').insert(payload)
