@@ -818,11 +818,30 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
 }
 
 // ─── Rich Text Editor ─────────────────────────────────────────────────────────
-function RichTextEditor({ initialValue, onChange, isMobile = false }) {
+function RichTextEditor({ initialValue, onChange, isMobile = false, storagePath = 'notes' }) {
   const editorRef = useRef(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [tableHover, setTableHover] = useState([0, 0])
   const [tableCtx, setTableCtx] = useState(null)
+  const [imgUploading, setImgUploading] = useState(false)
+
+  const handlePaste = async e => {
+    const items = Array.from(e.clipboardData?.items || [])
+    const imageItem = items.find(item => item.type.startsWith('image/'))
+    if (!imageItem) return
+    e.preventDefault()
+    const file = imageItem.getAsFile()
+    if (!file) return
+    setImgUploading(true)
+    const ext = file.type.split('/')[1] || 'png'
+    const path = `${storagePath}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('taskr-attachments').upload(path, file)
+    if (error) { console.error('[TASKr] image paste upload error', error); setImgUploading(false); return }
+    const { data: { publicUrl } } = supabase.storage.from('taskr-attachments').getPublicUrl(path)
+    document.execCommand('insertHTML', false, `<img src="${publicUrl}" style="max-width:100%;border-radius:6px;margin:4px 0" />`)
+    onChange(editorRef.current.innerHTML)
+    setImgUploading(false)
+  }
 
   useLayoutEffect(() => { if (editorRef.current) editorRef.current.innerHTML = initialValue || '' }, [])
 
@@ -1124,7 +1143,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
   const rowStyle = { display:'flex', gap:3, padding:'5px 10px', background:'#f7f7f5', borderLeft:'0.5px solid #e5e5e5', borderRight:'0.5px solid #e5e5e5', flexWrap:'wrap', alignItems:'center' }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0, position:'relative' }}>
       <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}.note-editor ul,.note-editor ol{padding-left:18px;margin:2px 0}.note-editor ol{list-style:none;counter-reset:item}.note-editor ol>li{counter-increment:item}.note-editor ol>li::before{content:counters(item,".")". ";margin-right:3px}`}</style>
       {/* Toolbar — sticky so it stays above keyboard on mobile */}
       <div style={{ position:'sticky', top:0, zIndex:5, background:'white' }}>
@@ -1240,13 +1259,17 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
       <div ref={editorRef} contentEditable suppressContentEditableWarning
         onInput={() => onChange(editorRef.current.innerHTML)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         onClick={e => {
           if (e.target.type === 'checkbox') setTimeout(() => onChange(editorRef.current.innerHTML), 0)
           setShowTablePicker(false)
         }}
         onMouseLeave={() => setTableHover([0,0])}
         className="note-editor"
-        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 13, lineHeight:1.4, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200 }} />
+        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 13, lineHeight:1.4, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200, opacity: imgUploading ? 0.6 : 1 }} />
+      {imgUploading && (
+        <div style={{ position:'absolute', bottom:12, right:16, fontSize:11, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'3px 10px' }}>Uploading image…</div>
+      )}
     </div>
   )
 }
@@ -1930,6 +1953,7 @@ function NotesTab({ notes, onSave, onDelete }) {
             })()}
           </div>
           <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
+            storagePath={`notes/${selectedId || 'new'}`}
             onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }} />
         </>
       )}
