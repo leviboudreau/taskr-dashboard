@@ -1783,10 +1783,10 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
             </button>
           )
         })}
-        <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'#aaa', cursor:'pointer', marginLeft:'auto' }}>
-          <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} style={{ width:12, height:12 }} />
-          Show done
-        </label>
+        <button onClick={() => setShowDone(v => !v)}
+          style={{ marginLeft:'auto', fontSize:11, padding:'4px 10px', borderRadius:6, cursor:'pointer', border:'0.5px solid #e0e0e0', background:showDone?'white':'#f7f7f5', color:showDone?'#555':'#bbb', height:28 }}>
+          ✓ Done
+        </button>
       </div>
 
       {/* Per-person sections */}
@@ -3266,6 +3266,9 @@ export default function App() {
   const [mobileCol, setMobileCol] = useState('active')
   const [viewMode, setViewMode] = useState('order') // 'order' | 'dynamic' | 'domain'
   const [filterOwner, setFilterOwner] = useState('all')
+  const [showCompleted, setShowCompleted] = useState(true)
+  const [taskSearch, setTaskSearch] = useState('')
+  const [listView, setListView] = useState(false)
   const [showTrash, setShowTrash] = useState(false)
   const trashRef = useRef(null)
   const [teamData, setTeamData] = useState([])
@@ -3528,6 +3531,18 @@ export default function App() {
 
   const memberNames = teamData.length ? teamData.map(m => m.name) : MEMBERS
 
+  // Search: title-first cascade. Show title matches if any; else subtask matches; else notes matches.
+  const searchMatchIds = (() => {
+    const q = taskSearch.trim().toLowerCase()
+    if (!q) return null
+    const titleHits = tasks.filter(t => t.title?.toLowerCase().includes(q))
+    if (titleHits.length) return new Set(titleHits.map(t => t.id))
+    const subtaskHits = tasks.filter(t => (t.subtasks||[]).some(s => s.title?.toLowerCase().includes(q)))
+    if (subtaskHits.length) return new Set(subtaskHits.map(t => t.id))
+    const noteHits = tasks.filter(t => (t.notes||[]).some(n => n.text?.toLowerCase().includes(q)))
+    return new Set(noteHits.map(t => t.id))
+  })()
+
   const filteredTasks = (activeProject
     ? tasks.filter(t => t.project_id === activeProject)
     : activeEscalation
@@ -3535,6 +3550,8 @@ export default function App() {
       : tasks
   ).filter(t => filterOwner === 'all' || (t.owners||['Levi']).includes(filterOwner))
    .filter(t => t.substatus !== 'canceled')
+   .filter(t => showCompleted || (t.substatus || (t.status === 'done' ? 'complete' : 'not_started')) !== 'complete')
+   .filter(t => !searchMatchIds || searchMatchIds.has(t.id))
 
   const taskSubstatus = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
   const getColTasks = colKey => filteredTasks.filter(t => taskSubstatus(t) === colKey)
@@ -3542,6 +3559,16 @@ export default function App() {
     ...projects.map(p => [p.id, { name: p.title, type: 'project' }]),
     ...escalations.map(e => [e.id, { name: e.title, type: 'escalation' }]),
   ])
+
+  const searchQ = taskSearch.trim().toLowerCase()
+  const ownerEscalations = filterOwner === 'all' ? escalations : escalations.filter(e => (e.owners||[]).includes(filterOwner))
+  const ownerProjects    = filterOwner === 'all' ? projects    : projects.filter(p => (p.owners||[]).includes(filterOwner))
+  const visibleEscalations = ownerEscalations.filter(e =>
+    !searchQ || e.title?.toLowerCase().includes(searchQ) || filteredTasks.some(t => t.escalation_id === e.id)
+  )
+  const visibleProjects = ownerProjects.filter(p =>
+    !searchQ || p.title?.toLowerCase().includes(searchQ) || filteredTasks.some(t => t.project_id === p.id)
+  )
 
   if (loading) return (
     <div style={{ fontFamily:'system-ui,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'#888', fontSize:14 }}>
@@ -3586,11 +3613,25 @@ export default function App() {
       {tab === 'tasks' && (
         <>
           {/* View controls */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', marginBottom:12, flexWrap:'wrap', gap:8 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, flexWrap:'wrap', gap:8 }}>
+            {/* Search */}
+            <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+              <span style={{ position:'absolute', left:8, fontSize:12, color:'#bbb', pointerEvents:'none' }}>🔍</span>
+              <input
+                type="text"
+                value={taskSearch}
+                onChange={e => setTaskSearch(e.target.value)}
+                placeholder="Search tasks…"
+                style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', height:28, outline:'none', width:180, color:'#333', boxSizing:'border-box' }}
+              />
+              {taskSearch && (
+                <button onClick={() => setTaskSearch('')} style={{ position:'absolute', right:6, fontSize:12, color:'#bbb', background:'none', border:'none', cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
+              )}
+            </div>
             <div style={{ display:'flex', gap:6, alignItems:'center' }}>
               {/* View mode */}
               <div style={{ display:'flex', background:'#efefed', borderRadius:8, padding:2, gap:1 }}>
-                {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }, { k:'list', l:'List' }].map(v => (
+                {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }].map(v => (
                   <button key={v.k} onClick={() => setViewMode(v.k)} style={{ fontSize:11, padding:'4px 10px', border:'none', background:viewMode===v.k?'white':'transparent', color:viewMode===v.k?'#111':'#888', fontWeight:viewMode===v.k?500:400, cursor:'pointer', borderRadius:6, boxShadow:viewMode===v.k?'0 1px 2px rgba(0,0,0,0.08)':'none' }}>
                     {v.l}
                   </button>
@@ -3603,6 +3644,16 @@ export default function App() {
                   <option key={name} value={name}>{name}</option>
                 ))}
               </select>
+              <button onClick={() => setListView(v => !v)}
+                title={listView ? 'Switch to board view' : 'Switch to list view'}
+                style={{ fontSize:11, background:listView?'#111':'white', border:listView?'none':'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 10px', cursor:'pointer', height:28, color:listView?'white':'#555' }}>
+                ☰ List
+              </button>
+              <button onClick={() => setShowCompleted(v => !v)}
+                title={showCompleted ? 'Hide completed tasks' : 'Show completed tasks'}
+                style={{ fontSize:11, background:showCompleted?'white':'#f7f7f5', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 10px', cursor:'pointer', height:28, color:showCompleted?'#555':'#bbb' }}>
+                ✓ Done
+              </button>
               <button onClick={() => { setShowTrash(v => { const next=!v; if(next) setTimeout(()=>trashRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),50); return next; }) }}
                 title="Trash"
                 style={{ position:'relative', background:showTrash?'#fff0f0':'white', border:showTrash?'0.5px solid #f09595':'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 10px', cursor:'pointer', height:28, display:'flex', alignItems:'center' }}>
@@ -3617,7 +3668,7 @@ export default function App() {
           </div>
 
           {!showTrash && (<>
-          {viewMode !== 'list' && <>
+          {!listView && <>
           {/* Today strip */}
           <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} />
 
@@ -3627,7 +3678,7 @@ export default function App() {
               <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('escalations') ? '▴' : '▾'}</span>
             </button>
-            {isSectionOpen('escalations') && <EscalationsSection escalations={filterOwner==='all'?escalations:escalations.filter(e=>(e.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />}
+            {isSectionOpen('escalations') && <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />}
           </div>
 
           {/* Projects section */}
@@ -3636,7 +3687,7 @@ export default function App() {
               <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
             </button>
-            {isSectionOpen('projects') && <ProjectsSection projects={filterOwner==='all'?projects:projects.filter(p=>(p.owners||[]).includes(filterOwner))} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} />}
+            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} />}
           </div>
 
           {/* ── Tasks kanban ── */}
@@ -3700,7 +3751,7 @@ export default function App() {
           </>}
 
           {/* ── List / Table view ── */}
-          {viewMode === 'list' && (() => {
+          {listView && (() => {
             const COL_GRID = '24px 1fr 110px 90px 80px 80px'
             const TableHeader = () => (
               <div style={{ display:'grid', gridTemplateColumns:COL_GRID, background:'#f7f7f5', borderBottom:'0.5px solid #e5e5e5', padding:'6px 12px', alignItems:'center' }}>
@@ -3733,50 +3784,51 @@ export default function App() {
             }
             const GroupHeader = ({ label, type, count }) => (
               <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:'#fafafa', borderBottom:'0.5px solid #e5e5e5' }}>
-                <span style={{ fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color: type==='escalation'?'#791F1F':type==='project'?'#0C447C':'#888' }}>{label}</span>
+                <span style={{ fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color: type==='escalation'?'#791F1F':type==='project'?'#0C447C':type==='col'?'#555':'#888' }}>{label}</span>
                 <span style={{ fontSize:10, color:'#bbb', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{count}</span>
               </div>
             )
+            const ListGroup = ({ label, type, tasks: groupTasks }) => {
+              if (groupTasks.length === 0) return null
+              return (
+                <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden' }}>
+                  <TableHeader />
+                  <GroupHeader label={label} type={type} count={groupTasks.length} />
+                  {groupTasks.map((t, i) => <TaskRow key={t.id} t={t} last={i===groupTasks.length-1} />)}
+                </div>
+              )
+            }
 
-            const visibleEscalations = filterOwner==='all' ? escalations : escalations.filter(e=>(e.owners||[]).includes(filterOwner))
-            const visibleProjects = filterOwner==='all' ? projects : projects.filter(p=>(p.owners||[]).includes(filterOwner))
-            const ungrouped = filteredTasks.filter(t => !t.escalation_id && !t.project_id)
+            let groups = []
+            if (viewMode === 'domain') {
+              const domainKeys = [...new Set(filteredTasks.map(t => t.domain||''))]
+                .sort((a, b) => a ? (b ? a.localeCompare(b) : -1) : 1)
+              groups = domainKeys.map(d => ({
+                key: d, label: d||'No domain', type: 'none',
+                tasks: filteredTasks.filter(t => (t.domain||'') === d)
+              }))
+            } else if (viewMode === 'owner') {
+              const allOwners = [...memberNames, '']
+              groups = allOwners.map(o => ({
+                key: o||'__unassigned', label: o||'Unassigned', type: 'none',
+                tasks: filteredTasks.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0)
+              }))
+            } else {
+              // order / dynamic — group by escalation, project, then ungrouped
+              const escGroups = visibleEscalations
+                .map(e => ({ key: e.id, label: e.title, type: 'escalation', tasks: filteredTasks.filter(t => t.escalation_id === e.id) }))
+                .filter(g => g.tasks.length > 0)
+              const projGroups = visibleProjects
+                .map(p => ({ key: p.id, label: p.title, type: 'project', tasks: filteredTasks.filter(t => t.project_id === p.id) }))
+                .filter(g => g.tasks.length > 0)
+              const ungrouped = filteredTasks.filter(t => !t.escalation_id && !t.project_id)
+              groups = [...escGroups, ...projGroups, ...(ungrouped.length ? [{ key:'ungrouped', label:'No project', type:'none', tasks: ungrouped }] : [])]
+            }
 
             return (
               <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:16 }}>
-                {/* Escalations */}
-                {visibleEscalations.map(e => {
-                  const et = filteredTasks.filter(t => t.escalation_id === e.id)
-                  if (et.length === 0) return null
-                  return (
-                    <div key={e.id} style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden' }}>
-                      <TableHeader />
-                      <GroupHeader label={e.title} type="escalation" count={et.length} />
-                      {et.map((t, i) => <TaskRow key={t.id} t={t} last={i===et.length-1} />)}
-                    </div>
-                  )
-                })}
-                {/* Projects & Bundles */}
-                {visibleProjects.map(p => {
-                  const pt = filteredTasks.filter(t => t.project_id === p.id)
-                  if (pt.length === 0) return null
-                  return (
-                    <div key={p.id} style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden' }}>
-                      <TableHeader />
-                      <GroupHeader label={p.title} type="project" count={pt.length} />
-                      {pt.map((t, i) => <TaskRow key={t.id} t={t} last={i===pt.length-1} />)}
-                    </div>
-                  )
-                })}
-                {/* Ungrouped tasks */}
-                {ungrouped.length > 0 && (
-                  <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden' }}>
-                    <TableHeader />
-                    <GroupHeader label="No project" type="none" count={ungrouped.length} />
-                    {ungrouped.map((t, i) => <TaskRow key={t.id} t={t} last={i===ungrouped.length-1} />)}
-                  </div>
-                )}
-                {visibleEscalations.every(e=>filteredTasks.filter(t=>t.escalation_id===e.id).length===0) && visibleProjects.every(p=>filteredTasks.filter(t=>t.project_id===p.id).length===0) && ungrouped.length===0 && (
+                {groups.map(g => <ListGroup key={g.key} label={g.label} type={g.type} tasks={g.tasks} />)}
+                {groups.length === 0 && (
                   <div style={{ padding:'32px 12px', fontSize:13, color:'#ccc', textAlign:'center' }}>No tasks</div>
                 )}
               </div>
@@ -3784,7 +3836,7 @@ export default function App() {
           })()}
 
           {/* ── Standard / Dynamic column view ── */}
-          {isSectionOpen('kanban') && viewMode !== 'domain' && viewMode !== 'owner' && viewMode !== 'list' && (
+          {isSectionOpen('kanban') && !listView && viewMode !== 'domain' && viewMode !== 'owner' && (
             isMobile ? (
               <div>
                 <div style={{ display:'flex', gap:6, marginBottom:10, overflowX:'auto' }}>
