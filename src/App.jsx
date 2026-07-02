@@ -185,21 +185,21 @@ const timeToMin = t => { const [h,m] = t.split(':').map(Number); return h*60+m }
 const fmtTime = t => { const [h,m] = t.split(':').map(Number), ap = h>=12?'pm':'am', hh = h>12?h-12:h===0?12:h; return m===0?`${hh}${ap}`:`${hh}:${String(m).padStart(2,'0')}${ap}` }
 
 // ─── World Clock ──────────────────────────────────────────────────────────────
-function WorldClock() {
+function WorldClock({ style: extraStyle = {} }) {
   const [now, setNow] = useState(new Date())
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t) }, [])
   return (
-    <div style={{ display:'flex', marginBottom:'1rem', background:'#f7f7f5', borderRadius:8, border:'0.5px solid #e5e5e5', overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
+    <div style={{ display:'flex', overflowX:'auto', WebkitOverflowScrolling:'touch', ...extraStyle }}>
       {CITIES.map((c, i) => {
         const timeStr = now.toLocaleTimeString('en-US', { timeZone:c.tz, hour:'numeric', minute:'2-digit', hour12:true })
         const dayStr = now.toLocaleDateString('en-US', { timeZone:c.tz, weekday:'short' })
         const homeDay = now.toLocaleDateString('en-US', { timeZone:'America/New_York', weekday:'short' })
         const isNext = dayStr !== homeDay && i > 1
         return (
-          <div key={c.name} style={{ flex:'1 0 80px', padding:'6px 10px', borderRight:i<CITIES.length-1?'0.5px solid #e5e5e5':'none', textAlign:'center' }}>
-            <div style={{ fontSize:10, color:'#aaa', marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.name.split(',')[0]}</div>
-            <div style={{ fontSize:13, fontWeight:500, color:'#111', whiteSpace:'nowrap' }}>
-              {timeStr}{isNext && <span style={{ fontSize:9, color:'#aaa', marginLeft:3 }}>+1</span>}
+          <div key={c.name} style={{ flex:'1 0 72px', padding:'9px 12px', borderLeft:'0.5px solid rgba(255,255,255,0.15)', textAlign:'center', display:'flex', flexDirection:'column', justifyContent:'center' }}>
+            <div style={{ fontSize:9, color:'rgba(255,255,255,0.55)', marginBottom:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.07em' }}>{c.name.split(',')[0]}</div>
+            <div style={{ fontSize:13, fontWeight:500, color:'rgba(255,255,255,0.95)', whiteSpace:'nowrap' }}>
+              {timeStr}{isNext && <span style={{ fontSize:9, color:'rgba(255,255,255,0.4)', marginLeft:3 }}>+1</span>}
             </div>
           </div>
         )
@@ -321,24 +321,29 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
 }
 
 // ─── Today Strip ──────────────────────────────────────────────────────────────
-function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, onAdd, onComplete, entityMap = {} }) {
+function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, onAdd, onComplete, entityMap = {}, isOpen = true, onToggle }) {
   const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete')
   return (
     <div onDragOver={e => { e.preventDefault(); onDragOver('today') }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), 'today') }}
       style={{ marginBottom:12, background:isOver?'#EEF4FF':'#f7f7f5', border:isOver?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12 }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:todayTasks.length?10:0 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isOpen && todayTasks.length ? 10 : 0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>Today</span>
+          <button onClick={onToggle} style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', padding:0 }}>
+            <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>Today</span>
+            <span style={{ fontSize:10, color:'#bbb' }}>{isOpen ? '▴' : '▾'}</span>
+          </button>
           <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{todayTasks.length}</span>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={onAdd} style={{ fontSize:11, color:'#aaa', background:'none', border:'0.5px dashed #ccc', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}
-            onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
-            onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>+ Add task</button>
-          <span style={{ fontSize:11, color:'#bbb' }}>or drag tasks here</span>
-        </div>
+        {isOpen && (
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <button onClick={onAdd} style={{ fontSize:11, color:'#aaa', background:'none', border:'0.5px dashed #ccc', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}
+              onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
+              onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>+ Add task</button>
+            <span style={{ fontSize:11, color:'#bbb' }}>or drag tasks here</span>
+          </div>
+        )}
       </div>
-      {todayTasks.length > 0 ? (
+      {isOpen && (todayTasks.length > 0 ? (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8 }}>
           {todayTasks.map(t => (
             <div key={t.id} style={{ position:'relative' }}>
@@ -349,8 +354,29 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
         </div>
       ) : (
         <div style={{ fontSize:12, color:'#ccc', padding:'8px 0' }}>No tasks for today — drag tasks here or check in with Claude</div>
-      )}
+      ))}
     </div>
+  )
+}
+
+// ─── Confirm Delete Button ────────────────────────────────────────────────────
+function ConfirmDeleteButton({ onConfirm, children = 'Delete', style: btnStyle = {} }) {
+  const [confirming, setConfirming] = useState(false)
+  const timer = useRef(null)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  if (confirming) {
+    return (
+      <span style={{ display:'inline-flex', gap:4, alignItems:'center' }}>
+        <button onClick={() => { clearTimeout(timer.current); setConfirming(false); onConfirm() }}
+          style={{ ...btnStyle, background:'#A32D2D', color:'white', border:'none' }}>Sure?</button>
+        <button onClick={() => { clearTimeout(timer.current); setConfirming(false) }}
+          style={{ fontSize: btnStyle.fontSize||11, background:'none', border:'0.5px solid #e0e0e0', borderRadius: btnStyle.borderRadius||6, padding: btnStyle.padding||'4px 8px', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>No</button>
+      </span>
+    )
+  }
+  return (
+    <button onClick={() => { setConfirming(true); timer.current = setTimeout(() => setConfirming(false), 3000) }}
+      style={btnStyle}>{children}</button>
   )
 }
 
@@ -554,10 +580,10 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
           {/* Footer */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:12 }}>
-            <button onClick={() => { onDelete(entity.id); onClose() }}
+            <ConfirmDeleteButton onConfirm={() => { onDelete(entity.id); onClose() }}
               style={{ fontSize:12, color:'#E24B4A', background:'none', border:'0.5px solid #fcc', borderRadius:6, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
               Delete {isProject ? 'project' : 'escalation'}
-            </button>
+            </ConfirmDeleteButton>
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={onClose}
                 style={{ fontSize:12, background:'none', color:'#888', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
@@ -779,7 +805,7 @@ function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0,
 }
 
 // ─── Escalations Section ──────────────────────────────────────────────────────
-function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
+function EscalationsSection({ escalations, tasks, onAdd, onOpen, noBorder = false }) {
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const RED = '#c0392b', REDBORDER = '#f0a0a0'
@@ -789,7 +815,7 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen }) {
     onAdd(title); setNewTitle(''); setAdding(false)
   }
   return (
-    <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
+    <div style={{ marginBottom: noBorder ? 0 : 12, paddingBottom: noBorder ? 0 : 12, borderBottom: noBorder ? 'none' : '0.5px solid #f0f0f0' }}>
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
         {escalations.map(e => (
           <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} noteCount={Array.isArray(e.notes)?e.notes.length:0} attachCount={Array.isArray(e.attachments)?e.attachments.length:0} onOpen={onOpen} />
@@ -1735,13 +1761,14 @@ Important rules:
 
 // ─── Follow Ups Tab ───────────────────────────────────────────────────────────
 const DEFAULT_FOLLOW_UP_PEOPLE = ['Margarita', 'Illya', 'Matthew', 'Kaat']
-function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, people = DEFAULT_FOLLOW_UP_PEOPLE }) {
+function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, people = DEFAULT_FOLLOW_UP_PEOPLE, tasks = [] }) {
   const [activePerson, setActivePerson] = useState(null)
   const [showDone, setShowDone] = useState(false)
   const [addingFor, setAddingFor] = useState(null)
   const [newText, setNewText] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editText, setEditText] = useState('')
+  const [tasksOpenFor, setTasksOpenFor] = useState({})
 
   const startEdit = item => { setEditingId(item.id); setEditText(item.text) }
   const commitEdit = id => {
@@ -1756,6 +1783,8 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
 
   const pendingFor = p => followUps.filter(f => f.person === p && !f.done).length
   const itemsFor = p => followUps.filter(f => f.person === p && (showDone || !f.done))
+  const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
+  const tasksFor = p => tasks.filter(t => (t.owners||[]).includes(p) && tss(t) !== 'complete' && tss(t) !== 'canceled')
   const visiblePeople = activePerson ? [activePerson] : allPeople
 
   const handleAdd = person => {
@@ -1767,24 +1796,26 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
   return (
     <div>
       {/* Person filter pills */}
-      <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', marginBottom:16 }}>
-        <button onClick={() => setActivePerson(null)}
-          style={{ fontSize:12, padding:'4px 12px', borderRadius:16, cursor:'pointer', border:activePerson===null?'1.5px solid #111':'0.5px solid #e5e5e5', background:activePerson===null?'#111':'white', color:activePerson===null?'white':'#888', fontWeight:activePerson===null?500:400 }}>
-          All
-        </button>
-        {allPeople.map(p => {
-          const cnt = pendingFor(p), active = activePerson === p
-          const mc = MEMBER_COLORS[p]
-          return (
-            <button key={p} onClick={() => setActivePerson(active ? null : p)}
-              style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:active?`1.5px solid ${mc?.tc||'#111'}`:'0.5px solid #e5e5e5', background:active?(mc?.bg||'#f0f0f0'):'white', color:active?(mc?.tc||'#111'):'#888', fontWeight:active?500:400, display:'flex', alignItems:'center', gap:5 }}>
-              {p}
-              {cnt > 0 && <span style={{ fontSize:10, background:active?'rgba(0,0,0,0.1)':'#f0f0f0', color:active?(mc?.tc||'#555'):'#888', borderRadius:10, padding:'0 5px', minWidth:14, textAlign:'center' }}>{cnt}</span>}
-            </button>
-          )
-        })}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center', marginBottom:16 }}>
+        <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3, flexWrap:'wrap' }}>
+          <button onClick={() => setActivePerson(null)}
+            style={{ fontSize:12, padding:'4px 12px', borderRadius:8, cursor:'pointer', border:'none', background:activePerson===null?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:activePerson===null?'white':'#7c3aed', fontWeight:activePerson===null?600:400, transition:'background 0.15s, color 0.15s' }}>
+            All
+          </button>
+          {allPeople.map(p => {
+            const cnt = pendingFor(p), active = activePerson === p
+            const mc = MEMBER_COLORS[p]
+            return (
+              <button key={p} onClick={() => setActivePerson(active ? null : p)}
+                style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:'none', background:active?(mc?.bg||'#ede9fe'):'transparent', color:active?(mc?.tc||'#7c3aed'):'#7c3aed', fontWeight:active?600:400, display:'flex', alignItems:'center', gap:5, transition:'background 0.15s, color 0.15s' }}>
+                {p}
+                {cnt > 0 && <span style={{ fontSize:10, background:'rgba(0,0,0,0.1)', color:'inherit', borderRadius:10, padding:'0 5px', minWidth:14, textAlign:'center' }}>{cnt}</span>}
+              </button>
+            )
+          })}
+        </div>
         <button onClick={() => setShowDone(v => !v)}
-          style={{ marginLeft:'auto', fontSize:11, padding:'4px 10px', borderRadius:6, cursor:'pointer', border:'0.5px solid #e0e0e0', background:showDone?'white':'#f7f7f5', color:showDone?'#555':'#bbb', height:28 }}>
+          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:showDone?'none':'0.5px solid #c4b5fd', background:showDone?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:showDone?'white':'#7c3aed', height:28, transition:'background 0.15s, color 0.15s' }}>
           ✓ Done
         </button>
       </div>
@@ -1809,6 +1840,32 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                   {addingFor === person ? 'Cancel' : '+ Add'}
                 </button>
               </div>
+
+              {/* Assigned tasks */}
+              {(() => {
+                const pt = tasksFor(person)
+                if (pt.length === 0) return null
+                const isOpen = tasksOpenFor[person] !== false
+                return (
+                  <div style={{ marginBottom:8 }}>
+                    <button onClick={() => setTasksOpenFor(s => ({...s, [person]: !isOpen}))}
+                      style={{ display:'flex', alignItems:'center', gap:5, background:'none', border:'none', cursor:'pointer', padding:'2px 0 6px', color:'#888', fontSize:11, fontFamily:'inherit', width:'100%', textAlign:'left' }}>
+                      <span style={{ fontSize:8, display:'inline-block', transition:'transform 0.15s', transform: isOpen?'rotate(90deg)':'rotate(0deg)' }}>▶</span>
+                      {pt.length} assigned task{pt.length !== 1 ? 's' : ''}
+                    </button>
+                    {isOpen && pt.map(t => {
+                      const ss = subStyle(tss(t))
+                      return (
+                        <div key={t.id} style={{ display:'flex', alignItems:'center', gap:7, padding:'5px 8px', background:'white', borderRadius:6, border:'0.5px solid #ebebeb', marginBottom:3 }}>
+                          <div style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background:ss.bg, border:`1px solid ${ss.border}` }} />
+                          <span style={{ flex:1, fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</span>
+                          <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:10, padding:'1px 6px', whiteSpace:'nowrap', flexShrink:0 }}>{ss.label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
 
               {addingFor === person && (
                 <div style={{ display:'flex', gap:6, marginBottom:8 }}>
@@ -1874,12 +1931,12 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
 }
 
 // ─── Notes Section (wrapper with sub-tabs) ────────────────────────────────────
-function NotesSection({ notes, onSaveNote, onDeleteNote }) {
-  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} />
+function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup }) {
+  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} />
 }
 
 // ─── Notes Tab ───────────────────────────────────────────────────────────────
-function NotesTab({ notes, onSave, onDelete }) {
+function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup }) {
   const [selectedId, setSelectedId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [dirty, setDirty] = useState(false)
@@ -1891,7 +1948,18 @@ function NotesTab({ notes, onSave, onDelete }) {
   const [mobileView, setMobileView] = useState('list') // 'list' | 'editor'
   const [swipeState, setSwipeState] = useState({}) // { [id]: { x, swiped } }
   const [editorHeight, setEditorHeight] = useState(null)
+  const [activeGroupId, setActiveGroupId] = useState(undefined) // undefined=all, null=ungrouped, uuid=group
+  const [renamingGroupId, setRenamingGroupId] = useState(null)
+  const [renameText, setRenameText] = useState('')
+  const [deletingGroupId, setDeletingGroupId] = useState(null)
+  const [addingGroup, setAddingGroup] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
   const isMobileNotes = window.innerWidth < 640
+  const autoSaveTimerRef = useRef(null)
+  const draftRef = useRef(draft)
+  const selectedIdRef = useRef(selectedId)
+  draftRef.current = draft
+  selectedIdRef.current = selectedId
 
   // Keyboard-aware height via visualViewport
   useEffect(() => {
@@ -1911,6 +1979,18 @@ function NotesTab({ notes, onSave, onDelete }) {
     }
   }, [notes])
 
+  // Auto-save 1.5s after the user stops typing
+  useEffect(() => {
+    if (!dirty) return
+    clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = setTimeout(() => {
+      if (draftRef.current && selectedIdRef.current) {
+        onSave(draftRef.current, selectedIdRef.current).then(() => setDirty(false))
+      }
+    }, 1500)
+    return () => clearTimeout(autoSaveTimerRef.current)
+  }, [dirty, draft])
+
   const handleSelect = n => {
     if (dirty) onSave(draft, selectedId)
     setSelectedId(n.id); setDraft({ title: n.title, body: n.body || '' }); setDirty(false)
@@ -1922,8 +2002,11 @@ function NotesTab({ notes, onSave, onDelete }) {
     await onSave(draft, selectedId); setDirty(false)
   }
 
-  const handleNew = async () => {
-    await onSave({ title: `Note — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`, body: '' }, null)
+  const handleNew = async (groupId) => {
+    const title = `Note — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`
+    const gId = groupId !== undefined ? groupId : (activeGroupId === undefined ? null : activeGroupId)
+    const newId = await onSave({ title, body: '', group_id: gId }, null)
+    if (newId) { setSelectedId(newId); setDraft({ title, body: '' }); setDirty(false) }
     if (isMobileNotes) setMobileView('editor')
   }
 
@@ -1967,6 +2050,10 @@ function NotesTab({ notes, onSave, onDelete }) {
   const stripHtml = html => { const d = document.createElement('div'); d.innerHTML = html||''; return d.textContent||'' }
   const visibleNotes = notes
     .filter(n => {
+      if (activeGroupId !== undefined) {
+        if (activeGroupId === null && n.group_id != null) return false
+        if (activeGroupId !== null && n.group_id !== activeGroupId) return false
+      }
       if (!search.trim()) return true
       const q = search.toLowerCase()
       return (n.title||'').toLowerCase().includes(q) || stripHtml(n.body).toLowerCase().includes(q)
@@ -1978,12 +2065,14 @@ function NotesTab({ notes, onSave, onDelete }) {
       return sortDir === 'desc' ? -cmp : cmp
     })
 
+  const activeGroupLabel = activeGroupId === undefined ? 'All Notes' : activeGroupId === null ? 'Ungrouped' : (groups.find(g => g.id === activeGroupId)?.name || 'Notes')
+
   const sidebar = (
     <div style={{ width: isMobileNotes ? '100%' : 220, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
       <div style={{ padding:'8px 12px', borderBottom:'0.5px solid #f0f0f0' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:7 }}>
-          <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>All Notes</span>
-          <button onClick={handleNew} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'6px 12px', cursor:'pointer' }}>+ New</button>
+          <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>{activeGroupLabel}</span>
+          <button onClick={() => handleNew()} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'6px 12px', cursor:'pointer' }}>+ New</button>
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notes…"
           style={{ width:'100%', boxSizing:'border-box', fontSize:16, padding:'7px 10px', border:'0.5px solid #e0e0e0', borderRadius:6, outline:'none', marginBottom:6, color:'#333' }} />
@@ -1997,6 +2086,95 @@ function NotesTab({ notes, onSave, onDelete }) {
         </div>
       </div>
       <div style={{ flex:1, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
+        {/* Group navigation */}
+        {onSaveGroup && (
+          <div style={{ borderBottom:'0.5px solid #f0f0f0', paddingBottom:4, marginBottom:2 }}>
+            {/* All Notes row */}
+            <div onClick={() => setActiveGroupId(undefined)}
+              style={{ padding:'6px 12px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', background: activeGroupId === undefined ? '#ede9fe' : 'transparent' }}>
+              <span style={{ fontSize:12, color: activeGroupId === undefined ? '#7c3aed' : '#555', fontWeight: activeGroupId === undefined ? 600 : 400 }}>All Notes</span>
+              <span style={{ fontSize:11, color:'#bbb' }}>{notes.length}</span>
+            </div>
+            {/* Ungrouped row */}
+            <div onClick={() => setActiveGroupId(null)}
+              style={{ padding:'6px 12px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', background: activeGroupId === null ? '#ede9fe' : 'transparent' }}>
+              <span style={{ fontSize:12, color: activeGroupId === null ? '#7c3aed' : '#555', fontWeight: activeGroupId === null ? 600 : 400 }}>Ungrouped</span>
+              <span style={{ fontSize:11, color:'#bbb' }}>{notes.filter(n => !n.group_id).length}</span>
+            </div>
+            {/* Each group */}
+            {groups.map(g => (
+              <div key={g.id}>
+                {renamingGroupId === g.id ? (
+                  <div style={{ padding:'4px 8px' }}>
+                    <input autoFocus value={renameText} onChange={e => setRenameText(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { onRenameGroup(g.id, renameText.trim() || g.name); setRenamingGroupId(null) }
+                        if (e.key === 'Escape') setRenamingGroupId(null)
+                      }}
+                      onBlur={() => { onRenameGroup(g.id, renameText.trim() || g.name); setRenamingGroupId(null) }}
+                      style={{ width:'100%', boxSizing:'border-box', fontSize:12, padding:'4px 8px', border:'0.5px solid #c4b5fd', borderRadius:6, outline:'none' }}
+                    />
+                  </div>
+                ) : (
+                  <div onClick={() => setActiveGroupId(g.id)}
+                    style={{ padding:'6px 12px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', background: activeGroupId === g.id ? '#ede9fe' : 'transparent' }}
+                    onMouseEnter={e => { if (activeGroupId !== g.id) e.currentTarget.style.background = '#fafafa' }}
+                    onMouseLeave={e => { if (activeGroupId !== g.id) e.currentTarget.style.background = 'transparent' }}>
+                    <span style={{ fontSize:12, color: activeGroupId === g.id ? '#7c3aed' : '#555', fontWeight: activeGroupId === g.id ? 600 : 400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {g.name}
+                    </span>
+                    <div style={{ display:'flex', gap:1, alignItems:'center', flexShrink:0 }}>
+                      <span style={{ fontSize:11, color:'#bbb', marginRight:3 }}>{notes.filter(n => n.group_id === g.id).length}</span>
+                      <button onClick={e => { e.stopPropagation(); setRenamingGroupId(g.id); setRenameText(g.name) }}
+                        style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Rename">✎</button>
+                      <button onClick={e => { e.stopPropagation(); setDeletingGroupId(g.id) }}
+                        style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Delete group">✕</button>
+                    </div>
+                  </div>
+                )}
+                {/* Inline delete confirmation */}
+                {deletingGroupId === g.id && (() => {
+                  const cnt = notes.filter(n => n.group_id === g.id).length
+                  return (
+                    <div style={{ margin:'0 8px 4px', padding:'8px 10px', background:'#fff5f5', border:'0.5px solid #fecaca', borderRadius:8, fontSize:11 }}>
+                      <div style={{ color:'#991b1b', fontWeight:500, marginBottom:6 }}>
+                        Delete "{g.name}"{cnt > 0 ? ` (${cnt} note${cnt > 1 ? 's' : ''})` : ''}?
+                      </div>
+                      <div style={{ display:'flex', gap:4 }}>
+                        <button onClick={() => { onDeleteGroup(g.id, true); setDeletingGroupId(null); if (activeGroupId === g.id) setActiveGroupId(undefined) }}
+                          style={{ fontSize:10, padding:'4px 8px', background:'#991b1b', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Delete notes</button>
+                        <button onClick={() => { onDeleteGroup(g.id, false); setDeletingGroupId(null); if (activeGroupId === g.id) setActiveGroupId(undefined) }}
+                          style={{ fontSize:10, padding:'4px 8px', background:'#7c3aed', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Keep notes</button>
+                        <button onClick={() => setDeletingGroupId(null)}
+                          style={{ fontSize:10, padding:'4px 8px', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, cursor:'pointer', color:'#888' }}>Cancel</button>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            ))}
+            {/* Add new group */}
+            {addingGroup ? (
+              <div style={{ padding:'4px 8px' }}>
+                <input autoFocus value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { if (newGroupName.trim()) onSaveGroup(newGroupName.trim()); setAddingGroup(false); setNewGroupName('') }
+                    if (e.key === 'Escape') { setAddingGroup(false); setNewGroupName('') }
+                  }}
+                  onBlur={() => { if (newGroupName.trim()) onSaveGroup(newGroupName.trim()); setAddingGroup(false); setNewGroupName('') }}
+                  placeholder="Group name…"
+                  style={{ width:'100%', boxSizing:'border-box', fontSize:12, padding:'4px 8px', border:'0.5px solid #c4b5fd', borderRadius:6, outline:'none' }}
+                />
+              </div>
+            ) : (
+              <button onClick={() => setAddingGroup(true)}
+                style={{ width:'100%', textAlign:'left', padding:'5px 12px', background:'none', border:'none', cursor:'pointer', fontSize:11, color:'#a78bfa' }}>
+                + New Group
+              </button>
+            )}
+          </div>
+        )}
+        {/* Note list */}
         {visibleNotes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>{search ? 'No matches.' : 'No notes yet.'}<br/>{!search && 'Tap + New to start.'}</div>}
         {visibleNotes.map(n => {
           const sw = swipeState[n.id] || {}
@@ -2055,7 +2233,7 @@ function NotesTab({ notes, onSave, onDelete }) {
                   {copied ? '✓' : '📋'}
                 </button>
                 {dirty && <button onClick={handleSave} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'6px 10px', cursor:'pointer' }}>Save</button>}
-                {selectedId && <button onClick={() => confirmDelete(selectedId)} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'6px 10px', cursor:'pointer' }}>Delete</button>}
+                {selectedId && <ConfirmDeleteButton onConfirm={() => confirmDelete(selectedId)} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'6px 10px', cursor:'pointer' }}>Delete</ConfirmDeleteButton>}
               </div>
             </div>
             {(() => {
@@ -2419,7 +2597,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
         )}
 
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:14 }}>
-          <div>{isEdit && <button onClick={() => onDelete(task.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</button>}</div>
+          <div>{isEdit && <ConfirmDeleteButton onConfirm={() => onDelete(task.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</ConfirmDeleteButton>}</div>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={onClose} style={{ fontSize:13, background:'none', border:'0.5px solid #ccc', borderRadius:8, padding:'7px 14px', cursor:'pointer', color:'#444' }}>Cancel</button>
             <button onClick={() => { if (f.title.trim()) onSave(f) }} disabled={!f.title.trim()} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:f.title.trim()?'pointer':'not-allowed', opacity:f.title.trim()?1:0.4 }}>Save</button>
@@ -2575,7 +2753,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
         </div>
 
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div>{isEdit && <button onClick={() => onDelete(event.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</button>}</div>
+          <div>{isEdit && <ConfirmDeleteButton onConfirm={() => onDelete(event.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</ConfirmDeleteButton>}</div>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={onClose} style={{ fontSize:13, background:'none', border:'0.5px solid #ccc', borderRadius:8, padding:'7px 14px', cursor:'pointer', color:'#444' }}>Cancel</button>
             <button onClick={() => { if (f.title.trim()) onSave(f) }} disabled={!f.title.trim()} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:f.title.trim()?'pointer':'not-allowed', opacity:f.title.trim()?1:0.4 }}>Save</button>
@@ -3238,6 +3416,7 @@ export default function App() {
   const [projects, setProjects] = useState([])
   const [escalations, setEscalations] = useState([])
   const [notes, setNotes] = useState([])
+  const [noteGroups, setNoteGroups] = useState([])
   const [followUps, setFollowUps] = useState([])
   const [calEvents, setCalEvents] = useState([])
   const [qualTemplates, setQualTemplates] = useState([])
@@ -3283,7 +3462,7 @@ export default function App() {
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*'),
@@ -3293,6 +3472,7 @@ export default function App() {
       supabase.from('follow_ups').select('*').order('created_at', { ascending: true }),
       supabase.from('team_members').select('*').order('sort_order', { ascending: true }),
       supabase.from('qual_templates').select('*').order('created_at', { ascending: true }),
+      supabase.from('note_groups').select('*').order('sort_order', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) setDomains(domainsData.map(d => d.name))
@@ -3303,6 +3483,7 @@ export default function App() {
     setFollowUps(followUpsData || [])
     if (teamMembersData && teamMembersData.length > 0) setTeamData(teamMembersData)
     setQualTemplates(qualTemplatesData || [])
+    setNoteGroups(noteGroupsData || [])
     setLoading(false)
   }, [])
 
@@ -3417,16 +3598,46 @@ export default function App() {
   const saveNote = async (data, id) => {
     const body = data.body || ''
     const payload = { title: data.title, body, updated_at: new Date().toISOString() }
-    const { error } = id
-      ? await supabase.from('notes').update(payload).eq('id', id)
-      : await supabase.from('notes').insert(payload)
-    if (error) { console.error('[TASKr] saveNote error', error); return }
+    if ('group_id' in data) payload.group_id = data.group_id ?? null
+    let newId = null
+    if (id) {
+      const { error } = await supabase.from('notes').update(payload).eq('id', id)
+      if (error) { console.error('[TASKr] saveNote error', error); return null }
+    } else {
+      const { data: ins, error } = await supabase.from('notes').insert(payload).select('id').single()
+      if (error) { console.error('[TASKr] saveNote error', error); return null }
+      newId = ins?.id
+    }
     await loadData(true)
+    return newId
   }
 
   const deleteNote = async id => {
     const { error } = await supabase.from('notes').delete().eq('id', id)
     if (error) { console.error('[TASKr] deleteNote error', error); return }
+    await loadData(true)
+  }
+
+  const saveNoteGroup = async name => {
+    const maxOrder = noteGroups.length ? Math.max(...noteGroups.map(g => g.sort_order||0)) : 0
+    const { data: grp, error } = await supabase.from('note_groups').insert({ name, sort_order: maxOrder+1 }).select().single()
+    if (error) { console.error('[TASKr] saveNoteGroup error', error); return null }
+    await loadData(true)
+    return grp?.id
+  }
+
+  const renameNoteGroup = async (id, name) => {
+    await supabase.from('note_groups').update({ name }).eq('id', id)
+    await loadData(true)
+  }
+
+  const deleteNoteGroup = async (id, deleteNotes) => {
+    if (deleteNotes) {
+      await supabase.from('notes').delete().eq('group_id', id)
+    } else {
+      await supabase.from('notes').update({ group_id: null }).eq('group_id', id)
+    }
+    await supabase.from('note_groups').delete().eq('id', id)
     await loadData(true)
   }
 
@@ -3580,30 +3791,31 @@ export default function App() {
     <div style={{ fontFamily:'system-ui,sans-serif', padding:isMobile?'0.75rem':'1.25rem 1.5rem', maxWidth:1400, margin:'0 auto' }}>
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'1.25rem', paddingBottom:'1rem', borderBottom:'0.5px solid #e5e5e5' }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:'#111', margin:0, letterSpacing:'-0.5px' }}>💪🏻 TASKr</h1>
+        <h1 style={{ fontSize:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
-          <span style={{ fontSize:12, color:'#aaa' }}>{new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
-          <span style={{ fontSize:10, color:'#bbb' }}>Live · Supabase</span>
+          <span style={{ fontSize:12, color:'#7c3aed' }}>{new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
+          <span style={{ fontSize:10, color:'#c4b5fd' }}>Live · Supabase</span>
         </div>
       </div>
 
-      <WorldClock />
-
-      {/* Tabs */}
-      <div style={{ display:'flex', gap:3, marginBottom:'1.25rem', background:'#f2f2f0', borderRadius:12, padding:4, overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
-        {[
-          { key:'briefing', label:'📰 Briefing' },
-          { key:'tasks', label:'📋 Tasks' },
-          { key:'followups', label:'🔄 Follow Ups' },
-          { key:'notes', label:'📝 Notes' },
-          { key:'calendar', label:'📅 Calendar' },
-          { key:'settings', label:'⚙️ Settings' },
-        ].map(t => (
-          <button key={t.key} onClick={() => switchTab(t.key)}
-            style={{ fontSize:13, padding:'6px 14px', cursor:'pointer', background:tab===t.key?'white':'transparent', border:'none', borderRadius:8, color:tab===t.key?'#111':'#777', fontWeight:tab===t.key?500:400, boxShadow:tab===t.key?'0 1px 3px rgba(0,0,0,0.09)':'none', whiteSpace:'nowrap', flexShrink:0 }}>
-            {t.label}
-          </button>
-        ))}
+      {/* Menu + World Clock — unified gradient strip */}
+      <div style={{ display:'flex', alignItems:'stretch', background:'linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a855f7 100%)', borderRadius:14, marginBottom:'1.25rem', overflow:'hidden' }}>
+        <div style={{ display:'flex', gap:2, padding:5, flexShrink:0 }}>
+          {[
+            { key:'briefing', label:'📰 Briefing' },
+            { key:'tasks', label:'📋 Tasks' },
+            { key:'followups', label:'🔄 Follow Ups' },
+            { key:'notes', label:'📝 Notes' },
+            { key:'calendar', label:'📅 Calendar' },
+            { key:'settings', label:'⚙️ Settings' },
+          ].map(t => (
+            <button key={t.key} onClick={() => switchTab(t.key)}
+              style={{ fontSize:13, padding:'7px 14px', cursor:'pointer', background:tab===t.key?'rgba(255,255,255,0.18)':'transparent', border:'none', borderRadius:10, color:tab===t.key?'#fff':'rgba(255,255,255,0.6)', fontWeight:tab===t.key?600:400, whiteSpace:'nowrap', flexShrink:0, transition:'background 0.15s, color 0.15s' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <WorldClock style={{ flex:1, minWidth:0 }} />
       </div>
 
       {/* ── Briefing ── */}
@@ -3613,72 +3825,68 @@ export default function App() {
       {tab === 'tasks' && (
         <>
           {/* View controls */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, flexWrap:'wrap', gap:8 }}>
-            {/* Search */}
-            <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
-              <span style={{ position:'absolute', left:8, fontSize:12, color:'#bbb', pointerEvents:'none' }}>🔍</span>
-              <input
-                type="text"
-                value={taskSearch}
-                onChange={e => setTaskSearch(e.target.value)}
-                placeholder="Search tasks…"
-                style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', height:28, outline:'none', width:180, color:'#333', boxSizing:'border-box' }}
-              />
-              {taskSearch && (
-                <button onClick={() => setTaskSearch('')} style={{ position:'absolute', right:6, fontSize:12, color:'#bbb', background:'none', border:'none', cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
-              )}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', marginBottom:12, gap:6, flexWrap:'wrap' }}>
+            {/* View mode pills */}
+            <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
+              {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }].map(v => (
+                <button key={v.k} onClick={() => setViewMode(v.k)}
+                  style={{ fontSize:11, padding:'4px 10px', border:'none', background:viewMode===v.k?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:viewMode===v.k?'white':'#7c3aed', fontWeight:viewMode===v.k?600:400, cursor:'pointer', borderRadius:8, transition:'background 0.15s, color 0.15s', whiteSpace:'nowrap' }}>
+                  {v.l}
+                </button>
+              ))}
             </div>
-            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-              {/* View mode */}
-              <div style={{ display:'flex', background:'#efefed', borderRadius:8, padding:2, gap:1 }}>
-                {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }].map(v => (
-                  <button key={v.k} onClick={() => setViewMode(v.k)} style={{ fontSize:11, padding:'4px 10px', border:'none', background:viewMode===v.k?'white':'transparent', color:viewMode===v.k?'#111':'#888', fontWeight:viewMode===v.k?500:400, cursor:'pointer', borderRadius:6, boxShadow:viewMode===v.k?'0 1px 2px rgba(0,0,0,0.08)':'none' }}>
-                    {v.l}
-                  </button>
-                ))}
-              </div>
-              <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)}
-                style={{ fontSize:11, padding:'4px 8px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', color:filterOwner==='all'?'#888':'#111', height:28, outline:'none' }}>
-                <option value="all">👥 All people</option>
-                {memberNames.map(name => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <button onClick={() => setListView(v => !v)}
-                title={listView ? 'Switch to board view' : 'Switch to list view'}
-                style={{ fontSize:11, background:listView?'#111':'white', border:listView?'none':'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 10px', cursor:'pointer', height:28, color:listView?'white':'#555' }}>
-                ☰ List
-              </button>
-              <button onClick={() => setShowCompleted(v => !v)}
-                title={showCompleted ? 'Hide completed tasks' : 'Show completed tasks'}
-                style={{ fontSize:11, background:showCompleted?'white':'#f7f7f5', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 10px', cursor:'pointer', height:28, color:showCompleted?'#555':'#bbb' }}>
-                ✓ Done
-              </button>
-              <button onClick={() => { setShowTrash(v => { const next=!v; if(next) setTimeout(()=>trashRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),50); return next; }) }}
-                title="Trash"
-                style={{ position:'relative', background:showTrash?'#fff0f0':'white', border:showTrash?'0.5px solid #f09595':'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 10px', cursor:'pointer', height:28, display:'flex', alignItems:'center' }}>
-                <span style={{ fontSize:10 }}>🗑️</span>
-                {tasks.filter(t=>t.substatus==='canceled').length > 0 && (
-                  <span style={{ position:'absolute', top:-4, right:-4, background:'#c0392b', color:'white', borderRadius:'50%', fontSize:9, width:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, lineHeight:1 }}>
-                    {tasks.filter(t=>t.substatus==='canceled').length}
-                  </span>
-                )}
-              </button>
+            {/* Owner filter */}
+            <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)}
+              style={{ fontSize:11, padding:'4px 8px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', cursor:'pointer', color:filterOwner==='all'?'#888':'#4f46e5', height:28, outline:'none' }}>
+              <option value="all">👥 All</option>
+              {memberNames.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+            {/* List toggle */}
+            <button onClick={() => setListView(v => !v)} title={listView ? 'Board view' : 'List view'}
+              style={{ fontSize:11, background:listView?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', border:listView?'none':'0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, color:listView?'white':'#7c3aed', transition:'background 0.15s, color 0.15s' }}>
+              ☰ List
+            </button>
+            {/* Done toggle */}
+            <button onClick={() => setShowCompleted(v => !v)} title={showCompleted ? 'Hide completed' : 'Show completed'}
+              style={{ fontSize:11, background:showCompleted?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', border:showCompleted?'none':'0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, color:showCompleted?'white':'#7c3aed', transition:'background 0.15s, color 0.15s' }}>
+              ✓ Done
+            </button>
+            {/* Trash */}
+            <button onClick={() => { setShowTrash(v => { const next=!v; if(next) setTimeout(()=>trashRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),50); return next; }) }} title="Trash"
+              style={{ position:'relative', background:showTrash?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', border:showTrash?'none':'0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, display:'flex', alignItems:'center', color:showTrash?'white':'#7c3aed' }}>
+              <span style={{ fontSize:10 }}>🗑️</span>
+              {tasks.filter(t=>t.substatus==='canceled').length > 0 && (
+                <span style={{ position:'absolute', top:-4, right:-4, background:'#ef4444', color:'white', borderRadius:'50%', fontSize:9, width:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, lineHeight:1 }}>
+                  {tasks.filter(t=>t.substatus==='canceled').length}
+                </span>
+              )}
+            </button>
+            {/* Search — far right */}
+            <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+              <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
+              <input type="text" value={taskSearch} onChange={e => setTaskSearch(e.target.value)}
+                placeholder="Search tasks…"
+                style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:28, outline:'none', width:160, color:'#333', boxSizing:'border-box' }} />
+              {taskSearch && (
+                <button onClick={() => setTaskSearch('')} style={{ position:'absolute', right:6, fontSize:12, color:'#a78bfa', background:'none', border:'none', cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
+              )}
             </div>
           </div>
 
           {!showTrash && (<>
           {!listView && <>
-          {/* Today strip */}
-          <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} />
-
-          {/* Escalations section */}
-          <div style={{ marginBottom:16 }}>
-            <button onClick={() => toggleSection('escalations')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#888' }}>
-              <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
-              <span style={{ fontSize:11 }}>{isSectionOpen('escalations') ? '▴' : '▾'}</span>
-            </button>
-            {isSectionOpen('escalations') && <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} />}
+          {/* Today + Escalations row */}
+          <div style={{ display:'flex', gap:12, alignItems:'flex-start', marginBottom:16 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} isOpen={isSectionOpen('today')} onToggle={() => toggleSection('today')} />
+            </div>
+            <div style={{ flex:'0 0 432px', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:12, padding:12 }}>
+              <button onClick={() => toggleSection('escalations')} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#7c3aed' }}>
+                <span style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
+                <span style={{ fontSize:10 }}>{isSectionOpen('escalations') ? '▴' : '▾'}</span>
+              </button>
+              {isSectionOpen('escalations') && <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} noBorder />}
+            </div>
           </div>
 
           {/* Projects section */}
@@ -3935,7 +4143,7 @@ export default function App() {
                     {t.domain && <div style={{ fontSize:11, color:'#aaa', marginBottom:8 }}>{t.domain}</div>}
                     <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
                       <button onClick={() => restoreTask(t)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Restore</button>
-                      <button onClick={() => deleteTask(t.id)} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Delete</button>
+                      <ConfirmDeleteButton onConfirm={() => deleteTask(t.id)} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Delete</ConfirmDeleteButton>
                     </div>
                   </div>
                 ))}
@@ -3952,12 +4160,12 @@ export default function App() {
 
       {/* ── Notes ── */}
       {tab === 'notes' && (
-        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} />
+        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} />
       )}
 
       {/* ── Follow Ups ── */}
       {tab === 'followups' && (
-        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={memberNames}
+        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={memberNames} tasks={tasks}
           onCreateTask={item => { setForm({ title:item.text, status:'active', owners:[item.person], substatus:'not_started' }); setIsEdit(false) }} />
       )}
 
@@ -4103,7 +4311,7 @@ function QualTemplateSettings({ onUpdate }) {
           </div>
           <div style={{ display:'flex', gap:6 }}>
             <button onClick={() => startEdit(t)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#444' }}>Edit</button>
-            <button onClick={() => deleteTemplate(t.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#A32D2D' }}>Delete</button>
+            <ConfirmDeleteButton onConfirm={() => deleteTemplate(t.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#A32D2D' }}>Delete</ConfirmDeleteButton>
           </div>
         </div>
       ))}

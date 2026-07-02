@@ -22,3 +22,10 @@ body {
   }
 }
 
+/* Ghost search input on gradient strip */
+.gradient-search::placeholder { color: rgba(255,255,255,0.45); }
+.gradient-search { color: white; }
+
+/* Ghost select on gradient strip */
+.gradient-select option { background: #5b21b6; color: white; }
+
