@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from './supabase'
+import DOMPurify from 'dompurify'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
@@ -64,6 +65,10 @@ const CAL_TOTAL_H = (CAL_END_HOUR - CAL_START_HOUR) * CAL_HOUR_H
 // ─── Pure Helpers ─────────────────────────────────────────────────────────────
 const flagBg = c => ({ red: '#FCEBEB', orange: '#FFF0E8', yellow: '#FEFCE8', green: '#EAF3DE', blue: '#E6F1FB', violet: '#EEEDFE' }[c] || null)
 const flagBorder = c => ({ red: '#E24B4A', orange: '#F97316', yellow: '#EAB308', green: '#639922', blue: '#378ADD', violet: '#7F77DD' }[c] || null)
+const evTypeBg = ev => ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':(flagBg(ev.color)||'#E6F1FB')
+const evTypeBdr = ev => ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':(flagBorder(ev.color)||'#85B7EB')
+const evTypeTc = ev => ev.type==='travel'?'#633806':ev.type==='audit'?'#5B21B6':ev.type==='vacation'?'#065F46':'#0C447C'
+const evTypeIcon = ev => ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''
 const subStyle = k => SUBSTATUS.find(s => s.key === k) || SUBSTATUS[0]
 const fmtTs = ts => { const d = new Date(ts); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) }
 
@@ -853,6 +858,13 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
   const [imgBar, setImgBar] = useState(null)
   const wrapperRef = useRef(null)
   const pasteInProgressRef = useRef(false)
+  const dragCleanupRef = useRef(null)
+  useEffect(() => () => {
+    if (dragCleanupRef.current) {
+      document.removeEventListener('mousemove', dragCleanupRef.current.onMove)
+      document.removeEventListener('mouseup', dragCleanupRef.current.onUp)
+    }
+  }, [])
 
   const handlePaste = async e => {
     const items = Array.from(e.clipboardData?.items || [])
@@ -950,15 +962,17 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
       computeImgBar(el)
     }
     const onUp = () => {
-      onChange(editorRef.current.innerHTML)
+      if (editorRef.current) onChange(editorRef.current.innerHTML)
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      dragCleanupRef.current = null
     }
+    dragCleanupRef.current = { onMove, onUp }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }
 
-  useLayoutEffect(() => { if (editorRef.current) editorRef.current.innerHTML = initialValue || '' }, [])
+  useLayoutEffect(() => { if (editorRef.current) editorRef.current.innerHTML = DOMPurify.sanitize(initialValue || '') }, [])
 
   useEffect(() => {
     const check = () => {
@@ -1538,26 +1552,12 @@ Important rules:
 - Use actual task titles and names, not generic descriptions.
 - Keep the full briefing under 650 words.`
 
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1200,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }],
-        }),
+      const { data: proxyData, error: proxyError } = await supabase.functions.invoke('anthropic-proxy', {
+        body: { systemPrompt, userPrompt, model: 'claude-sonnet-4-6', max_tokens: 1200 },
       })
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}))
-        throw new Error(err.error?.message || `HTTP ${resp.status}`)
-      }
-      const result = await resp.json()
+      if (proxyError) throw new Error(proxyError.message)
+      if (proxyData?.error) throw new Error(proxyData.error?.message || proxyData.error)
+      const result = proxyData
       const text = result.content[0].text
       await supabase.from('briefings').insert({ date: todayISO, content: text })
       setBriefContent(text); setSelectedDate(null)
@@ -1961,6 +1961,13 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   draftRef.current = draft
   selectedIdRef.current = selectedId
 
+  // Reset activeGroupId if the selected group was deleted
+  useEffect(() => {
+    if (activeGroupId !== undefined && activeGroupId !== null) {
+      if (!groups.find(g => g.id === activeGroupId)) setActiveGroupId(undefined)
+    }
+  }, [groups, activeGroupId])
+
   // Keyboard-aware height via visualViewport
   useEffect(() => {
     if (!isMobileNotes) return
@@ -1985,7 +1992,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
     clearTimeout(autoSaveTimerRef.current)
     autoSaveTimerRef.current = setTimeout(() => {
       if (draftRef.current && selectedIdRef.current) {
-        onSave(draftRef.current, selectedIdRef.current).then(() => setDirty(false))
+        onSave(draftRef.current, selectedIdRef.current).then(result => { if (result !== null) setDirty(false) })
       }
     }, 1500)
     return () => clearTimeout(autoSaveTimerRef.current)
@@ -2041,6 +2048,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
     setSwipeState(s => ({ ...s, [id]: { x: 0, swiped: false } }))
   }
   const confirmDelete = async (id) => {
+    clearTimeout(autoSaveTimerRef.current)
     await onDelete(id)
     if (selectedId === id) { setSelectedId(null); setDraft(null); setDirty(false) }
     setSwipeState(s => { const n = {...s}; delete n[id]; return n })
@@ -2295,7 +2303,7 @@ function NoteItem({ note, onDelete, onSave }) {
         </div>
         <div style={{ display:'flex', gap:4, flexShrink:0 }}>
           {editing ? <>
-            <button onClick={() => { onSave(note.id, val.trim()); setEditing(false) }} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:4, padding:'2px 8px', cursor:'pointer' }}>Save</button>
+            <button onClick={() => { onSave(note.id, val.trim()); setEditing(false) }} disabled={!val.trim()} style={{ fontSize:11, background: val.trim() ? '#111' : '#ccc', color:'white', border:'none', borderRadius:4, padding:'2px 8px', cursor: val.trim() ? 'pointer' : 'not-allowed' }}>Save</button>
             <button onClick={() => { setVal(note.text); setEditing(false) }} style={{ fontSize:11, background:'none', border:'0.5px solid #ccc', borderRadius:4, padding:'2px 8px', cursor:'pointer', color:'#666' }}>Cancel</button>
           </> : <button onClick={() => setEditing(true)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 7px', cursor:'pointer', color:'#888' }}>Edit</button>}
           <button onClick={() => onDelete(note.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
@@ -2307,7 +2315,7 @@ function NoteItem({ note, onDelete, onSave }) {
 
 // ─── Task Form ────────────────────────────────────────────────────────────────
 const DUE_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const DUE_MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const DUE_MONTHS_LONG = MONTH_NAMES
 function formatDue(d) { const dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0'), yy=String(d.getFullYear()).slice(-2); return `${mm}/${dd}/${yy}` }
 
 function DatePicker({ value, onChange, initialMonth, minDate }) {
@@ -2815,11 +2823,11 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
                 const dispE = evE > rangeEnd ? rangeEnd : evE
                 const sc = Math.max(0, weekDates.findIndex(d => toISODate(d) === toISODate(dispS))) + 1
                 const ec = Math.min(7, weekDates.findIndex(d => toISODate(d) === toISODate(dispE))) + 2
-                const bg = ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':(flagBg(ev.color)||'#E6F1FB')
-                const bdr = ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':(flagBorder(ev.color)||'#85B7EB')
+                const bg = evTypeBg(ev)
+                const bdr = evTypeBdr(ev)
                 return (
                   <div key={i} onClick={() => onEventClick(ev)} style={{ gridColumn:`${sc}/${ec}`, fontSize:10, padding:'3px 6px', borderRadius:4, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>
-                    {ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''}{ev.title}
+                    {evTypeIcon(ev)}{ev.title}
                   </div>
                 )
               })}
@@ -2978,13 +2986,13 @@ function CalendarMonthView({ events, year, month, onDayClick, onShowDay, onEvent
               {Array.from({ length: laneCount }, (_, li) => {
                 const ev = byLane[li]
                 if (!ev) return <div key={`sp-${li}`} style={{ height:20, marginBottom:2 }} />
-                const bg = ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':(flagBg(ev.color)||'#E6F1FB')
-                const bdr = ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':(flagBorder(ev.color)||'#85B7EB')
+                const bg = evTypeBg(ev)
+                const bdr = evTypeBdr(ev)
                 const isStart = ev._spanDay === ev._spanStart
                 const isEnd = ev._spanDay === ev._spanEnd
                 const isSun = d.getDay() === 0
                 const showLabel = isStart || isSun
-                const typeIcon = ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''
+                const typeIcon = evTypeIcon(ev)
                 return (
                   <div key={`ln-${li}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
                     style={{
@@ -3003,9 +3011,9 @@ function CalendarMonthView({ events, year, month, onDayClick, onShowDay, onEvent
                 )
               })}
               {singles.slice(0, singlesSlots).map((ev, ei) => {
-                const sBg = ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':(flagBg(ev.color)||'#E6F1FB')
-                const sBdr = ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':(flagBorder(ev.color)||'#85B7EB')
-                const sIcon = ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''
+                const sBg = evTypeBg(ev)
+                const sBdr = evTypeBdr(ev)
+                const sIcon = evTypeIcon(ev)
                 return (
                   <div key={`s-${ei}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
                     style={{ fontSize:10, padding:'1px 5px', borderRadius:3, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background:sBg, border:`0.5px solid ${sBdr}`, color:'#333', cursor:'pointer' }}>
@@ -3078,12 +3086,12 @@ function CalendarYearView({ events, year, onDayClick, onShowDay, onEventClick })
                   onMouseEnter={e => { if (!isToday) e.currentTarget.style.background=isWknd?'#eceae5':'#f0f0ee' }}
                   onMouseLeave={e => { e.currentTarget.style.background=cellNormalBg }}>
                   {cellEvs.slice(0, 2).map((ev, i) => {
-                    const bg = flagBg(ev.color)||(ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':'#E6F1FB')
-                    const tc = ev.type==='travel'?'#633806':ev.type==='audit'?'#5B21B6':ev.type==='vacation'?'#065F46':'#0C447C'
+                    const bg = evTypeBg(ev)
+                    const tc = evTypeTc(ev)
                     return (
                       <div key={i} onClick={e => { e.stopPropagation(); onEventClick(ev) }} title={ev.title}
                         style={{ fontSize:7, lineHeight:'8px', padding:'0 3px', height:8, borderRadius:2, background:bg, color:tc, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'pointer', flexShrink:0, fontWeight:500 }}>
-                        {ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''}{ev.title}
+                        {evTypeIcon(ev)}{ev.title}
                       </div>
                     )
                   })}
@@ -3258,7 +3266,7 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
     : calView === 'list' ? 'Upcoming'
     : `${MONTH_NAMES[month]} ${year}`
 
-  const handleDayClick = d => setEventForm({ ...CAL_EMPTY, start_date: toISODate(d) })
+  const handleDayClick = d => { setEventForm({ ...CAL_EMPTY, start_date: toISODate(d) }); setIsEdit(false) }
 
   const handleShowDay = d => setDaySchedule(d)
 
@@ -3442,7 +3450,7 @@ export default function App() {
   })
   const isSectionOpen = key => sectionsOpen[key] !== false
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
-  const [mobileCol, setMobileCol] = useState('active')
+  const [mobileCol, setMobileCol] = useState('not_started')
   const [viewMode, setViewMode] = useState('order') // 'order' | 'dynamic' | 'domain'
   const [filterOwner, setFilterOwner] = useState('all')
   const [showCompleted, setShowCompleted] = useState(true)
