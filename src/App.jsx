@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from './supabase'
 import DOMPurify from 'dompurify'
+import { Newspaper, ClipboardList, RefreshCw, NotebookPen, CalendarDays, Settings } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
@@ -3055,7 +3056,7 @@ function CalendarYearView({ events, year, onDayClick, onShowDay, onEventClick })
 
   return (
     <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden', background:'white' }}>
-      <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:720 }}>
+      <div style={{ overflowX:'auto' }}>
         <div style={{ display:'grid', gridTemplateColumns:'30px repeat(12, 1fr)', minWidth:560 }}>
           {/* Corner */}
           <div style={{ position:'sticky', top:0, left:0, zIndex:3, background:'white', borderBottom:'0.5px solid #e5e5e5', borderRight:'0.5px solid #f0f0f0' }} />
@@ -4025,16 +4026,17 @@ export default function App() {
       <div style={{ display:'flex', alignItems:'stretch', background:'linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a855f7 100%)', borderRadius:14, marginBottom:'1.25rem', overflow:'hidden' }}>
         <div style={{ display:'flex', gap:2, padding:5, flexShrink:0 }}>
           {[
-            { key:'briefing', label:'📰 Briefing' },
-            { key:'tasks', label:'📋 Tasks' },
-            { key:'followups', label:'🔄 Follow Ups' },
-            { key:'notes', label:'📝 Notes' },
-            { key:'calendar', label:'📅 Calendar' },
-            { key:'settings', label:'⚙️ Settings' },
-          ].map(t => (
-            <button key={t.key} onClick={() => switchTab(t.key)}
-              style={{ fontSize:13, padding:'7px 14px', cursor:'pointer', background:tab===t.key?'rgba(255,255,255,0.18)':'transparent', border:'none', borderRadius:10, color:tab===t.key?'#fff':'rgba(255,255,255,0.6)', fontWeight:tab===t.key?600:400, whiteSpace:'nowrap', flexShrink:0, transition:'background 0.15s, color 0.15s' }}>
-              {t.label}
+            { key:'briefing', label:'Briefing', Icon:Newspaper },
+            { key:'tasks', label:'Tasks', Icon:ClipboardList },
+            { key:'followups', label:'Follow Ups', Icon:RefreshCw },
+            { key:'notes', label:'Notes', Icon:NotebookPen },
+            { key:'calendar', label:'Calendar', Icon:CalendarDays },
+            { key:'settings', label:'Settings', Icon:Settings },
+          ].map(({ key, label, Icon }) => (
+            <button key={key} onClick={() => switchTab(key)}
+              style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, padding:'7px 14px', cursor:'pointer', background:tab===key?'rgba(255,255,255,0.18)':'transparent', border:'none', borderRadius:10, color:tab===key?'#fff':'rgba(255,255,255,0.6)', fontWeight:tab===key?600:400, whiteSpace:'nowrap', flexShrink:0, transition:'background 0.15s, color 0.15s' }}>
+              <Icon size={15} strokeWidth={tab===key?2.2:1.8} />
+              {label}
             </button>
           ))}
         </div>
