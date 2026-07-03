@@ -4040,7 +4040,8 @@ export default function App() {
             </button>
           ))}
         </div>
-        <WorldClock style={{ flex:1, minWidth:0 }} />
+        <div style={{ width:'1px', background:'rgba(255,255,255,0.2)', flexShrink:0, margin:'8px 0' }} />
+        <WorldClock style={{ flex:1, minWidth:0, background:'rgba(0,0,0,0.12)' }} />
       </div>
 
       {/* ── Briefing ── */}
