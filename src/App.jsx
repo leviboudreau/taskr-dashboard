@@ -492,7 +492,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
           <div style={{ marginBottom:12 }}>
             <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-              {members.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+              {members.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
             </div>
           </div>
 
@@ -509,7 +509,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
                     onChange={e => setEditNoteText(e.target.value)}
                     onBlur={commitEditNote}
                     onKeyDown={e => { if (e.key==='Enter') commitEditNote(); if (e.key==='Escape') { setEditingNoteId(null); setEditNoteText('') } }}
-                    style={{ flex:1, fontSize:11, padding:'2px 4px', border:'0.5px solid #bbb', borderRadius:4 }}
+                    style={{ flex:1, fontSize:11, padding:'2px 4px', border:'0.5px solid #bbb', borderRadius:6 }}
                   />
                 ) : (
                   <span style={{ flex:1, cursor:'text' }} onClick={() => startEditNote(n)}>{n.text}</span>
@@ -586,16 +586,16 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
           {/* Footer */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:12 }}>
             <ConfirmDeleteButton onConfirm={() => { onDelete(entity.id); onClose() }}
-              style={{ fontSize:12, color:'#E24B4A', background:'none', border:'0.5px solid #fcc', borderRadius:6, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
+              style={{ fontSize:12, color:'#E24B4A', background:'none', border:'0.5px solid #fcc', borderRadius:8, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
               Delete {isProject ? 'project' : 'escalation'}
             </ConfirmDeleteButton>
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={onClose}
-                style={{ fontSize:12, background:'none', color:'#888', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
+                style={{ fontSize:12, background:'none', color:'#888', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
                 Cancel
               </button>
               <button onClick={() => { onSaveEntity(f, entity.id); onClose() }}
-                style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'5px 14px', cursor:'pointer', fontFamily:'inherit' }}>
+                style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'5px 14px', cursor:'pointer', fontFamily:'inherit' }}>
                 Save
               </button>
             </div>
@@ -628,7 +628,7 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
         onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
-          {project.type === 'bundle' && <span style={{ fontSize:9, fontWeight:500, background:'#EEF4FF', color:'#1a4fa0', padding:'2px 6px', borderRadius:20, border:'0.5px solid #93B8F0', whiteSpace:'nowrap' }}>Bundle</span>}
+          {project.type === 'bundle' && <span style={{ fontSize:9, fontWeight:500, background:'#ede9fe', color:'#6d28d9', padding:'2px 6px', borderRadius:20, border:'0.5px solid #c4b5fd', whiteSpace:'nowrap' }}>Bundle</span>}
           {project.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{project.domain}</span>}
           {project.substatus && (() => { const ss = subStyle(project.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
           {project.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
@@ -683,7 +683,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
 
   const TYPE_OPTIONS = [
     { key:'project', label:'Project', desc:'Track work with tasks', bg:'#f7f7f5', border:'#ddd', tc:'#333' },
-    { key:'bundle', label:'Bundle', desc:'Group related projects', bg:'#EEF4FF', border:'#93B8F0', tc:'#1a4fa0' },
+    { key:'bundle', label:'Bundle', desc:'Group related projects', bg:'#ede9fe', border:'#c4b5fd', tc:'#6d28d9' },
   ]
 
   return (
@@ -702,12 +702,12 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
         )}
 
         {step === 'pick-type' && (
-          <div style={{ flexShrink:0, width:240, background:'white', border:'1px solid #e5e5e5', borderRadius:10, padding:12, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
+          <div style={{ flexShrink:0, width:240, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:12, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
             <div style={{ fontSize:11, color:'#aaa', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>What are you creating?</div>
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
               {TYPE_OPTIONS.map(t => (
                 <button key={t.key} onClick={() => { setNewType(t.key); setStep(t.key === 'bundle' ? 'bundle-template' : 'title') }}
-                  style={{ textAlign:'left', background:t.bg, border:`1px solid ${t.border}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
+                  style={{ textAlign:'left', background:t.bg, border:`0.5px solid ${t.border}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
                   <div style={{ fontSize:12, fontWeight:500, color:t.tc }}>{t.label}</div>
                   <div style={{ fontSize:11, color:'#888', marginTop:1 }}>{t.desc}</div>
                 </button>
@@ -718,7 +718,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
         )}
 
         {step === 'bundle-template' && (
-          <div style={{ flexShrink:0, width:240, background:'white', border:'1px solid #e5e5e5', borderRadius:10, padding:12, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
+          <div style={{ flexShrink:0, width:240, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:12, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
             <div style={{ fontSize:11, color:'#aaa', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>Select template</div>
             {templates.length === 0 ? (
               <div style={{ fontSize:12, color:'#bbb', padding:'8px 0' }}>No templates yet — add them in Settings.</div>
@@ -726,7 +726,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
               <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
                 {templates.map(t => (
                   <button key={t.id} onClick={() => { setSelectedTemplate(t.id); setStep('title') }}
-                    style={{ textAlign:'left', background:'#fafafa', border:`1px solid ${selectedTemplate===t.id?'#93B8F0':'#e5e5e5'}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
+                    style={{ textAlign:'left', background:'#fafafa', border:`0.5px solid ${selectedTemplate===t.id?'#c4b5fd':'#e5e5e5'}`, borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
                     <div style={{ fontSize:12, fontWeight:500, color:'#111' }}>{t.name}</div>
                     <div style={{ fontSize:10, color:'#aaa' }}>{t.tasks?.length || 0} tasks</div>
                   </button>
@@ -734,8 +734,8 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
               </div>
             )}
             <div style={{ display:'flex', gap:4, marginTop:8 }}>
-              <button onClick={() => setStep('pick-type')} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888' }}>Back</button>
-              {templates.length > 0 && <button onClick={() => { setSelectedTemplate(null); setStep('title') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888' }}>Skip template</button>}
+              <button onClick={() => setStep('pick-type')} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888' }}>Back</button>
+              {templates.length > 0 && <button onClick={() => { setSelectedTemplate(null); setStep('title') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888' }}>Skip template</button>}
             </div>
           </div>
         )}
@@ -748,8 +748,8 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
               placeholder="Title..."
               style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'8px 10px', border:'1.5px solid #111', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
             <div style={{ display:'flex', gap:4, marginTop:4 }}>
-              <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
-              <button onClick={reset} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
+              <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:'#111', color:'white', border:'none', borderRadius:8, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
+              <button onClick={reset} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:8, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
             </div>
           </div>
         )}
@@ -832,8 +832,8 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen, noBorder = fals
               placeholder="Escalation title..."
               style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'8px 10px', border:`1.5px solid ${RED}`, borderRadius:8, outline:'none', fontFamily:'inherit' }} />
             <div style={{ display:'flex', gap:4, marginTop:4 }}>
-              <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:RED, color:'white', border:'none', borderRadius:6, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
-              <button onClick={() => { setAdding(false); setNewTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
+              <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:RED, color:'white', border:'none', borderRadius:8, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
+              <button onClick={() => { setAdding(false); setNewTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:8, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
             </div>
           </div>
         ) : (
@@ -927,7 +927,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
 
   const selectImg = (imgEl) => {
     if (imgSel) imgSel.style.outline = ''
-    if (imgEl) { imgEl.style.outline = '2px solid #3b82f6'; imgEl.style.outlineOffset = '2px' }
+    if (imgEl) { imgEl.style.outline = '2px solid #7c3aed'; imgEl.style.outlineOffset = '2px' }
     setImgSel(imgEl)
     if (imgEl) computeImgBar(imgEl)
     else setImgBar(null)
@@ -1259,13 +1259,13 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
   const sep = { width:'0.5px', height:14, background:'#e0e0e0', margin:'0 2px', flexShrink:0 }
   const tbtn = (label, cmd, val = null, extra = {}) => (
     <button onMouseDown={e => { e.preventDefault(); exec(cmd, val) }}
-      style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4, ...extra }}>
+      style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4, ...extra }}>
       {label}
     </button>
   )
   const xbtn = (label, action, title) => (
     <button onMouseDown={e => { e.preventDefault(); action() }} title={title}
-      style={{ fontSize:11, padding:'2px 7px', border:'0.5px solid #c8dff5', borderRadius:4, background:'white', cursor:'pointer', lineHeight:1.4, color:'#3a6ea5' }}>
+      style={{ fontSize:11, padding:'2px 7px', border:'0.5px solid #c4b5fd', borderRadius:6, background:'white', cursor:'pointer', lineHeight:1.4, color:'#7c3aed' }}>
       {label}
     </button>
   )
@@ -1277,7 +1277,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
       {/* Toolbar — sticky so it stays above keyboard on mobile */}
       <div style={{ position:'sticky', top:0, zIndex:5, background:'white' }}>
       {/* Row 1: text formatting + lists + table + size */}
-      <div style={{ ...rowStyle, borderTop:'0.5px solid #e5e5e5', borderRadius:'8px 8px 0 0' }}>
+      <div style={{ ...rowStyle, borderTop:'0.5px solid #e5e5e5', borderRadius:'10px 10px 0 0' }}>
         {tbtn('B', 'bold', null, { fontWeight:700 })}
         {tbtn('I', 'italic', null, { fontStyle:'italic' })}
         {tbtn('U', 'underline', null, { textDecoration:'underline' })}
@@ -1289,14 +1289,14 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
         {tbtn('←', 'outdent', null, { title:'Outdent' })}
         <div style={sep} />
         <button onMouseDown={e => { e.preventDefault(); convertToChecklist() }}
-          style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}
+          style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}
           title="Convert current line or selected text to checklist item">
           ☑ Check
         </button>
         <div style={sep} />
         <div style={{ position:'relative' }}>
           <button onMouseDown={e => { e.preventDefault(); setShowTablePicker(v => !v) }}
-            style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:4, background:showTablePicker?'#e8f0fe':'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}>
+            style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:6, background:showTablePicker?'#ede9fe':'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}>
             ⊞ Table
           </button>
           {showTablePicker && (
@@ -1322,7 +1322,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
         <div style={sep} />
         <select defaultValue="3" onMouseDown={e => e.stopPropagation()}
           onChange={e => { exec('fontSize', e.target.value); e.target.value='3' }}
-          style={{ fontSize:11, border:'0.5px solid #e0e0e0', borderRadius:4, padding:'2px 4px', background:'white', cursor:'pointer', height:24 }}>
+          style={{ fontSize:11, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'2px 4px', background:'white', cursor:'pointer', height:24 }}>
           <option value="1">X-Small</option>
           <option value="2">Small</option>
           <option value="3">Normal</option>
@@ -1357,27 +1357,27 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
       </div>
       {/* Row 3: table context controls (hidden on mobile) */}
       {!isMobile && tableCtx && (
-        <div style={{ ...rowStyle, borderTop:'0.5px solid #dbeafe', background:'#eff6ff', gap:4 }}>
-          <span style={{ fontSize:10, color:'#3b82f6', fontWeight:500, marginRight:2, flexShrink:0 }}>Table</span>
-          <div style={{ ...sep, background:'#bfdbfe' }} />
+        <div style={{ ...rowStyle, borderTop:'0.5px solid #e9d5ff', background:'#faf5ff', gap:4 }}>
+          <span style={{ fontSize:10, color:'#7c3aed', fontWeight:500, marginRight:2, flexShrink:0 }}>Table</span>
+          <div style={{ ...sep, background:'#ddd6fe' }} />
           {xbtn('← Col', () => tableOp('col-left'), 'Insert column to the left')}
           {xbtn('Col →', () => tableOp('col-right'), 'Insert column to the right')}
           {xbtn('✕ Col', () => tableOp('col-del'), 'Delete this column')}
-          <div style={{ ...sep, background:'#bfdbfe' }} />
+          <div style={{ ...sep, background:'#ddd6fe' }} />
           {xbtn('↑ Row', () => tableOp('row-above'), 'Insert row above')}
           {xbtn('Row ↓', () => tableOp('row-below'), 'Insert row below')}
           {xbtn('✕ Row', () => tableOp('row-del'), 'Delete this row')}
-          <div style={{ ...sep, background:'#bfdbfe' }} />
+          <div style={{ ...sep, background:'#ddd6fe' }} />
           {xbtn('⊞→', () => tableOp('merge-right'), 'Merge with cell to the right')}
           {xbtn('⊞↓', () => tableOp('merge-down'), 'Merge with cell below')}
           {xbtn('⊟', () => tableOp('split'), 'Split merged cell')}
-          <div style={{ ...sep, background:'#bfdbfe' }} />
-          <span style={{ fontSize:10, color:'#3b82f6', flexShrink:0 }}>Cell fill</span>
+          <div style={{ ...sep, background:'#ddd6fe' }} />
+          <span style={{ fontSize:10, color:'#7c3aed', flexShrink:0 }}>Cell fill</span>
           {CELL_FILLS.map((c, i) => (
             <button key={i} onMouseDown={e => { e.preventDefault(); fillCell(c) }}
               title={c || 'Clear fill'}
               style={{ width:15, height:15, borderRadius:3, background:c||'white', border:c?'1.5px solid transparent':'1.5px solid #d1d5db', cursor:'pointer', padding:0, flexShrink:0, position:'relative', overflow:'hidden' }}
-              onMouseEnter={e => e.currentTarget.style.borderColor='#3b82f6'}
+              onMouseEnter={e => e.currentTarget.style.borderColor='#7c3aed'}
               onMouseLeave={e => e.currentTarget.style.borderColor=c?'transparent':'#d1d5db'}>
               {!c && <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#bbb', lineHeight:1 }}>✕</span>}
             </button>
@@ -1398,7 +1398,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
         }}
         onMouseLeave={() => setTableHover([0,0])}
         className="note-editor"
-        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 13, lineHeight:1.4, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200 }} />
+        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 10px 10px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 13, lineHeight:1.4, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200 }} />
       {imgSel && imgBar && (<>
         <div onMouseDown={e => e.preventDefault()} style={{
           position:'absolute', top: Math.max(2, imgBar.top - 34), left: imgBar.left,
@@ -1420,7 +1420,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
         </div>
         <div onMouseDown={startDragResize} style={{
           position:'absolute', top: imgBar.top + imgBar.height - 8, left: imgBar.left + imgBar.width - 8,
-          width:16, height:16, background:'#3b82f6', borderRadius:'0 0 4px 0',
+          width:16, height:16, background:'#7c3aed', borderRadius:'0 0 4px 0',
           cursor:'se-resize', zIndex:200, border:'2px solid white', boxShadow:'0 1px 3px rgba(0,0,0,0.25)'
         }} />
       </>)}
@@ -1872,9 +1872,9 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                   <input autoFocus value={newText} onChange={e => setNewText(e.target.value)}
                     onKeyDown={e => { if (e.key==='Enter') handleAdd(person); if (e.key==='Escape') { setAddingFor(null); setNewText('') } }}
                     placeholder="Follow-up item..."
-                    style={{ flex:1, fontSize:13, padding:'6px 10px', border:'1px solid #ddd', borderRadius:6, outline:'none', fontFamily:'inherit' }} />
+                    style={{ flex:1, fontSize:13, padding:'6px 10px', border:'0.5px solid #e0e0e0', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
                   <button onClick={() => handleAdd(person)}
-                    style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer', fontFamily:'inherit' }}>
+                    style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'0 14px', cursor:'pointer', fontFamily:'inherit' }}>
                     Add
                   </button>
                 </div>
@@ -2083,11 +2083,11 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
           <button onClick={() => handleNew()} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'6px 12px', cursor:'pointer' }}>+ New</button>
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notes…"
-          style={{ width:'100%', boxSizing:'border-box', fontSize:16, padding:'7px 10px', border:'0.5px solid #e0e0e0', borderRadius:6, outline:'none', marginBottom:6, color:'#333' }} />
+          style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'7px 10px', border:'0.5px solid #e0e0e0', borderRadius:6, outline:'none', marginBottom:6, color:'#333' }} />
         <div style={{ display:'flex', alignItems:'center', gap:3 }}>
           {[{k:'date',l:'Date'},{k:'alpha',l:'A–Z'}].map(o => (
             <button key={o.k} onClick={() => { if (sortKey===o.k) setSortDir(d => d==='asc'?'desc':'asc'); else { setSortKey(o.k); setSortDir('desc') } }}
-              style={{ fontSize:10, padding:'5px 10px', border:'0.5px solid #e0e0e0', borderRadius:4, background:sortKey===o.k?'#111':'white', color:sortKey===o.k?'white':'#666', cursor:'pointer' }}>
+              style={{ fontSize:11, padding:'5px 10px', border:'0.5px solid #e0e0e0', borderRadius:6, background:sortKey===o.k?'#111':'white', color:sortKey===o.k?'white':'#666', cursor:'pointer' }}>
               {o.l}{sortKey===o.k ? (sortDir==='asc'?' ↑':' ↓') : ''}
             </button>
           ))}
@@ -2150,11 +2150,11 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                       </div>
                       <div style={{ display:'flex', gap:4 }}>
                         <button onClick={() => { onDeleteGroup(g.id, true); setDeletingGroupId(null); if (activeGroupId === g.id) setActiveGroupId(undefined) }}
-                          style={{ fontSize:10, padding:'4px 8px', background:'#991b1b', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Delete notes</button>
+                          style={{ fontSize:11, padding:'4px 8px', background:'#991b1b', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Delete notes</button>
                         <button onClick={() => { onDeleteGroup(g.id, false); setDeletingGroupId(null); if (activeGroupId === g.id) setActiveGroupId(undefined) }}
-                          style={{ fontSize:10, padding:'4px 8px', background:'#7c3aed', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Keep notes</button>
+                          style={{ fontSize:11, padding:'4px 8px', background:'#7c3aed', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Keep notes</button>
                         <button onClick={() => setDeletingGroupId(null)}
-                          style={{ fontSize:10, padding:'4px 8px', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, cursor:'pointer', color:'#888' }}>Cancel</button>
+                          style={{ fontSize:11, padding:'4px 8px', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, cursor:'pointer', color:'#888' }}>Cancel</button>
                       </div>
                     </div>
                   )
@@ -2217,14 +2217,14 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
         <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
           <div style={{ fontSize:36 }}>📝</div>
           <div style={{ fontSize:13, color:'#bbb' }}>Select a note or create a new one</div>
-          <button onClick={handleNew} style={{ fontSize:14, background:'#111', color:'white', border:'none', borderRadius:8, padding:'10px 20px', cursor:'pointer' }}>+ New Note</button>
+          <button onClick={handleNew} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'10px 20px', cursor:'pointer' }}>+ New Note</button>
         </div>
       ) : (
         <>
           <div style={{ padding:'10px 14px', borderBottom:'0.5px solid #f0f0f0', display:'flex', flexDirection:'column', gap:4, position:'sticky', top:0, background:'white', zIndex:10 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
               {isMobileNotes && (
-                <button onClick={handleBack} style={{ fontSize:20, background:'none', border:'none', cursor:'pointer', color:'#555', padding:'0 4px', lineHeight:1, flexShrink:0 }}>‹</button>
+                <button onClick={handleBack} style={{ fontSize:18, background:'none', border:'none', cursor:'pointer', color:'#555', padding:'0 4px', lineHeight:1, flexShrink:0 }}>‹</button>
               )}
               <input value={draft.title} onChange={e => { setDraft(p => ({...p, title:e.target.value})); setDirty(true) }}
                 style={{ flex:1, fontSize:16, fontWeight:600, border:'none', outline:'none', color:'#111', background:'transparent' }}
@@ -2233,7 +2233,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                 {!isMobileNotes && (
                   <button onClick={() => setFocused(f => !f)}
                     title={focused ? 'Exit focus mode' : 'Focus mode'}
-                    style={{ fontSize:13, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#555', lineHeight:1 }}>
+                    style={{ fontSize:13, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 8px', cursor:'pointer', color:'#555', lineHeight:1 }}>
                     {focused ? '⤡' : '⤢'}
                   </button>
                 )}
@@ -2298,14 +2298,14 @@ function NoteItem({ note, onDelete, onSave }) {
       <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
         <div style={{ flex:1 }}>
           <div style={{ fontSize:10, color:'#bbb', marginBottom:3 }}>{fmtTs(note.ts)}</div>
-          {editing ? <textarea value={val} onChange={e => setVal(e.target.value)} autoFocus style={{ width:'100%', fontSize:12, height:56, resize:'none', fontFamily:'inherit', padding:'5px 7px', border:'0.5px solid #ddd', borderRadius:5 }} />
+          {editing ? <textarea value={val} onChange={e => setVal(e.target.value)} autoFocus style={{ width:'100%', fontSize:12, height:56, resize:'none', fontFamily:'inherit', padding:'5px 7px', border:'0.5px solid #e0e0e0', borderRadius:6 }} />
             : <div style={{ fontSize:12, color:'#444', lineHeight:1.5 }}>{note.text}</div>}
         </div>
         <div style={{ display:'flex', gap:4, flexShrink:0 }}>
           {editing ? <>
-            <button onClick={() => { onSave(note.id, val.trim()); setEditing(false) }} disabled={!val.trim()} style={{ fontSize:11, background: val.trim() ? '#111' : '#ccc', color:'white', border:'none', borderRadius:4, padding:'2px 8px', cursor: val.trim() ? 'pointer' : 'not-allowed' }}>Save</button>
-            <button onClick={() => { setVal(note.text); setEditing(false) }} style={{ fontSize:11, background:'none', border:'0.5px solid #ccc', borderRadius:4, padding:'2px 8px', cursor:'pointer', color:'#666' }}>Cancel</button>
-          </> : <button onClick={() => setEditing(true)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 7px', cursor:'pointer', color:'#888' }}>Edit</button>}
+            <button onClick={() => { onSave(note.id, val.trim()); setEditing(false) }} disabled={!val.trim()} style={{ fontSize:11, background: val.trim() ? '#111' : '#ccc', color:'white', border:'none', borderRadius:6, padding:'2px 8px', cursor: val.trim() ? 'pointer' : 'not-allowed' }}>Save</button>
+            <button onClick={() => { setVal(note.text); setEditing(false) }} style={{ fontSize:11, background:'none', border:'0.5px solid #ccc', borderRadius:6, padding:'2px 8px', cursor:'pointer', color:'#666' }}>Cancel</button>
+          </> : <button onClick={() => setEditing(true)} style={{ fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'2px 7px', cursor:'pointer', color:'#888' }}>Edit</button>}
           <button onClick={() => onDelete(note.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
         </div>
       </div>
@@ -2346,7 +2346,7 @@ function DatePicker({ value, onChange, initialMonth, minDate }) {
   }
   return (
     <div ref={ref} style={{ position:'relative', width:'100%' }}>
-      <div style={{ display:'flex', alignItems:'center', border:'0.5px solid #ddd', borderRadius:6, overflow:'hidden' }}>
+      <div style={{ display:'flex', alignItems:'center', border:'0.5px solid #e0e0e0', borderRadius:8, overflow:'hidden' }}>
         <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder="Pick a date..."
           style={{ flex:1, fontSize:13, padding:'5px 8px', border:'none', outline:'none', background:'transparent', fontFamily:'inherit' }} />
         <button onClick={() => { setView(parseView()); setOpen(o => !o) }}
@@ -2504,7 +2504,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
       <div style={{ marginBottom:12 }}>
         <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-          {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+          {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
         </div>
       </div>
       <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#444', marginBottom:14, cursor:'pointer' }}>
@@ -2636,13 +2636,13 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
       <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:500, maxHeight:'90dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Event title..."
-          style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
+          style={{ width:'100%', fontSize:16, fontWeight:600, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
 
         {/* Type */}
         <div style={{ display:'flex', gap:8, marginBottom:14 }}>
           {[{ key:'event', label:'Event' }, { key:'travel', label:'✈ Travel block' }, { key:'audit', label:'🔍 Audit' }, { key:'vacation', label:'🌴 Vacation' }].map(t => (
             <button key={t.key} onClick={() => set('type', t.key)}
-              style={{ fontSize:12, padding:'5px 14px', borderRadius:16, cursor:'pointer', border:f.type===t.key?'1.5px solid #111':'0.5px solid #e5e5e5', background:f.type===t.key?'#111':'white', color:f.type===t.key?'white':'#888', fontWeight:f.type===t.key?500:400 }}>
+              style={{ fontSize:12, padding:'5px 14px', borderRadius:8, cursor:'pointer', border:f.type===t.key?'1.5px solid #111':'0.5px solid #e5e5e5', background:f.type===t.key?'#111':'white', color:f.type===t.key?'white':'#888', fontWeight:f.type===t.key?500:400 }}>
               {t.label}
             </button>
           ))}
@@ -2665,9 +2665,9 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
             {!f.all_day && (
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Start time</label>
-                  <input type="time" value={f.start_time} onChange={e => set('start_time', e.target.value)} style={{ width:'100%', fontSize:13 }} /></div>
+                  <input type="time" value={f.start_time} onChange={e => set('start_time', e.target.value)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} /></div>
                 <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>End time</label>
-                  <input type="time" value={f.end_time} onChange={e => set('end_time', e.target.value)} style={{ width:'100%', fontSize:13 }} /></div>
+                  <input type="time" value={f.end_time} onChange={e => set('end_time', e.target.value)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} /></div>
               </div>
             )}
           </div>
@@ -2676,7 +2676,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
         {/* Recurrence */}
         <div style={{ marginBottom:14 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Repeats</label>
-          <select value={f.recurrence_type} onChange={e => { set('recurrence_type', e.target.value); setF(p => ({ ...p, recurrence_data:{} })) }} style={{ width:'100%', fontSize:13, marginBottom:8 }}>
+          <select value={f.recurrence_type} onChange={e => { set('recurrence_type', e.target.value); setF(p => ({ ...p, recurrence_data:{} })) }} style={{ width:'100%', fontSize:13, marginBottom:8, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', fontFamily:'inherit', boxSizing:'border-box' }}>
             {RECURRENCE_TYPES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
           </select>
 
@@ -2685,7 +2685,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
               <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:8 }}>
                 {weekdays.map(d => {
                   const sel = (rd.days||[]).includes(d)
-                  return <button key={d} onClick={() => toggleDay(d)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?'1.5px solid #111':'0.5px solid #e5e5e5', background:sel?'#111':'white', color:sel?'white':'#888' }}>{d}</button>
+                  return <button key={d} onClick={() => toggleDay(d)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?'1.5px solid #111':'0.5px solid #e5e5e5', background:sel?'#111':'white', color:sel?'white':'#888' }}>{d}</button>
                 })}
               </div>
               {f.recurrence_type === 'biweekly' && (
@@ -2698,9 +2698,9 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
           {f.recurrence_type === 'monthly_date' && (
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
               <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Day of month</label>
-                <input type="number" min={1} max={31} value={rd.date||1} onChange={e => setRd('date', parseInt(e.target.value)||1)} style={{ width:'100%', fontSize:13 }} /></div>
+                <input type="number" min={1} max={31} value={rd.date||1} onChange={e => setRd('date', parseInt(e.target.value)||1)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} /></div>
               <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>If weekend</label>
-                <select value={rd.business_day_adjustment||''} onChange={e => setRd('business_day_adjustment', e.target.value||null)} style={{ width:'100%', fontSize:13 }}>
+                <select value={rd.business_day_adjustment||''} onChange={e => setRd('business_day_adjustment', e.target.value||null)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', fontFamily:'inherit', boxSizing:'border-box' }}>
                   <option value="">No adjustment</option>
                   <option value="forward">Move to Monday</option>
                   <option value="backward">Move to Friday</option>
@@ -2712,11 +2712,11 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
           {f.recurrence_type === 'monthly_dow' && (
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
               <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Which week</label>
-                <select value={rd.week||1} onChange={e => setRd('week', parseInt(e.target.value))} style={{ width:'100%', fontSize:13 }}>
+                <select value={rd.week||1} onChange={e => setRd('week', parseInt(e.target.value))} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', fontFamily:'inherit', boxSizing:'border-box' }}>
                   <option value={1}>1st</option><option value={2}>2nd</option><option value={3}>3rd</option><option value={4}>4th</option><option value={-1}>Last</option>
                 </select></div>
               <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Day of week</label>
-                <select value={rd.dow||'Mon'} onChange={e => setRd('dow', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+                <select value={rd.dow||'Mon'} onChange={e => setRd('dow', e.target.value)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', fontFamily:'inherit', boxSizing:'border-box' }}>
                   {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <option key={d} value={d}>{d}</option>)}
                 </select></div>
             </div>
@@ -2726,7 +2726,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
             <div style={{ maxWidth:160 }}>
               <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Business day of month</label>
               <input type="number" min={1} max={23} value={rd.biz_day||1} onChange={e => setRd('biz_day', Math.min(23, Math.max(1, parseInt(e.target.value)||1)))}
-                style={{ width:'100%', fontSize:13 }} />
+                style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} />
             </div>
           )}
 
@@ -2742,7 +2742,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
         <div style={{ marginBottom:12 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Attendees</label>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:16, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'1px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+            {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
           </div>
         </div>
 
@@ -2753,12 +2753,12 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
               {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
             </div></div>
           <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Location</label>
-            <input type="text" value={f.location||''} onChange={e => set('location', e.target.value)} placeholder="optional" style={{ width:'100%', fontSize:13 }} /></div>
+            <input type="text" value={f.location||''} onChange={e => set('location', e.target.value)} placeholder="optional" style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} /></div>
         </div>
 
         <div style={{ marginBottom:14 }}>
           <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Notes</label>
-          <textarea value={f.description||''} onChange={e => set('description', e.target.value)} placeholder="Add notes..." rows={3} style={{ width:'100%', fontSize:12, resize:'vertical', fontFamily:'inherit', padding:'7px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+          <textarea value={f.description||''} onChange={e => set('description', e.target.value)} placeholder="Add notes..." rows={3} style={{ width:'100%', fontSize:12, resize:'vertical', fontFamily:'inherit', padding:'7px 9px', border:'0.5px solid #e0e0e0', borderRadius:6 }} />
         </div>
 
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
@@ -2804,7 +2804,7 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
             return (
               <div key={i} onClick={() => onDayClick(d)} style={{ flex:1, textAlign:'center', padding:'10px 0 8px', borderLeft:'0.5px solid #d8d8d8', cursor:'pointer', background:d.getDay()===0||d.getDay()===6?'#f5f4f0':'white' }}>
                 <div style={{ fontSize:10, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.04em' }}>{DOW_SHORT[d.getDay()]}</div>
-                <div style={{ width:30, height:30, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:16, fontWeight:300, marginTop:2, background:isToday?'#111':'transparent', color:isToday?'white':'#111' }}>
+                <div style={{ width:30, height:30, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:400, marginTop:2, background:isToday?'#111':'transparent', color:isToday?'white':'#111' }}>
                   {d.getDate()}
                 </div>
               </div>
@@ -2827,7 +2827,7 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
                 const bg = evTypeBg(ev)
                 const bdr = evTypeBdr(ev)
                 return (
-                  <div key={i} onClick={() => onEventClick(ev)} style={{ gridColumn:`${sc}/${ec}`, fontSize:10, padding:'3px 6px', borderRadius:4, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>
+                  <div key={i} onClick={() => onEventClick(ev)} style={{ gridColumn:`${sc}/${ec}`, fontSize:10, padding:'3px 6px', borderRadius:6, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>
                     {evTypeIcon(ev)}{ev.title}
                   </div>
                 )
@@ -2871,7 +2871,7 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
                     const bdr = flagBorder(ev.color) || '#85B7EB'
                     return (
                       <div key={`${ev.id}-${ei}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
-                        style={{ position:'absolute', top, height, left:2, right:2, borderRadius:4, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, padding:'2px 4px', overflow:'hidden', zIndex:1 }}>
+                        style={{ position:'absolute', top, height, left:2, right:2, borderRadius:6, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, padding:'2px 4px', overflow:'hidden', zIndex:1 }}>
                         <div style={{ fontSize:10, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>{ev.title}</div>
                         {height > 28 && <div style={{ fontSize:9, color:'#666' }}>{fmtTime(ev.start_time)}{ev.end_time&&` – ${fmtTime(ev.end_time)}`}</div>}
                       </div>
@@ -3080,7 +3080,7 @@ function CalendarYearView({ events, year, onDayClick, onShowDay, onEventClick })
                 <div key={`${m}-${day}`} style={{ background:isWknd?'#eeede9':'#f5f5f3', borderTop:'0.5px solid #d8d8d8', borderLeft:'0.5px solid #d8d8d8', height:22 }} />
               )
               const cellEvs = evsByDay[ds] || []
-              const cellNormalBg = isToday?'#EEF4FF':isWknd?'#f5f4f0':'transparent'
+              const cellNormalBg = isToday?'#ede9fe':isWknd?'#f5f4f0':'transparent'
               return (
                 <div key={`${m}-${day}`} onClick={() => onDayClick(fromISODate(ds))}
                   style={{ minHeight:22, borderTop:'0.5px solid #d8d8d8', borderLeft:'0.5px solid #d8d8d8', background:cellNormalBg, cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'stretch', justifyContent:'center', gap:1, padding:'1px 2px', overflow:'hidden' }}
@@ -3309,9 +3309,9 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
       {/* Nav */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <button onClick={() => nav(-1)} style={{ background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, width:28, height:28, cursor:'pointer', fontSize:14, color:'#555' }}>‹</button>
-          <button onClick={goToday} style={{ fontSize:12, background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#555' }}>Today</button>
-          <button onClick={() => nav(1)} style={{ background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, width:28, height:28, cursor:'pointer', fontSize:14, color:'#555' }}>›</button>
+          <button onClick={() => nav(-1)} style={{ background:'none', border:'0.5px solid #e5e5e5', borderRadius:8, width:28, height:28, cursor:'pointer', fontSize:14, color:'#555' }}>‹</button>
+          <button onClick={goToday} style={{ fontSize:12, background:'none', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'4px 10px', cursor:'pointer', color:'#555' }}>Today</button>
+          <button onClick={() => nav(1)} style={{ background:'none', border:'0.5px solid #e5e5e5', borderRadius:8, width:28, height:28, cursor:'pointer', fontSize:14, color:'#555' }}>›</button>
           <span style={{ fontSize:15, fontWeight:500, color:'#111', marginLeft:4 }}>{headerLabel}</span>
         </div>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
@@ -3372,7 +3372,7 @@ function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDro
           const c = MEMBER_COLORS[m.key] || {}
           return (
             <button key={m.key} onClick={() => setMember(m.key)}
-              style={{ fontSize:12, padding:'5px 14px', borderRadius:16, cursor:'pointer', border:active?(m.key==='all'||!c.tc?'1.5px solid #111':`1.5px solid ${c.tc}`):'0.5px solid #e5e5e5', background:active?(m.key==='all'?'#111':c.bg||'#f0f0f0'):'white', color:active?(m.key==='all'?'white':c.tc||'#333'):'#888', fontWeight:active?500:400 }}>
+              style={{ fontSize:12, padding:'5px 14px', borderRadius:8, cursor:'pointer', border:active?(m.key==='all'||!c.tc?'1.5px solid #111':`1.5px solid ${c.tc}`):'0.5px solid #e5e5e5', background:active?(m.key==='all'?'#111':c.bg||'#f0f0f0'):'white', color:active?(m.key==='all'?'white':c.tc||'#333'):'#888', fontWeight:active?500:400 }}>
               {m.label}
             </button>
           )
@@ -3381,7 +3381,7 @@ function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDro
           { key:'emea', label:'Open — EMEA', open:true },
           { key:'apac', label:'Open — APAC', open:true },
         ].map(m => (
-          <button key={m.key} style={{ fontSize:12, padding:'5px 14px', borderRadius:16, border:'0.5px dashed #ddd', background:'white', color:'#bbb', cursor:'default' }}>{m.label}</button>
+          <button key={m.key} style={{ fontSize:12, padding:'5px 14px', borderRadius:8, border:'0.5px dashed #ddd', background:'white', color:'#bbb', cursor:'default' }}>{m.label}</button>
         ))}
       </div>
 
@@ -3989,7 +3989,7 @@ export default function App() {
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'1.25rem', paddingBottom:'1rem', borderBottom:'0.5px solid #e5e5e5' }}>
-        <h1 style={{ fontSize:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <h1 style={{ fontSize:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
             <span style={{ fontSize:12, color:'#7c3aed' }}>{new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
@@ -4338,7 +4338,7 @@ export default function App() {
                           style={{ width:28, minHeight:90, background:col.key==='hopper'?'#FFFBE6':'#f7f7f5', border:col.key==='hopper'?'1.5px solid #C9960A':'1.5px solid transparent', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, padding:'8px 0', cursor:'pointer', userSelect:'none' }}
                           onMouseEnter={e => e.currentTarget.style.background=col.key==='hopper'?'#FFF3B0':'#eeede9'}
                           onMouseLeave={e => e.currentTarget.style.background=col.key==='hopper'?'#FFFBE6':'#f7f7f5'}>
-                          <span style={{ fontSize:10, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'1px 4px', color:'#aaa' }}>{ct.length}</span>
+                          <span style={{ fontSize:10, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 4px', color:'#aaa' }}>{ct.length}</span>
                           <span style={{ fontSize:10, color:'#bbb', fontWeight:500, writingMode:'vertical-rl', transform:'rotate(180deg)', letterSpacing:'0.06em', textTransform:'uppercase' }}>{col.lbl}</span>
                         </div>
                       )
@@ -4355,7 +4355,7 @@ export default function App() {
           {showTrash && (
             <div ref={trashRef} style={{ marginTop:8 }}>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
-                <span style={{ fontSize:12, fontWeight:500, color:'#888' }}>🗑️ Trash</span>
+                <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>🗑️ Trash</span>
                 <span style={{ fontSize:11, color:'#bbb' }}>Canceled tasks — click Restore to recover.</span>
               </div>
               {tasks.filter(t=>t.substatus==='canceled').length === 0 && <div style={{ fontSize:13, color:'#ccc', textAlign:'center', padding:'2rem 0' }}>Trash bin is empty</div>}
@@ -4549,8 +4549,8 @@ function SubtaskAdder({ onAdd }) {
       <input value={val} onChange={e => setVal(e.target.value)}
         onKeyDown={e => { if (e.key==='Enter') { onAdd(val); setVal('') } }}
         placeholder="Add subtask..."
-        style={{ flex:1, fontSize:11, padding:'3px 7px', border:'0.5px solid #e5e5e5', borderRadius:4, fontFamily:'inherit', outline:'none' }} />
-      <button onClick={() => { onAdd(val); setVal('') }} style={{ fontSize:10, background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'2px 8px', cursor:'pointer', color:'#888' }}>+</button>
+        style={{ flex:1, fontSize:11, padding:'3px 7px', border:'0.5px solid #e5e5e5', borderRadius:6, fontFamily:'inherit', outline:'none' }} />
+      <button onClick={() => { onAdd(val); setVal('') }} style={{ fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'2px 8px', cursor:'pointer', color:'#888' }}>+</button>
     </div>
   )
 }
@@ -4601,13 +4601,13 @@ function DomainSettings({ domains, onUpdate }) {
               : <span style={{ flex:1, fontSize:13, color:'#111' }}>{d.name}</span>}
             <div style={{ display:'flex', gap:4 }}>
               {editIdx===d.id ? <>
-                <button onClick={() => saveEdit(d.id)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:4, padding:'3px 8px', cursor:'pointer' }}>Save</button>
-                <button onClick={() => setEditIdx(null)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Cancel</button>
+                <button onClick={() => saveEdit(d.id)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Save</button>
+                <button onClick={() => setEditIdx(null)} style={{ fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Cancel</button>
               </> : <>
-                <button onClick={() => moveUp(i)} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:4, padding:'2px 6px', cursor:'pointer', color:'#aaa' }}>↑</button>
-                <button onClick={() => moveDown(i)} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:4, padding:'2px 6px', cursor:'pointer', color:'#aaa' }}>↓</button>
-                <button onClick={() => { setEditIdx(d.id); setEditVal(d.name) }} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:4, padding:'2px 6px', cursor:'pointer', color:'#888' }}>Edit</button>
-                <button onClick={() => removeDomain(d.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #f0c0c0', borderRadius:4, padding:'2px 6px', cursor:'pointer', color:'#A32D2D' }}>✕</button>
+                <button onClick={() => moveUp(i)} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'2px 6px', cursor:'pointer', color:'#aaa' }}>↑</button>
+                <button onClick={() => moveDown(i)} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'2px 6px', cursor:'pointer', color:'#aaa' }}>↓</button>
+                <button onClick={() => { setEditIdx(d.id); setEditVal(d.name) }} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'2px 6px', cursor:'pointer', color:'#888' }}>Edit</button>
+                <button onClick={() => removeDomain(d.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #f0c0c0', borderRadius:6, padding:'2px 6px', cursor:'pointer', color:'#A32D2D' }}>✕</button>
               </>}
             </div>
           </div>
@@ -4657,7 +4657,7 @@ function TeamSettings({ teamData, onUpdate }) {
 
   const inp = (val, setter, ph) => (
     <input value={val} onChange={e => setter(e.target.value)} placeholder={ph}
-      style={{ flex:1, fontSize:12, padding:'4px 7px', border:'0.5px solid #ddd', borderRadius:5, outline:'none', minWidth:0 }} />
+      style={{ flex:1, fontSize:12, padding:'4px 7px', border:'0.5px solid #e0e0e0', borderRadius:6, outline:'none', minWidth:0 }} />
   )
 
   return (
@@ -4689,11 +4689,11 @@ function TeamSettings({ teamData, onUpdate }) {
               )}
               <div style={{ display:'flex', gap:4, flexShrink:0 }}>
                 {editId === m.id ? <>
-                  <button onClick={() => saveEdit(m.id)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:4, padding:'3px 8px', cursor:'pointer' }}>Save</button>
-                  <button onClick={() => setEditId(null)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:4, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Cancel</button>
+                  <button onClick={() => saveEdit(m.id)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Save</button>
+                  <button onClick={() => setEditId(null)} style={{ fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Cancel</button>
                 </> : <>
-                  <button onClick={() => startEdit(m)} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:4, padding:'2px 7px', cursor:'pointer', color:'#888' }}>Edit</button>
-                  <button onClick={() => removeMember(m.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #f0c0c0', borderRadius:4, padding:'2px 6px', cursor:'pointer', color:'#A32D2D' }}>✕</button>
+                  <button onClick={() => startEdit(m)} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'2px 7px', cursor:'pointer', color:'#888' }}>Edit</button>
+                  <button onClick={() => removeMember(m.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #f0c0c0', borderRadius:6, padding:'2px 6px', cursor:'pointer', color:'#A32D2D' }}>✕</button>
                 </>}
               </div>
             </div>
