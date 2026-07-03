@@ -2465,10 +2465,11 @@ function SubtaskRow({ st, onChange, onDelete }) {
   )
 }
 
-function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 50, members = MEMBERS }) {
-  const EMPTY = { title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, attachments:[] }
+function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 50, members = MEMBERS, defaultOwner }) {
+  const defaultOwners = defaultOwner ? [defaultOwner] : ['Levi']
+  const EMPTY = { title:'', status:'active', domain:'', owners:defaultOwners, due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, attachments:[] }
   const tempId = useRef(crypto.randomUUID())
-  const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:['Levi'], notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[], attachments:Array.isArray(task?.attachments)?task.attachments:[] })
+  const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:defaultOwners, notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[], attachments:Array.isArray(task?.attachments)?task.attachments:[] })
   const [newNote, setNewNote] = useState('')
   const [newSub, setNewSub] = useState('')
   const [showDetails, setShowDetails] = useState(false)
@@ -3417,8 +3418,187 @@ function TeamBoardTab({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDro
   )
 }
 
+// ─── Auth hook ───────────────────────────────────────────────────────────────
+function useCurrentUserName(session) {
+  const [name, setName] = useState(null)
+  useEffect(() => {
+    if (!session?.user?.email) { setName(null); return }
+    supabase.from('team_members').select('name').eq('email', session.user.email).single()
+      .then(({ data }) => { if (data?.name) setName(data.name) })
+  }, [session?.user?.email])
+  return name
+}
+
+// ─── Login Screen ─────────────────────────────────────────────────────────────
+function LoginScreen() {
+  const [mode, setMode] = useState('login') // 'login' | 'forgot' | 'sent'
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleLogin = async e => {
+    e.preventDefault(); setError(''); setLoading(true)
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+    if (err) setError(err.message)
+    setLoading(false)
+  }
+
+  const handleForgot = async e => {
+    e.preventDefault(); setError(''); setLoading(true)
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+    if (err) { setError(err.message); setLoading(false); return }
+    setMode('sent'); setLoading(false)
+  }
+
+  const inputStyle = { width:'100%', boxSizing:'border-box', fontSize:14, padding:'10px 12px', border:'0.5px solid #d1d5db', borderRadius:8, outline:'none', fontFamily:'inherit', color:'#111' }
+  const btnStyle = { width:'100%', fontSize:14, fontWeight:600, padding:'10px 0', border:'none', borderRadius:8, cursor:'pointer', fontFamily:'inherit', background:'linear-gradient(135deg,#4f46e5,#7c3aed)', color:'white' }
+
+  return (
+    <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4ff', padding:16 }}>
+      <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:16, padding:32, boxShadow:'0 4px 24px rgba(124,58,237,0.10)' }}>
+        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        {mode === 'sent' ? (
+          <>
+            <p style={{ fontSize:14, color:'#555', marginTop:8 }}>Check your email — a password reset link is on its way to <strong>{email}</strong>.</p>
+            <button onClick={() => setMode('login')} style={{ ...btnStyle, marginTop:16 }}>Back to sign in</button>
+          </>
+        ) : mode === 'forgot' ? (
+          <>
+            <p style={{ fontSize:13, color:'#777', margin:'6px 0 20px' }}>Enter your email and we'll send a reset link.</p>
+            <form onSubmit={handleForgot} style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required style={inputStyle} />
+              {error && <div style={{ fontSize:12, color:'#dc2626' }}>{error}</div>}
+              <button type="submit" disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.7 : 1 }}>{loading ? 'Sending…' : 'Send reset link'}</button>
+              <button type="button" onClick={() => { setMode('login'); setError('') }} style={{ fontSize:13, background:'none', border:'none', color:'#7c3aed', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit' }}>Back to sign in</button>
+            </form>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize:13, color:'#777', margin:'6px 0 20px' }}>Sign in to your workspace.</p>
+            <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required style={inputStyle} />
+              <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} />
+              {error && <div style={{ fontSize:12, color:'#dc2626' }}>{error}</div>}
+              <button type="submit" disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.7 : 1 }}>{loading ? 'Signing in…' : 'Sign in'}</button>
+              <button type="button" onClick={() => { setMode('forgot'); setError('') }} style={{ fontSize:12, background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontFamily:'inherit' }}>Forgot password?</button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Set New Password Screen ──────────────────────────────────────────────────
+function SetNewPasswordScreen({ onDone }) {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const handleSubmit = async e => {
+    e.preventDefault(); setError('')
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
+    setLoading(true)
+    const { error: err } = await supabase.auth.updateUser({ password })
+    setLoading(false)
+    if (err) { setError(err.message); return }
+    setDone(true)
+    setTimeout(onDone, 1500)
+  }
+
+  const inputStyle = { width:'100%', boxSizing:'border-box', fontSize:14, padding:'10px 12px', border:'0.5px solid #d1d5db', borderRadius:8, outline:'none', fontFamily:'inherit', color:'#111' }
+  const btnStyle = { width:'100%', fontSize:14, fontWeight:600, padding:'10px 0', border:'none', borderRadius:8, cursor:'pointer', fontFamily:'inherit', background:'linear-gradient(135deg,#4f46e5,#7c3aed)', color:'white' }
+
+  return (
+    <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4ff', padding:16 }}>
+      <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:16, padding:32, boxShadow:'0 4px 24px rgba(124,58,237,0.10)' }}>
+        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <p style={{ fontSize:13, color:'#777', margin:'6px 0 20px' }}>Set a new password for your account.</p>
+        {done ? (
+          <p style={{ fontSize:14, color:'#3a7d44', fontWeight:500 }}>Password updated! Signing you in…</p>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <input type="password" placeholder="New password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} />
+            <input type="password" placeholder="Confirm new password" value={confirm} onChange={e => setConfirm(e.target.value)} required style={inputStyle} />
+            {error && <div style={{ fontSize:12, color:'#dc2626' }}>{error}</div>}
+            <button type="submit" disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.7 : 1 }}>{loading ? 'Saving…' : 'Set new password'}</button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Change Password Modal ────────────────────────────────────────────────────
+function ChangePassword({ onClose }) {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const handleSubmit = async e => {
+    e.preventDefault(); setError('')
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
+    setLoading(true)
+    const { error: err } = await supabase.auth.updateUser({ password })
+    setLoading(false)
+    if (err) { setError(err.message); return }
+    setDone(true)
+    setTimeout(onClose, 1500)
+  }
+
+  const inputStyle = { width:'100%', boxSizing:'border-box', fontSize:14, padding:'10px 12px', border:'0.5px solid #d1d5db', borderRadius:8, outline:'none', fontFamily:'inherit', color:'#111' }
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={e => { if (e.target===e.currentTarget) onClose() }}>
+      <div style={{ width:'100%', maxWidth:360, background:'white', borderRadius:14, padding:24, boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+          <span style={{ fontSize:15, fontWeight:600, color:'#111' }}>Change Password</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', fontSize:18, cursor:'pointer', color:'#aaa', lineHeight:1 }}>✕</button>
+        </div>
+        {done ? (
+          <p style={{ fontSize:14, color:'#3a7d44', fontWeight:500 }}>Password updated successfully.</p>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            <input type="password" placeholder="New password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} />
+            <input type="password" placeholder="Confirm new password" value={confirm} onChange={e => setConfirm(e.target.value)} required style={inputStyle} />
+            {error && <div style={{ fontSize:12, color:'#dc2626' }}>{error}</div>}
+            <button type="submit" disabled={loading} style={{ fontSize:13, fontWeight:600, padding:'9px 0', border:'none', borderRadius:8, cursor:'pointer', fontFamily:'inherit', background:'linear-gradient(135deg,#4f46e5,#7c3aed)', color:'white', marginTop:4, opacity: loading ? 0.7 : 1 }}>{loading ? 'Saving…' : 'Update password'}</button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const [session, setSession] = useState(null)
+  const [authEvent, setAuthEvent] = useState(null)
+  const [authReady, setAuthReady] = useState(false)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showChangePassword, setShowChangePassword] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s); setAuthReady(true)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      setAuthEvent(event); setSession(s); setAuthReady(true)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const currentUserName = useCurrentUserName(session)
+
+  // ── Data ──────────────────────────────────────────────────────────────────
   const [tasks, setTasks] = useState([])
   const [domains, setDomains] = useState([])
   const [projects, setProjects] = useState([])
@@ -3469,6 +3649,7 @@ export default function App() {
   }, [])
 
   const loadData = useCallback(async (silent = false) => {
+    if (!session) return
     if (!silent) setLoading(true)
     const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
@@ -3493,7 +3674,7 @@ export default function App() {
     setQualTemplates(qualTemplatesData || [])
     setNoteGroups(noteGroupsData || [])
     setLoading(false)
-  }, [])
+  }, [session])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -3508,7 +3689,7 @@ export default function App() {
   const buildTaskPayload = data => {
     const payload = {
       title: data.title, status: 'active', domain: data.domain||'',
-      owners: data.owners||['Levi'], due: data.due||'', priority: data.priority||'',
+      owners: data.owners||(currentUserName ? [currentUserName] : ['Levi']), due: data.due||'', priority: data.priority||'',
       color: data.color||'', substatus: data.substatus||'not_started',
       notes: data.notes||[], today: !!data.today, subtasks: data.subtasks||[], attachments: data.attachments||[],
       updated_at: new Date().toISOString(),
@@ -3789,6 +3970,14 @@ export default function App() {
     !searchQ || p.title?.toLowerCase().includes(searchQ) || filteredTasks.some(t => t.project_id === p.id)
   )
 
+  if (!authReady) return (
+    <div style={{ fontFamily:'system-ui,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'#888', fontSize:14 }}>
+      Loading TASKr...
+    </div>
+  )
+  if (authEvent === 'PASSWORD_RECOVERY') return <SetNewPasswordScreen onDone={() => setAuthEvent(null)} />
+  if (!session) return <LoginScreen />
+
   if (loading) return (
     <div style={{ fontFamily:'system-ui,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'#888', fontSize:14 }}>
       Loading TASKr...
@@ -3797,12 +3986,38 @@ export default function App() {
 
   return (
     <div style={{ fontFamily:'system-ui,sans-serif', padding:isMobile?'0.75rem':'1.25rem 1.5rem', maxWidth:1400, margin:'0 auto' }}>
+      {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'1.25rem', paddingBottom:'1rem', borderBottom:'0.5px solid #e5e5e5' }}>
         <h1 style={{ fontSize:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
-          <span style={{ fontSize:12, color:'#7c3aed' }}>{new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
-          <span style={{ fontSize:10, color:'#c4b5fd' }}>Live · Supabase</span>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
+            <span style={{ fontSize:12, color:'#7c3aed' }}>{new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
+            <span style={{ fontSize:10, color:'#c4b5fd' }}>Live · Supabase</span>
+          </div>
+          {/* Profile menu */}
+          <div style={{ position:'relative' }}>
+            <button onClick={() => setShowProfileMenu(m => !m)}
+              style={{ fontSize:12, padding:'6px 12px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'#ede9fe', color:'#7c3aed', cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>
+              {currentUserName || session.user.email.split('@')[0]} ▾
+            </button>
+            {showProfileMenu && (
+              <div style={{ position:'absolute', top:'calc(100% + 4px)', right:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, minWidth:160, overflow:'hidden' }}>
+                <button onClick={() => { setShowChangePassword(true); setShowProfileMenu(false) }}
+                  style={{ display:'block', width:'100%', textAlign:'left', padding:'10px 14px', background:'none', border:'none', fontSize:13, cursor:'pointer', color:'#333', fontFamily:'inherit' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#f5f5f3'}
+                  onMouseLeave={e => e.currentTarget.style.background='none'}>
+                  Change Password
+                </button>
+                <button onClick={() => supabase.auth.signOut()}
+                  style={{ display:'block', width:'100%', textAlign:'left', padding:'10px 14px', background:'none', border:'none', fontSize:13, cursor:'pointer', color:'#A32D2D', fontFamily:'inherit', borderTop:'0.5px solid #f0f0f0' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#fff5f5'}
+                  onMouseLeave={e => e.currentTarget.style.background='none'}>
+                  Sign Out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -4190,7 +4405,7 @@ export default function App() {
 
       {/* Task form modal */}
       {form !== null && (
-        <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} escalations={escalations} members={memberNames} />
+        <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} escalations={escalations} members={memberNames} defaultOwner={currentUserName} />
       )}
 
       {/* Project / Escalation detail popup */}
