@@ -330,7 +330,7 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
   const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete')
   return (
     <div onDragOver={e => { e.preventDefault(); onDragOver('today') }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), 'today') }}
-      style={{ marginBottom:12, background:isOver?'#EEF4FF':'#f7f7f5', border:isOver?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12 }}>
+      style={{ background:isOver?'#EEF4FF':'#f7f7f5', border:isOver?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isOpen && todayTasks.length ? 10 : 0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <button onClick={onToggle} style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', padding:0 }}>
@@ -666,7 +666,7 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
 }
 
 // ─── Projects Section ─────────────────────────────────────────────────────────
-function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
+function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [], noBorder = false }) {
   const [step, setStep] = useState(null) // null | 'pick-type' | 'title' | 'bundle-template'
   const [newType, setNewType] = useState('project')
   const [newTitle, setNewTitle] = useState('')
@@ -687,7 +687,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [] }) {
   ]
 
   return (
-    <div style={{ marginBottom:12, paddingBottom:12, borderBottom:'0.5px solid #f0f0f0' }}>
+    <div style={{ marginBottom: noBorder ? 0 : 12, paddingBottom: noBorder ? 0 : 12, borderBottom: noBorder ? 'none' : '0.5px solid #f0f0f0' }}>
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
         {projects.map(p => (
           <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} noteCount={Array.isArray(p.notes)?p.notes.length:0} attachCount={Array.isArray(p.attachments)?p.attachments.length:0} onOpen={onOpen} />
@@ -4099,12 +4099,12 @@ export default function App() {
           {!showTrash && (<>
           {!listView && <>
           {/* Today + Escalations row */}
-          <div style={{ display:'flex', gap:12, alignItems:'flex-start', marginBottom:16 }}>
+          <div style={{ display:'flex', gap:12, alignItems:'stretch', marginBottom:16 }}>
             <div style={{ flex:1, minWidth:0 }}>
               <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} isOpen={isSectionOpen('today')} onToggle={() => toggleSection('today')} />
             </div>
             <div style={{ flex:'0 0 432px', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:12, padding:12 }}>
-              <button onClick={() => toggleSection('escalations')} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#7c3aed' }}>
+              <button onClick={() => toggleSection('escalations')} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', background:'none', border:'none', cursor:'pointer', padding:isSectionOpen('escalations')?'0 0 8px 0':0, color:'#7c3aed' }}>
                 <span style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
                 <span style={{ fontSize:10 }}>{isSectionOpen('escalations') ? '▴' : '▾'}</span>
               </button>
@@ -4113,12 +4113,12 @@ export default function App() {
           </div>
 
           {/* Projects section */}
-          <div style={{ marginBottom:16 }}>
-            <button onClick={() => toggleSection('projects')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 8px 0', color:'#888' }}>
+          <div style={{ marginBottom:16, background:'#f7f7f5', borderRadius:12, padding:12 }}>
+            <button onClick={() => toggleSection('projects')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding: isSectionOpen('projects') ? '0 0 8px 0' : 0, color:'#888' }}>
               <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
             </button>
-            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} />}
+            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} noBorder />}
           </div>
 
           {/* ── Tasks kanban ── */}
