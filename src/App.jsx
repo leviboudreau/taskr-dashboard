@@ -58,6 +58,22 @@ const RECURRENCE_TYPES = [
   { key: 'monthly_biz_day', label: 'Monthly by Nth business day' },
 ]
 const DOW_NUM = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+
+// US federal holiday rules — type:'fixed'|'nth'|'last', dow: JS day-of-week 0=Sun
+const US_HOLIDAY_DEFS = [
+  { name: "New Year's Day",    type:'fixed', month:1,  day:1  },
+  { name: "MLK Day",           type:'nth',   month:1,  dow:1, n:3 },
+  { name: "Presidents' Day",   type:'nth',   month:2,  dow:1, n:3 },
+  { name: "Memorial Day",      type:'last',  month:5,  dow:1  },
+  { name: "Juneteenth",        type:'fixed', month:6,  day:19 },
+  { name: "Independence Day",  type:'fixed', month:7,  day:4  },
+  { name: "Labor Day",         type:'nth',   month:9,  dow:1, n:1 },
+  { name: "Columbus Day",      type:'nth',   month:10, dow:1, n:2 },
+  { name: "Veterans Day",      type:'fixed', month:11, day:11 },
+  { name: "Thanksgiving Day",  type:'nth',   month:11, dow:4, n:4 },
+  { name: "Christmas Day",     type:'fixed', month:12, day:25 },
+]
+
 const CAL_START_HOUR = 6
 const CAL_END_HOUR = 22
 const CAL_HOUR_H = 56
@@ -114,6 +130,20 @@ function getNthWeekday(year, month, dow, week) {
     while (d.getDay() !== dow) d.setDate(d.getDate()-1)
     return d
   }
+}
+function generateUSHolidays(year, calendarId) {
+  return US_HOLIDAY_DEFS.map(h => {
+    let d
+    if (h.type === 'fixed') {
+      d = new Date(year, h.month - 1, h.day)
+    } else if (h.type === 'nth') {
+      d = getNthWeekday(year, h.month - 1, h.dow, h.n)
+    } else {
+      d = getNthWeekday(year, h.month - 1, h.dow, 0) // last
+    }
+    if (!d) return null
+    return { title: h.name, type: 'holiday', all_day: true, start_date: toISODate(d), end_date: null, calendar_id: calendarId, owners: [], color: '', emoji: '' }
+  }).filter(Boolean)
 }
 function expandRecurring(ev, rangeStart, rangeEnd) {
   const out = [], rd = ev.recurrence_data || {}
@@ -264,9 +294,6 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
         <div style={{ fontSize:done?11:13, fontWeight:500, color:done?'#999':'#111', textDecoration:done?'line-through':'none', marginBottom:done?0:4, lineHeight:1.4, overflowWrap:'break-word', wordBreak:'break-word' }}>{task.title}</div>
         {!done && (
           <>
-            <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', marginBottom:!compact&&(hasNotes||showOwners||hasSubtasks)?6:0 }}>
-              {task.due && <Badge type="due">{task.due}</Badge>}
-            </div>
             {subtasksOpen && !compact && hasSubtasks && (
               <div style={{ marginBottom:6, paddingLeft:2, marginTop:4 }}>
                 {subtasks.map(st => (
@@ -286,25 +313,22 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
                 ))}
               </div>
             )}
-            {!compact && showOwners && (
-              <div style={{ display:'flex', gap:3, marginTop:2, marginBottom:hasSubtasks||hasNotes?4:0 }}>
-                {owners.map(o => <OwnerPip key={o} name={o} />)}
-              </div>
-            )}
-            {!compact && (hasSubtasks || hasNotes || attachCount > 0) && (
-              <div style={{ display:'flex', justifyContent:'flex-end', gap:4, marginTop:2 }}>
-                {attachCount > 0 && (
-                  <span style={{ fontSize:10, color:'#aaa', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px' }}>📎 {attachCount}</span>
+            {!compact && (showOwners || task.due || hasSubtasks || hasNotes || attachCount > 0) && (
+              <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:6, flexWrap:'wrap' }}>
+                {showOwners && owners.map(o => <OwnerPip key={o} name={o} />)}
+                {task.due && <Badge type="due">{task.due}</Badge>}
+                {hasSubtasks && (
+                  <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
+                    {completedSubs}/{subtasks.length} sub
+                  </button>
                 )}
                 {hasNotes && (
                   <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
-                    {notesOpen ? 'hide notes' : `${task.notes.length} note${task.notes.length>1?'s':''}`}
+                    {task.notes.length} note{task.notes.length>1?'s':''}
                   </button>
                 )}
-                {hasSubtasks && (
-                  <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
-                    {subtasksOpen ? 'hide' : `${completedSubs}/${subtasks.length} sub`}
-                  </button>
+                {attachCount > 0 && (
+                  <span style={{ fontSize:10, color:'#aaa', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px' }}>📎 {attachCount}</span>
                 )}
               </div>
             )}
@@ -327,7 +351,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
 }
 
 // ─── Today Strip ──────────────────────────────────────────────────────────────
-function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, onAdd, onComplete, entityMap = {}, isOpen = true, onToggle }) {
+function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, onAdd, onComplete, entityMap = {}, isOpen = true, onToggle, onTaskDragOver, todayDropTarget }) {
   const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete')
   return (
     <div onDragOver={e => { e.preventDefault(); onDragOver('today') }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), 'today') }}
@@ -355,7 +379,9 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8 }}>
           {todayTasks.map(t => (
             <div key={t.id} style={{ position:'relative' }}>
-              <TaskCard task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} compact onComplete={onComplete} entityMap={entityMap} />
+              <TaskCard task={t} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} dragging={draggingId===t.id} compact onComplete={onComplete} entityMap={entityMap}
+                onDragOver={onTaskDragOver ? (taskId, pos) => onTaskDragOver(taskId, pos) : null}
+                dropIndicator={todayDropTarget?.taskId === t.id ? todayDropTarget.position : null} />
               <button onClick={e => { e.stopPropagation(); onRemove(t.id) }} style={{ position:'absolute', top:4, right:4, background:'none', border:'none', cursor:'pointer', fontSize:11, color:'#ccc' }} onMouseEnter={e => e.currentTarget.style.color='#333'} onMouseLeave={e => e.currentTarget.style.color='#ccc'}>✕</button>
             </div>
           ))}
@@ -625,7 +651,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 }
 
 // ─── Project Card ─────────────────────────────────────────────────────────────
-function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpen }) {
+function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpen, dragging, dropIndicator, onDragStart, onDragEnd, onDragOver }) {
   const [notesOpen, setNotesOpen] = useState(false)
   const notes = Array.isArray(project.notes) ? project.notes : []
   const bg = flagBg(project.color), border = flagBorder(project.color)
@@ -633,8 +659,14 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
   return (
     <div style={{ position:'relative', flexShrink:0, width:200 }}>
-      <div onClick={() => onOpen(project)}
-        style={{ background:bg||'white', border:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'pointer', boxSizing:'border-box', userSelect:'none' }}
+      {dropIndicator === 'before' && <div style={{ height:2, background:'#378ADD', borderRadius:1, marginBottom:4 }} />}
+      <div
+        draggable
+        onDragStart={e => { e.dataTransfer.setData('text/plain', String(project.id)); onDragStart && onDragStart(project.id) }}
+        onDragEnd={onDragEnd}
+        onDragOver={onDragOver ? e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); onDragOver(project.id, e.clientY < r.top + r.height/2 ? 'before' : 'after') } : undefined}
+        onClick={() => onOpen(project)}
+        style={{ background:bg||'white', border:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'grab', boxSizing:'border-box', userSelect:'none', opacity:dragging?0.4:1 }}
         onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
@@ -652,34 +684,31 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
             ))}
           </div>
         )}
-        {showOwners && (
-          <div style={{ display:'flex', gap:3, marginBottom:5 }}>
-            {owners.map(o => <OwnerPip key={o} name={o} />)}
-          </div>
-        )}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:6, flexWrap:'wrap' }}>
+          {showOwners && owners.map(o => <OwnerPip key={o} name={o} />)}
           {project.due && <Badge type="due">{project.due}</Badge>}
-          <div style={{ display:'flex', gap:4, marginLeft:'auto', alignItems:'center' }}>
-            {noteCount > 0 && (
-              <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
-                {notesOpen ? 'hide notes' : `${noteCount} note${noteCount!==1?'s':''}`}
-              </button>
-            )}
-            {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>📎 {attachCount}</span>}
-            <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
-          </div>
+          {noteCount > 0 && (
+            <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
+              {notesOpen ? 'hide notes' : `${noteCount} note${noteCount!==1?'s':''}`}
+            </button>
+          )}
+          {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>📎 {attachCount}</span>}
+          <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
         </div>
       </div>
+      {dropIndicator === 'after' && <div style={{ height:2, background:'#378ADD', borderRadius:1, marginTop:4 }} />}
     </div>
   )
 }
 
 // ─── Projects Section ─────────────────────────────────────────────────────────
-function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [], noBorder = false }) {
+function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [], noBorder = false, onReorder }) {
   const [step, setStep] = useState(null) // null | 'pick-type' | 'title' | 'bundle-template'
   const [newType, setNewType] = useState('project')
   const [newTitle, setNewTitle] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [draggingId, setDraggingId] = useState(null)
+  const [dropTarget, setDropTarget] = useState(null)
 
   const reset = () => { setStep(null); setNewTitle(''); setNewType('project'); setSelectedTemplate(null) }
 
@@ -696,10 +725,18 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [], noBor
   ]
 
   return (
-    <div style={{ marginBottom: noBorder ? 0 : 12, paddingBottom: noBorder ? 0 : 12, borderBottom: noBorder ? 'none' : '0.5px solid #f0f0f0' }}>
+    <div style={{ marginBottom: noBorder ? 0 : 12, paddingBottom: noBorder ? 0 : 12, borderBottom: noBorder ? 'none' : '0.5px solid #f0f0f0' }}
+      onDragOver={e => e.preventDefault()}
+      onDrop={e => { e.preventDefault(); const id = parseInt(e.dataTransfer.getData('text/plain')); if (id && dropTarget && onReorder) onReorder(id, dropTarget.id, dropTarget.position); setDraggingId(null); setDropTarget(null) }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropTarget(null) }}>
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
         {projects.map(p => (
-          <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} noteCount={Array.isArray(p.notes)?p.notes.length:0} attachCount={Array.isArray(p.attachments)?p.attachments.length:0} onOpen={onOpen} />
+          <ProjectCard key={p.id} project={p} taskCount={tasks.filter(t => t.project_id === p.id).length} noteCount={Array.isArray(p.notes)?p.notes.length:0} attachCount={Array.isArray(p.attachments)?p.attachments.length:0} onOpen={onOpen}
+            dragging={draggingId === p.id}
+            dropIndicator={dropTarget?.id === p.id ? dropTarget.position : null}
+            onDragStart={id => setDraggingId(id)}
+            onDragEnd={() => { setDraggingId(null); setDropTarget(null) }}
+            onDragOver={(id, pos) => setDropTarget({ id, position: pos })} />
         ))}
 
         {step === null && (
@@ -768,7 +805,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [], noBor
 }
 
 // ─── Escalation Card ──────────────────────────────────────────────────────────
-function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0, onOpen }) {
+function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0, onOpen, dragging, dropIndicator, onDragStart, onDragEnd, onDragOver }) {
   const [notesOpen, setNotesOpen] = useState(false)
   const notes = Array.isArray(escalation.notes) ? escalation.notes : []
   const RED = '#c0392b', REDBORDER = '#f0a0a0'
@@ -777,8 +814,14 @@ function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0,
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
   return (
     <div style={{ position:'relative', flexShrink:0, width:200 }}>
-      <div onClick={() => onOpen(escalation)}
-        style={{ background:bg||'white', border:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'pointer', boxSizing:'border-box', userSelect:'none' }}
+      {dropIndicator === 'before' && <div style={{ height:2, background:'#378ADD', borderRadius:1, marginBottom:4 }} />}
+      <div
+        draggable
+        onDragStart={e => { e.dataTransfer.setData('text/plain', String(escalation.id)); onDragStart && onDragStart(escalation.id) }}
+        onDragEnd={onDragEnd}
+        onDragOver={onDragOver ? e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); onDragOver(escalation.id, e.clientY < r.top + r.height/2 ? 'before' : 'after') } : undefined}
+        onClick={() => onOpen(escalation)}
+        style={{ background:bg||'white', border:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'grab', boxSizing:'border-box', userSelect:'none', opacity:dragging?0.4:1 }}
         onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor=REDBORDER }}
         onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
@@ -796,63 +839,83 @@ function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0,
             ))}
           </div>
         )}
-        {showOwners && (
-          <div style={{ display:'flex', gap:3, marginBottom:5 }}>
-            {owners.map(o => <OwnerPip key={o} name={o} />)}
-          </div>
-        )}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:4 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:6, flexWrap:'wrap' }}>
+          {showOwners && owners.map(o => <OwnerPip key={o} name={o} />)}
           {escalation.due && <Badge type="due">{escalation.due}</Badge>}
-          <div style={{ display:'flex', gap:4, marginLeft:'auto', alignItems:'center' }}>
-            {noteCount > 0 && (
-              <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
-                {notesOpen ? 'hide notes' : `${noteCount} note${noteCount!==1?'s':''}`}
-              </button>
-            )}
-            {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>📎 {attachCount}</span>}
-            <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
-          </div>
+          {noteCount > 0 && (
+            <button onClick={e => { e.stopPropagation(); setNotesOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
+              {notesOpen ? 'hide notes' : `${noteCount} note${noteCount!==1?'s':''}`}
+            </button>
+          )}
+          {attachCount > 0 && <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>📎 {attachCount}</span>}
+          <span style={{ fontSize:10, color:'#aaa', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 7px' }}>{taskCount} task{taskCount!==1?'s':''}</span>
         </div>
       </div>
+      {dropIndicator === 'after' && <div style={{ height:2, background:'#378ADD', borderRadius:1, marginTop:4 }} />}
     </div>
   )
 }
 
 // ─── Escalations Section ──────────────────────────────────────────────────────
-function EscalationsSection({ escalations, tasks, onAdd, onOpen, noBorder = false }) {
+function EscalationsSection({ escalations, tasks, onAdd, onOpen, onReorder, isOpen, onToggle }) {
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
-  const RED = '#c0392b', REDBORDER = '#f0a0a0'
+  const [draggingId, setDraggingId] = useState(null)
+  const [dropTarget, setDropTarget] = useState(null)
+  const RED = '#c0392b'
   const handleAdd = () => {
     const title = newTitle.trim()
     if (!title) { setAdding(false); return }
     onAdd(title); setNewTitle(''); setAdding(false)
   }
   return (
-    <div style={{ marginBottom: noBorder ? 0 : 12, paddingBottom: noBorder ? 0 : 12, borderBottom: noBorder ? 'none' : '0.5px solid #f0f0f0' }}>
-      <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
-        {escalations.map(e => (
-          <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} noteCount={Array.isArray(e.notes)?e.notes.length:0} attachCount={Array.isArray(e.attachments)?e.attachments.length:0} onOpen={onOpen} />
-        ))}
-        {adding ? (
-          <div style={{ flexShrink:0, width:200 }}>
-            <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
-              onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewTitle('') } }}
-              placeholder="Escalation title..."
-              style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'8px 10px', border:`1.5px solid ${RED}`, borderRadius:8, outline:'none', fontFamily:'inherit' }} />
-            <div style={{ display:'flex', gap:4, marginTop:4 }}>
-              <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:RED, color:'white', border:'none', borderRadius:8, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
-              <button onClick={() => { setAdding(false); setNewTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:8, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
-            </div>
-          </div>
-        ) : (
-          <button onClick={() => setAdding(true)} style={{ alignSelf:'center', background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:12, padding:'4px 2px', fontFamily:'inherit' }}
-            onMouseEnter={e => e.currentTarget.style.color='#888'}
-            onMouseLeave={e => e.currentTarget.style.color='#ccc'}>
-            + new
+    <div>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isOpen && escalations.length ? 10 : 0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:11, fontWeight:600, color:'#7c3aed', textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
+          <span style={{ background:'white', border:'0.5px solid #c4b5fd', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#7c3aed' }}>{escalations.length}</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {isOpen && (
+            <button onClick={() => setAdding(true)} style={{ fontSize:11, color:'#a78bfa', background:'none', border:'0.5px dashed #c4b5fd', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}
+              onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#7c3aed' }}
+              onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#a78bfa' }}>+ Add</button>
+          )}
+          <button onClick={onToggle} style={{ background:'none', border:'none', cursor:'pointer', padding:'0 2px', color:'#a78bfa', fontSize:10, lineHeight:1 }}>
+            {isOpen ? '▴' : '▾'}
           </button>
-        )}
+        </div>
       </div>
+      {/* Cards */}
+      {isOpen && (
+        <div onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); const id = parseInt(e.dataTransfer.getData('text/plain')); if (id && dropTarget && onReorder) onReorder(id, dropTarget.id, dropTarget.position); setDraggingId(null); setDropTarget(null) }}
+          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropTarget(null) }}>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
+            {escalations.map(e => (
+              <EscalationCard key={e.id} escalation={e} taskCount={tasks.filter(t => t.escalation_id === e.id).length} noteCount={Array.isArray(e.notes)?e.notes.length:0} attachCount={Array.isArray(e.attachments)?e.attachments.length:0} onOpen={onOpen}
+                dragging={draggingId === e.id}
+                dropIndicator={dropTarget?.id === e.id ? dropTarget.position : null}
+                onDragStart={id => setDraggingId(id)}
+                onDragEnd={() => { setDraggingId(null); setDropTarget(null) }}
+                onDragOver={(id, pos) => setDropTarget({ id, position: pos })} />
+            ))}
+            {adding && (
+              <div style={{ flexShrink:0, width:200 }}>
+                <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key==='Enter') handleAdd(); if (e.key==='Escape') { setAdding(false); setNewTitle('') } }}
+                  placeholder="Escalation title..."
+                  style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'8px 10px', border:`1.5px solid ${RED}`, borderRadius:8, outline:'none', fontFamily:'inherit' }} />
+                <div style={{ display:'flex', gap:4, marginTop:4 }}>
+                  <button onClick={handleAdd} style={{ flex:1, fontSize:11, background:RED, color:'white', border:'none', borderRadius:8, padding:'5px 0', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
+                  <button onClick={() => { setAdding(false); setNewTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:8, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2627,10 +2690,13 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
 }
 
 // ─── Calendar Event Form ──────────────────────────────────────────────────────
-const CAL_EMPTY = { title:'', type:'event', start_date:today(), end_date:'', start_time:'09:00', end_time:'10:00', all_day:false, recurrence_type:'', recurrence_data:{}, recurrence_start:'', recurrence_end:'', owners:['Levi'], color:'', description:'' }
+const CAL_EMPTY = { title:'', emoji:'', type:'event', calendar_id:'', start_date:today(), end_date:'', start_time:'09:00', end_time:'10:00', all_day:false, recurrence_type:'', recurrence_data:{}, recurrence_start:'', recurrence_end:'', owners:['Levi'], color:'', description:'' }
 
-function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members = MEMBERS }) {
+const EMOJI_PICKS = ['📅','📆','🗓','⏰','🔔','📌','📍','🎯','🏆','🎉','🎤','💡','💼','📊','📝','✅','🚀','🌟','🤝','👥','☕','🍽','✈','🚗','🏋','⚽','🎶','🎬','🏖','🌿','💰','🔒','🩺','📚','🛠','🧑‍💻','🧠','❤','🔥','⚡']
+
+function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members = MEMBERS, calendars = [] }) {
   const [f, setF] = useState({ ...CAL_EMPTY, ...event, recurrence_data: event?.recurrence_data || {} })
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const set = (k, v) => setF(p => ({ ...p, [k]:v }))
   const setRd = (k, v) => setF(p => ({ ...p, recurrence_data:{ ...p.recurrence_data, [k]:v } }))
   const toggleOwner = m => { const cur = f.owners||[]; if (cur.includes(m)) { set('owners', cur.filter(o => o!==m)) } else set('owners', [...cur, m]) }
@@ -2644,8 +2710,47 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
       <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:500, maxHeight:'90dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
-        <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Event title..."
-          style={{ width:'100%', fontSize:16, fontWeight:600, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
+          <div style={{ position:'relative', flexShrink:0 }}>
+            <button onClick={() => setEmojiOpen(o => !o)}
+              style={{ width:44, height:38, fontSize:22, border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxSizing:'border-box' }}>
+              {f.emoji || <span style={{ fontSize:14, color:'#ccc' }}>+</span>}
+            </button>
+            {emojiOpen && (
+              <div style={{ position:'absolute', top:44, left:0, zIndex:100, background:'white', border:'0.5px solid #e0e0e0', borderRadius:10, padding:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', width:220 }}>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:2 }}>
+                  {f.emoji && (
+                    <button onClick={() => { set('emoji', ''); setEmojiOpen(false) }}
+                      style={{ width:32, height:32, borderRadius:6, border:'0.5px solid #f09595', background:'#fcebeb', cursor:'pointer', fontSize:11, color:'#791f1f' }}>✕</button>
+                  )}
+                  {EMOJI_PICKS.map(em => (
+                    <button key={em} onClick={() => { set('emoji', em); setEmojiOpen(false) }}
+                      style={{ width:32, height:32, borderRadius:6, border: f.emoji===em ? '1.5px solid #7c3aed' : '0.5px solid transparent', background: f.emoji===em ? '#ede9fe' : 'none', cursor:'pointer', fontSize:20, lineHeight:1, padding:0 }}>
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Event title..."
+            style={{ flex:1, fontSize:16, fontWeight:600, border:'none', outline:'none', color:'#111', background:'transparent', padding:0 }} />
+        </div>
+
+        {/* Calendar */}
+        {calendars.filter(c => c.type !== 'holidays').length > 0 && (
+          <div style={{ marginBottom:12 }}>
+            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Calendar</label>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {calendars.filter(c => c.type !== 'holidays').map(c => (
+                <button key={c.id} onClick={() => set('calendar_id', c.id)}
+                  style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:f.calendar_id===c.id?`1.5px solid ${c.color}`:'0.5px solid #e5e5e5', background:f.calendar_id===c.id?c.color+'18':'white', color:f.calendar_id===c.id?c.color:'#888', fontWeight:f.calendar_id===c.id?500:400 }}>
+                  <span style={{ width:8, height:8, borderRadius:'50%', background:c.color, flexShrink:0 }} />{c.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Type */}
         <div style={{ display:'flex', gap:8, marginBottom:14 }}>
@@ -2837,7 +2942,7 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
                 const bdr = evTypeBdr(ev)
                 return (
                   <div key={i} onClick={() => onEventClick(ev)} style={{ gridColumn:`${sc}/${ec}`, fontSize:10, padding:'3px 6px', borderRadius:6, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>
-                    {evTypeIcon(ev)}{ev.title}
+                    {evTypeIcon(ev)}{ev.emoji ? ev.emoji+' ' : ''}{ev.title}
                   </div>
                 )
               })}
@@ -2881,7 +2986,7 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
                     return (
                       <div key={`${ev.id}-${ei}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
                         style={{ position:'absolute', top, height, left:2, right:2, borderRadius:6, cursor:'pointer', background:bg, border:`0.5px solid ${bdr}`, padding:'2px 4px', overflow:'hidden', zIndex:1 }}>
-                        <div style={{ fontSize:10, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>{ev.title}</div>
+                        <div style={{ fontSize:10, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#333' }}>{ev.emoji ? ev.emoji+' ' : ''}{ev.title}</div>
                         {height > 28 && <div style={{ fontSize:9, color:'#666' }}>{fmtTime(ev.start_time)}{ev.end_time&&` – ${fmtTime(ev.end_time)}`}</div>}
                       </div>
                     )
@@ -3016,7 +3121,7 @@ function CalendarMonthView({ events, year, month, onDayClick, onShowDay, onEvent
                       marginLeft: !isStart && !isSun ? -4 : 0,
                       marginRight: !isEnd ? -4 : 0,
                     }}>
-                    {showLabel ? typeIcon+( ev.start_time&&!ev.all_day?`${fmtTime(ev.start_time)} `:'')+ev.title : ' '}
+                    {showLabel ? typeIcon+(ev.emoji?ev.emoji+' ':'')+( ev.start_time&&!ev.all_day?`${fmtTime(ev.start_time)} `:'')+ev.title : ' '}
                   </div>
                 )
               })}
@@ -3027,7 +3132,7 @@ function CalendarMonthView({ events, year, month, onDayClick, onShowDay, onEvent
                 return (
                   <div key={`s-${ei}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
                     style={{ fontSize:10, padding:'1px 5px', borderRadius:3, marginBottom:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background:sBg, border:`0.5px solid ${sBdr}`, color:'#333', cursor:'pointer' }}>
-                    {sIcon}{ev.start_time?`${fmtTime(ev.start_time)} `:''}{ev.title}
+                    {sIcon}{ev.emoji ? ev.emoji+' ' : ''}{ev.start_time?`${fmtTime(ev.start_time)} `:''}{ev.title}
                   </div>
                 )
               })}
@@ -3101,7 +3206,7 @@ function CalendarYearView({ events, year, onDayClick, onShowDay, onEventClick })
                     return (
                       <div key={i} onClick={e => { e.stopPropagation(); onEventClick(ev) }} title={ev.title}
                         style={{ fontSize:7, lineHeight:'8px', padding:'0 3px', height:8, borderRadius:2, background:bg, color:tc, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'pointer', flexShrink:0, fontWeight:500 }}>
-                        {evTypeIcon(ev)}{ev.title}
+                        {evTypeIcon(ev)}{ev.emoji ? ev.emoji+' ' : ''}{ev.title}
                       </div>
                     )
                   })}
@@ -3170,6 +3275,7 @@ function CalendarListView({ events, onEventClick }) {
                         {isTravel && <span style={{ fontSize:10 }}>✈</span>}
                         {isAudit && <span style={{ fontSize:10 }}>🔍</span>}
                         {isVacation && <span style={{ fontSize:10 }}>🌴</span>}
+                        {ev.emoji && <span>{ev.emoji}</span>}
                         {ev.title}
                       </div>
                       {timeLabel && <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{timeLabel}</div>}
@@ -3228,6 +3334,7 @@ function DayScheduleModal({ date, events, onClose, onEventClick, onAddEvent }) {
                       {isTravel && <span style={{ fontSize:10 }}>✈</span>}
                       {isAudit && <span style={{ fontSize:10 }}>🔍</span>}
                       {isVacation && <span style={{ fontSize:10 }}>🌴</span>}
+                      {ev.emoji && <span>{ev.emoji}</span>}
                       {ev.title}
                     </div>
                     {timeLabel && <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{timeLabel}</div>}
@@ -3242,13 +3349,20 @@ function DayScheduleModal({ date, events, onClose, onEventClick, onAddEvent }) {
   )
 }
 
-function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
+function CalendarTab({ events, onSave, onDelete, members = MEMBERS, calendars = [], onToggleCalendar }) {
   const [calView, setCalView] = useState('month')
   const [travelFilter, setTravelFilter] = useState(false)
   const [calDate, setCalDate] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1) })
   const [eventForm, setEventForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
   const [daySchedule, setDaySchedule] = useState(null) // Date | null
+
+  const visibleCalIds = new Set(calendars.filter(c => c.visible).map(c => c.id))
+  const defaultCalId = calendars.find(c => c.type === 'default')?.id
+  // Events with no calendar_id belong to the default calendar; treat as visible when default is visible
+  const filteredEvents = calendars.length === 0 ? events : events.filter(ev =>
+    ev.calendar_id ? visibleCalIds.has(ev.calendar_id) : (defaultCalId ? visibleCalIds.has(defaultCalId) : true)
+  )
 
   const weekStart = startOfWeek(calDate)
   const year = calDate.getFullYear(), month = calDate.getMonth()
@@ -3295,6 +3409,8 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
       recurrence_end: data.recurrence_end||null,
       owners: data.owners||['Levi'], color: data.color||'',
       description: data.description||'', location: data.location||'',
+      emoji: data.emoji||'',
+      calendar_id: data.calendar_id||null,
     }
     let err
     if (isEdit && eventForm?.id) {
@@ -3315,6 +3431,18 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
 
   return (
     <div>
+      {/* Calendar toggles */}
+      {calendars.length > 0 && (
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:12 }}>
+          <span style={{ fontSize:11, color:'#aaa', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.05em', marginRight:2 }}>Calendars</span>
+          {calendars.map(cal => (
+            <button key={cal.id} onClick={() => onToggleCalendar && onToggleCalendar(cal.id, !cal.visible)}
+              style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, padding:'3px 10px', borderRadius:20, cursor:'pointer', border:`0.5px solid ${cal.visible ? cal.color : '#e0e0e0'}`, background: cal.visible ? cal.color+'18' : '#f7f7f5', color: cal.visible ? cal.color : '#bbb', fontWeight: cal.visible ? 500 : 400, transition:'all 0.1s' }}>
+              <span style={{ width:8, height:8, borderRadius:'50%', background: cal.visible ? cal.color : '#ccc', flexShrink:0 }} />{cal.name}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Nav */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -3342,15 +3470,15 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS }) {
       </div>
 
       {calView === 'week'
-        ? <CalendarWeekView events={events} weekStart={weekStart} onDayClick={handleDayClick} onEventClick={handleEventClick} />
+        ? <CalendarWeekView events={filteredEvents} weekStart={weekStart} onDayClick={handleDayClick} onEventClick={handleEventClick} />
         : calView === 'month'
-        ? <CalendarMonthView events={events} year={year} month={month} onDayClick={handleDayClick} onShowDay={handleShowDay} onEventClick={handleEventClick} />
+        ? <CalendarMonthView events={filteredEvents} year={year} month={month} onDayClick={handleDayClick} onShowDay={handleShowDay} onEventClick={handleEventClick} />
         : calView === 'list'
-        ? <CalendarListView events={events} onEventClick={handleEventClick} />
-        : <CalendarYearView events={travelFilter ? events.filter(e => e.type === 'travel') : events} year={year} onDayClick={handleDayClick} onShowDay={handleShowDay} onEventClick={handleEventClick} />}
+        ? <CalendarListView events={filteredEvents} onEventClick={handleEventClick} />
+        : <CalendarYearView events={travelFilter ? filteredEvents.filter(e => e.type === 'travel') : filteredEvents} year={year} onDayClick={handleDayClick} onShowDay={handleShowDay} onEventClick={handleEventClick} />}
 
       {eventForm !== null && (
-        <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} members={members} />
+        <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} members={members} calendars={calendars.filter(c => c.type !== 'holidays')} />
       )}
       {daySchedule !== null && (
         <DayScheduleModal
@@ -3616,6 +3744,7 @@ export default function App() {
   const [noteGroups, setNoteGroups] = useState([])
   const [followUps, setFollowUps] = useState([])
   const [calEvents, setCalEvents] = useState([])
+  const [calendarList, setCalendarList] = useState([])
   const [qualTemplates, setQualTemplates] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(() => localStorage.getItem('taskr-tab') || 'tasks')
@@ -3626,6 +3755,7 @@ export default function App() {
   const [isEdit, setIsEdit] = useState(false)
   const [draggingId, setDraggingId] = useState(null)
   const [overCol, setOverCol] = useState(null)
+  const [todayDropTarget, setTodayDropTarget] = useState(null)
   const [minimized, setMinimized] = useState(() => {
     try { return JSON.parse(localStorage.getItem('taskr-minimized-cols') || '{}') } catch { return {} }
   })
@@ -3660,10 +3790,10 @@ export default function App() {
   const loadData = useCallback(async (silent = false) => {
     if (!session) return
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
-      supabase.from('projects').select('*'),
+      supabase.from('projects').select('*').order('created_at', { ascending: true }),
       supabase.from('calendar_events').select('*').order('created_at', { ascending: true }),
       supabase.from('escalations').select('*').order('created_at', { ascending: true }),
       supabase.from('notes').select('*').order('updated_at', { ascending: false }),
@@ -3671,12 +3801,14 @@ export default function App() {
       supabase.from('team_members').select('*').order('sort_order', { ascending: true }),
       supabase.from('qual_templates').select('*').order('created_at', { ascending: true }),
       supabase.from('note_groups').select('*').order('sort_order', { ascending: true }),
+      supabase.from('calendars').select('*').order('sort_order', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) setDomains(domainsData.map(d => d.name))
     setProjects((projectsData || []).map(p => ({ ...p, notes: p.notes||[], attachments: p.attachments||[], owners: p.owners||[] })))
     if (calData) setCalEvents(calData)
     setEscalations((escalationsData || []).map(e => ({ ...e, notes: e.notes||[], attachments: e.attachments||[], owners: e.owners||[] })))
+    if (calendarsData) setCalendarList(calendarsData)
     setNotes(notesData || [])
     setFollowUps(followUpsData || [])
     if (teamMembersData && teamMembersData.length > 0) setTeamData(teamMembersData)
@@ -3694,6 +3826,33 @@ export default function App() {
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [loadData])
+
+  const initCalendars = useCallback(async () => {
+    const { data: existing, error } = await supabase.from('calendars').select('id,type')
+    if (error) return
+    const hasDefault = existing?.some(c => c.type === 'default')
+    const hasHolidays = existing?.some(c => c.type === 'holidays')
+    const inserts = []
+    if (!hasDefault) inserts.push({ name: 'My Events', color: '#4f46e5', visible: true, type: 'default', sort_order: 0 })
+    if (!hasHolidays) inserts.push({ name: 'US Holidays', color: '#16a34a', visible: true, type: 'holidays', sort_order: 1 })
+    if (inserts.length > 0) {
+      const { data: created } = await supabase.from('calendars').insert(inserts).select()
+      const holidayCal = created?.find(c => c.type === 'holidays')
+      if (holidayCal) {
+        const thisYear = new Date().getFullYear()
+        const holidays = [...generateUSHolidays(thisYear, holidayCal.id), ...generateUSHolidays(thisYear + 1, holidayCal.id)]
+        await supabase.from('calendar_events').insert(holidays)
+      }
+      await loadData(true)
+    }
+  }, [loadData])
+
+  useEffect(() => { if (session) initCalendars() }, [session, initCalendars])
+
+  const toggleCalendar = async (id, visible) => {
+    setCalendarList(prev => prev.map(c => c.id === id ? { ...c, visible } : c))
+    await supabase.from('calendars').update({ visible }).eq('id', id)
+  }
 
   const buildTaskPayload = data => {
     const payload = {
@@ -3903,11 +4062,56 @@ export default function App() {
     await loadData()
   }
 
+  const reorderTodayTask = async (dragId, targetId, position) => {
+    const list = tasks.filter(t => t.today && t.substatus !== 'complete').sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
+    const dragIdx = list.findIndex(t => t.id === dragId)
+    const targetIdx = list.findIndex(t => t.id === targetId)
+    if (dragIdx === -1) return
+    const moved = list.splice(dragIdx, 1)
+    const insertAt = position === 'before' ? targetIdx : targetIdx + 1
+    const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
+    list.splice(Math.max(0, adjustedInsert), 0, ...moved)
+    await Promise.all(list.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, updated_at: new Date().toISOString() }).eq('id', t.id)))
+    await loadData()
+  }
+
+  const reorderProject = async (dragId, targetId, position) => {
+    const list = [...projects].sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
+    const dragIdx = list.findIndex(p => p.id === dragId)
+    const targetIdx = list.findIndex(p => p.id === targetId)
+    if (dragIdx === -1) return
+    const moved = list.splice(dragIdx, 1)
+    const insertAt = position === 'before' ? targetIdx : targetIdx + 1
+    const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
+    list.splice(Math.max(0, adjustedInsert), 0, ...moved)
+    await Promise.all(list.map((p, i) => supabase.from('projects').update({ sort_order: i+1 }).eq('id', p.id)))
+    await loadData()
+  }
+
+  const reorderEscalation = async (dragId, targetId, position) => {
+    const list = [...escalations].sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
+    const dragIdx = list.findIndex(e => e.id === dragId)
+    const targetIdx = list.findIndex(e => e.id === targetId)
+    if (dragIdx === -1) return
+    const moved = list.splice(dragIdx, 1)
+    const insertAt = position === 'before' ? targetIdx : targetIdx + 1
+    const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
+    list.splice(Math.max(0, adjustedInsert), 0, ...moved)
+    await Promise.all(list.map((e, i) => supabase.from('escalations').update({ sort_order: i+1 }).eq('id', e.id)))
+    await loadData()
+  }
+
   const drop = async (id, col) => {
     if (!id) return
-    if (col === 'today') { await toggleToday(id, true) }
-    else {
-      if (dropTarget && dropTarget.taskId && viewMode === 'dynamic') {
+    if (col === 'today') {
+      if (todayDropTarget?.taskId) {
+        await reorderTodayTask(parseInt(id), todayDropTarget.taskId, todayDropTarget.position)
+      } else {
+        await toggleToday(id, true)
+      }
+      setTodayDropTarget(null)
+    } else {
+      if (dropTarget && dropTarget.taskId) {
         await reorderTask(id, dropTarget.taskId, dropTarget.position, col)
       } else {
         await moveTask(id, col)
@@ -4110,14 +4314,10 @@ export default function App() {
           {/* Today + Escalations row */}
           <div style={{ display:'flex', gap:12, alignItems:'stretch', marginBottom:16 }}>
             <div style={{ flex:1, minWidth:0 }}>
-              <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} isOpen={isSectionOpen('today')} onToggle={() => toggleSection('today')} />
+              <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null); setTodayDropTarget(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} isOpen={isSectionOpen('today')} onToggle={() => toggleSection('today')} onTaskDragOver={(taskId, pos) => setTodayDropTarget({ taskId, position: pos })} todayDropTarget={todayDropTarget} />
             </div>
-            <div style={{ flex:'0 0 432px', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:12, padding:12 }}>
-              <button onClick={() => toggleSection('escalations')} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', background:'none', border:'none', cursor:'pointer', padding:isSectionOpen('escalations')?'0 0 8px 0':0, color:'#7c3aed' }}>
-                <span style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em' }}>Escalations</span>
-                <span style={{ fontSize:10 }}>{isSectionOpen('escalations') ? '▴' : '▾'}</span>
-              </button>
-              {isSectionOpen('escalations') && <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} noBorder />}
+            <div style={{ flex:'0 0 432px', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:12, padding:12, alignSelf: isSectionOpen('escalations') ? 'stretch' : 'flex-start' }}>
+              <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} onReorder={reorderEscalation} isOpen={isSectionOpen('escalations')} onToggle={() => toggleSection('escalations')} />
             </div>
           </div>
 
@@ -4127,7 +4327,7 @@ export default function App() {
               <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
             </button>
-            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} noBorder />}
+            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} noBorder onReorder={reorderProject} />}
           </div>
 
           {/* ── Tasks kanban ── */}
@@ -4329,7 +4529,7 @@ export default function App() {
                             onToggleSubtask={toggleSubtask}
                             onComplete={quickComplete}
                             dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null}
-                            onDragOver={viewMode==='dynamic'?(taskId, position) => setDropTarget({ col:col.key, taskId, position }):null}
+                            onDragOver={(taskId, position) => setDropTarget({ col:col.key, taskId, position })}
                             entityMap={entityMap}
                           />
                         ))}
@@ -4387,7 +4587,7 @@ export default function App() {
 
       {/* ── Calendar ── */}
       {tab === 'calendar' && (
-        <CalendarTab events={calEvents} onSave={() => loadData(true)} onDelete={() => loadData(true)} members={memberNames} />
+        <CalendarTab events={calEvents} onSave={() => loadData(true)} onDelete={() => loadData(true)} members={memberNames} calendars={calendarList} onToggleCalendar={toggleCalendar} />
       )}
 
       {/* ── Notes ── */}
@@ -4409,6 +4609,7 @@ export default function App() {
             <div style={{ flex:1, minWidth:0 }}><DomainSettings domains={domains} onUpdate={loadData} /></div>
             <div style={{ flex:1, minWidth:0 }}><TeamSettings teamData={teamData} onUpdate={loadData} /></div>
           </div>
+          <CalendarSettings calendars={calendarList} onUpdate={loadData} />
         </div>
       )}
 
@@ -4725,6 +4926,187 @@ function TeamSettings({ teamData, onUpdate }) {
           <button onClick={() => setAdding(true)} style={{ fontSize:12, background:'none', border:'0.5px dashed #ccc', borderRadius:8, padding:'7px 16px', cursor:'pointer', color:'#888', marginTop:4 }}>+ Add team member</button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Calendar Settings ────────────────────────────────────────────────────────
+const CAL_COLORS = ['#4f46e5','#7c3aed','#db2777','#dc2626','#ea580c','#ca8a04','#16a34a','#0891b2','#0284c7','#475569']
+
+function CalendarSettings({ calendars, onUpdate }) {
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newColor, setNewColor] = useState('#4f46e5')
+  const [editId, setEditId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState('')
+  const [holidayYear, setHolidayYear] = useState(new Date().getFullYear())
+  const [holidayEvents, setHolidayEvents] = useState([])
+  const [editingHoliday, setEditingHoliday] = useState(null)
+  const [addingHoliday, setAddingHoliday] = useState(false)
+  const [newHolidayName, setNewHolidayName] = useState('')
+  const [newHolidayDate, setNewHolidayDate] = useState('')
+
+  const holidayCal = calendars.find(c => c.type === 'holidays')
+
+  useEffect(() => {
+    if (!holidayCal) return
+    supabase.from('calendar_events')
+      .select('*')
+      .eq('calendar_id', holidayCal.id)
+      .gte('start_date', `${holidayYear}-01-01`)
+      .lte('start_date', `${holidayYear}-12-31`)
+      .order('start_date')
+      .then(({ data }) => setHolidayEvents(data || []))
+  }, [holidayCal?.id, holidayYear])
+
+  const saveCalendar = async () => {
+    const name = newName.trim()
+    if (!name) return
+    await supabase.from('calendars').insert({ name, color: newColor, visible: true, type: 'user', sort_order: calendars.length })
+    setAdding(false); setNewName(''); setNewColor('#4f46e5'); onUpdate()
+  }
+
+  const updateCalendar = async (id) => {
+    await supabase.from('calendars').update({ name: editName.trim(), color: editColor }).eq('id', id)
+    setEditId(null); onUpdate()
+  }
+
+  const deleteCalendar = async (id) => {
+    await supabase.from('calendars').delete().eq('id', id)
+    onUpdate()
+  }
+
+  const toggleVisible = async (cal) => {
+    await supabase.from('calendars').update({ visible: !cal.visible }).eq('id', cal.id)
+    onUpdate()
+  }
+
+  const saveHoliday = async (ev) => {
+    const { id, ...fields } = ev
+    if (id) {
+      await supabase.from('calendar_events').update({ title: fields.title, start_date: fields.start_date }).eq('id', id)
+    } else {
+      await supabase.from('calendar_events').insert({ ...fields, type: 'holiday', all_day: true, calendar_id: holidayCal.id, owners: [], color: '', emoji: '' })
+    }
+    setEditingHoliday(null); setAddingHoliday(false); setNewHolidayName(''); setNewHolidayDate('')
+    supabase.from('calendar_events').select('*').eq('calendar_id', holidayCal.id).gte('start_date', `${holidayYear}-01-01`).lte('start_date', `${holidayYear}-12-31`).order('start_date').then(({ data }) => setHolidayEvents(data || []))
+  }
+
+  const deleteHoliday = async (id) => {
+    await supabase.from('calendar_events').delete().eq('id', id)
+    setHolidayEvents(prev => prev.filter(h => h.id !== id))
+  }
+
+  const seedHolidayYear = async (year) => {
+    if (!holidayCal) return
+    const existing = holidayEvents.map(h => h.start_date)
+    const toAdd = generateUSHolidays(year, holidayCal.id).filter(h => !existing.includes(h.start_date))
+    if (toAdd.length === 0) return
+    await supabase.from('calendar_events').insert(toAdd)
+    supabase.from('calendar_events').select('*').eq('calendar_id', holidayCal.id).gte('start_date', `${year}-01-01`).lte('start_date', `${year}-12-31`).order('start_date').then(({ data }) => setHolidayEvents(data || []))
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize:13, fontWeight:600, color:'#111', marginBottom:12 }}>Calendars</div>
+
+      {/* Calendar list */}
+      <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
+        {calendars.map(cal => (
+          <div key={cal.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8 }}>
+            <span style={{ width:12, height:12, borderRadius:'50%', background:cal.color, flexShrink:0 }} />
+            {editId === cal.id ? (
+              <>
+                <input value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => { if(e.key==='Enter') updateCalendar(cal.id); if(e.key==='Escape') setEditId(null) }}
+                  style={{ flex:1, fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', outline:'none', fontFamily:'inherit' }} />
+                <div style={{ display:'flex', gap:3 }}>
+                  {CAL_COLORS.map(c => <button key={c} onClick={() => setEditColor(c)} style={{ width:16, height:16, borderRadius:'50%', background:c, border:editColor===c?'2px solid #111':'1.5px solid transparent', cursor:'pointer', padding:0 }} />)}
+                </div>
+                <button onClick={() => updateCalendar(cal.id)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Save</button>
+                <button onClick={() => setEditId(null)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <span style={{ flex:1, fontSize:13, color:'#111' }}>{cal.name}</span>
+                {cal.type === 'default' && <span style={{ fontSize:10, color:'#aaa', background:'#f0f0f0', borderRadius:10, padding:'1px 6px' }}>default</span>}
+                {cal.type === 'holidays' && <span style={{ fontSize:10, color:'#aaa', background:'#f0f0f0', borderRadius:10, padding:'1px 6px' }}>system</span>}
+                <button onClick={() => toggleVisible(cal)} style={{ fontSize:11, color: cal.visible ? '#4f46e5' : '#bbb', background:'none', border:`0.5px solid ${cal.visible?'#c4b5fd':'#e0e0e0'}`, borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>{cal.visible ? 'Visible' : 'Hidden'}</button>
+                {cal.type === 'user' && (
+                  <>
+                    <button onClick={() => { setEditId(cal.id); setEditName(cal.name); setEditColor(cal.color) }} style={{ fontSize:11, color:'#888', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Edit</button>
+                    <ConfirmDeleteButton onConfirm={() => deleteCalendar(cal.id)} style={{ fontSize:11, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:6, padding:'3px 8px', cursor:'pointer' }} />
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add calendar */}
+      {adding ? (
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, marginBottom:16 }}>
+          <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if(e.key==='Enter') saveCalendar(); if(e.key==='Escape') setAdding(false) }}
+            placeholder="Calendar name..." style={{ flex:1, fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'4px 8px', outline:'none', fontFamily:'inherit' }} />
+          <div style={{ display:'flex', gap:3 }}>
+            {CAL_COLORS.map(c => <button key={c} onClick={() => setNewColor(c)} style={{ width:16, height:16, borderRadius:'50%', background:c, border:newColor===c?'2px solid #111':'1.5px solid transparent', cursor:'pointer', padding:0 }} />)}
+          </div>
+          <button onClick={saveCalendar} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'4px 10px', cursor:'pointer' }}>Add</button>
+          <button onClick={() => setAdding(false)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#888' }}>Cancel</button>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} style={{ fontSize:12, background:'none', border:'0.5px dashed #ccc', borderRadius:8, padding:'6px 14px', cursor:'pointer', color:'#888', marginBottom:24 }}>+ Add calendar</button>
+      )}
+
+      {/* US Holidays editor */}
+      {holidayCal && (
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+            <span style={{ fontSize:13, fontWeight:600, color:'#111' }}>US Holidays</span>
+            <button onClick={() => setHolidayYear(y => y - 1)} style={{ background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, width:24, height:24, cursor:'pointer', fontSize:13, color:'#555' }}>‹</button>
+            <span style={{ fontSize:13, color:'#555', minWidth:36, textAlign:'center' }}>{holidayYear}</span>
+            <button onClick={() => setHolidayYear(y => y + 1)} style={{ background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, width:24, height:24, cursor:'pointer', fontSize:13, color:'#555' }}>›</button>
+            <button onClick={() => seedHolidayYear(holidayYear)} style={{ fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Seed missing</button>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:4, marginBottom:10 }}>
+            {holidayEvents.map(h => (
+              <div key={h.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'#f7f7f5', borderRadius:8 }}>
+                {editingHoliday?.id === h.id ? (
+                  <>
+                    <input value={editingHoliday.title} onChange={e => setEditingHoliday(p => ({...p, title: e.target.value}))}
+                      style={{ flex:1, fontSize:12, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', outline:'none', fontFamily:'inherit' }} />
+                    <input type="date" value={editingHoliday.start_date} onChange={e => setEditingHoliday(p => ({...p, start_date: e.target.value}))}
+                      style={{ fontSize:12, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', outline:'none', fontFamily:'inherit' }} />
+                    <button onClick={() => saveHoliday(editingHoliday)} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Save</button>
+                    <button onClick={() => setEditingHoliday(null)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize:12, color:'#333', flex:1 }}>{h.title}</span>
+                    <span style={{ fontSize:11, color:'#aaa' }}>{h.start_date}</span>
+                    <button onClick={() => setEditingHoliday({ id: h.id, title: h.title, start_date: h.start_date })} style={{ fontSize:11, color:'#888', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'2px 6px', cursor:'pointer' }}>Edit</button>
+                    <ConfirmDeleteButton onConfirm={() => deleteHoliday(h.id)} style={{ fontSize:11, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:6, padding:'2px 6px', cursor:'pointer' }} />
+                  </>
+                )}
+              </div>
+            ))}
+            {holidayEvents.length === 0 && <div style={{ fontSize:12, color:'#ccc', padding:'4px 0' }}>No holidays for {holidayYear} — click "Seed missing" to generate.</div>}
+          </div>
+          {addingHoliday ? (
+            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'#f7f7f5', borderRadius:8 }}>
+              <input autoFocus value={newHolidayName} onChange={e => setNewHolidayName(e.target.value)} placeholder="Holiday name"
+                style={{ flex:1, fontSize:12, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', outline:'none', fontFamily:'inherit' }} />
+              <input type="date" value={newHolidayDate} onChange={e => setNewHolidayDate(e.target.value)}
+                style={{ fontSize:12, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 8px', outline:'none', fontFamily:'inherit' }} />
+              <button onClick={() => { if(newHolidayName.trim()&&newHolidayDate) saveHoliday({ title: newHolidayName.trim(), start_date: newHolidayDate }) }} style={{ fontSize:11, background:'#111', color:'white', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Add</button>
+              <button onClick={() => { setAddingHoliday(false); setNewHolidayName(''); setNewHolidayDate('') }} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'3px 8px', cursor:'pointer', color:'#888' }}>Cancel</button>
+            </div>
+          ) : (
+            <button onClick={() => setAddingHoliday(true)} style={{ fontSize:12, background:'none', border:'0.5px dashed #ccc', borderRadius:8, padding:'5px 12px', cursor:'pointer', color:'#888' }}>+ Add holiday</button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
