@@ -334,20 +334,22 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
       style={{ background:isOver?'#EEF4FF':'#f7f7f5', border:isOver?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: isOpen && todayTasks.length ? 10 : 0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <button onClick={onToggle} style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', padding:0 }}>
-            <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>Today</span>
-            <span style={{ fontSize:10, color:'#bbb' }}>{isOpen ? '▴' : '▾'}</span>
-          </button>
+          <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>Today</span>
           <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{todayTasks.length}</span>
         </div>
-        {isOpen && (
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <button onClick={onAdd} style={{ fontSize:11, color:'#aaa', background:'none', border:'0.5px dashed #ccc', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}
-              onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
-              onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>+ Add task</button>
-            <span style={{ fontSize:11, color:'#bbb' }}>or drag tasks here</span>
-          </div>
-        )}
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {isOpen && (
+            <>
+              <button onClick={onAdd} style={{ fontSize:11, color:'#aaa', background:'none', border:'0.5px dashed #ccc', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}
+                onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
+                onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>+ Add task</button>
+              <span style={{ fontSize:11, color:'#bbb' }}>or drag tasks here</span>
+            </>
+          )}
+          <button onClick={onToggle} style={{ background:'none', border:'none', cursor:'pointer', padding:'0 2px', color:'#bbb', fontSize:10, lineHeight:1 }}>
+            {isOpen ? '▴' : '▾'}
+          </button>
+        </div>
       </div>
       {isOpen && (todayTasks.length > 0 ? (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8 }}>
@@ -452,7 +454,14 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
           {/* Title */}
           <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)}
             placeholder={isProject ? 'Project title...' : 'Escalation title...'}
-            style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:isProject?'#111':RED, background:'transparent', padding:0 }} />
+            style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: entity.template_name ? 6 : 14, color:isProject?'#111':RED, background:'transparent', padding:0 }} />
+          {entity.template_name && (
+            <div style={{ marginBottom:14 }}>
+              <span style={{ fontSize:11, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:20, padding:'2px 10px' }}>
+                Template: {entity.template_name}
+              </span>
+            </div>
+          )}
 
           {/* Status + Priority */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
@@ -629,7 +638,6 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
         onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor='#bbb' }}
         onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:3 }}>
-          {project.type === 'bundle' && <span style={{ fontSize:9, fontWeight:500, background:'#ede9fe', color:'#6d28d9', padding:'2px 6px', borderRadius:20, border:'0.5px solid #c4b5fd', whiteSpace:'nowrap' }}>Bundle</span>}
           {project.domain && <span style={{ fontSize:10, fontWeight:500, background:'#E6F1FB', color:'#0C447C', padding:'2px 7px', borderRadius:20, border:'0.5px solid #85B7EB', whiteSpace:'nowrap' }}>{project.domain}</span>}
           {project.substatus && (() => { const ss = subStyle(project.substatus); return <span style={{ fontSize:9, fontWeight:500, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap' }}>{ss.label}</span> })()}
           {project.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
@@ -3737,11 +3745,10 @@ export default function App() {
   }
 
   const addProject = async (title, type = 'project', templateId = null) => {
-    const { data: proj, error } = await supabase.from('projects').insert({ title, type }).select().single()
+    const tpl = type === 'bundle' && templateId ? qualTemplates.find(t => t.id === templateId) : null
+    const { data: proj, error } = await supabase.from('projects').insert({ title, type, template_name: tpl?.name || null }).select().single()
     if (error || !proj) { console.error('[TASKr] addProject error', error); return }
-    if (type === 'bundle' && templateId) {
-      const tpl = qualTemplates.find(t => t.id === templateId)
-      if (tpl?.tasks?.length) {
+    if (tpl?.tasks?.length) {
         const inserts = tpl.tasks.map((t, i) => ({
           title: t.title, status: 'active', substatus: 'not_started',
           project_id: proj.id, notes: [], attachments: [], owners: ['Levi'],
@@ -3750,7 +3757,6 @@ export default function App() {
         }))
         await supabase.from('tasks').insert(inserts)
       }
-    }
     await loadData(true)
   }
 
@@ -4117,7 +4123,7 @@ export default function App() {
 
           {/* Projects section */}
           <div style={{ marginBottom:16, background:'#f7f7f5', borderRadius:12, padding:12 }}>
-            <button onClick={() => toggleSection('projects')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding: isSectionOpen('projects') ? '0 0 8px 0' : 0, color:'#888' }}>
+            <button onClick={() => toggleSection('projects')} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', background:'none', border:'none', cursor:'pointer', padding: isSectionOpen('projects') ? '0 0 8px 0' : 0, color:'#888' }}>
               <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
             </button>
@@ -4125,7 +4131,7 @@ export default function App() {
           </div>
 
           {/* ── Tasks kanban ── */}
-          <button onClick={() => toggleSection('kanban')} style={{ display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'0 0 10px 0', color:'#888' }}>
+          <button onClick={() => toggleSection('kanban')} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', background:'none', border:'none', cursor:'pointer', padding:'0 0 10px 0', color:'#888' }}>
             <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Tasks</span>
             <span style={{ fontSize:11 }}>{isSectionOpen('kanban') ? '▴' : '▾'}</span>
           </button>
