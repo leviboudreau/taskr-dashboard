@@ -921,7 +921,41 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen, onReorder, isOp
 }
 
 // ─── Rich Text Editor ─────────────────────────────────────────────────────────
-function RichTextEditor({ initialValue, onChange, isMobile = false }) {
+// ─── Mention Picker ───────────────────────────────────────────────────────────
+function MentionPicker({ members, onInsert }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+  useEffect(() => {
+    if (!open) return
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+  return (
+    <div ref={ref} style={{ position:'relative', display:'inline-flex' }}>
+      <button
+        onMouseDown={e => { e.preventDefault(); setOpen(o => !o) }}
+        title="Tag a team member"
+        style={{ fontSize:12, padding:'3px 8px', border:'0.5px solid #e0e0e0', borderRadius:6, background: open?'#ede9fe':'#f7f7f5', color: open?'#7c3aed':'#555', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}>
+        @ Tag
+      </button>
+      {open && (
+        <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:300, background:'white', border:'0.5px solid #e0e0e0', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', minWidth:140, padding:4 }}>
+          {members.map(name => (
+            <button key={name} onMouseDown={e => { e.preventDefault(); onInsert(name); setOpen(false) }}
+              style={{ width:'100%', textAlign:'left', padding:'6px 10px', background:'none', border:'none', cursor:'pointer', fontSize:12, color:'#333', borderRadius:6, fontFamily:'inherit' }}
+              onMouseEnter={e => e.currentTarget.style.background='#ede9fe'}
+              onMouseLeave={e => e.currentTarget.style.background='none'}>
+              @{name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RichTextEditor({ initialValue, onChange, isMobile = false, members = [] }) {
   const editorRef = useRef(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [tableHover, setTableHover] = useState([0, 0])
@@ -1403,6 +1437,17 @@ function RichTextEditor({ initialValue, onChange, isMobile = false }) {
         </select>
         <div style={sep} />
         {tbtn('✕ fmt', 'removeFormat', null, { color:'#aaa', fontSize:11 })}
+        {members.length > 0 && (
+          <>
+            <div style={sep} />
+            <MentionPicker members={members} onInsert={name => {
+              editorRef.current.focus()
+              document.execCommand('insertHTML', false,
+                `<span data-mention="${name}" style="background:#ede9fe;color:#7c3aed;border-radius:4px;padding:1px 6px;font-weight:500;white-space:nowrap">@${name}</span>&nbsp;`)
+              onChange(editorRef.current.innerHTML)
+            }} />
+          </>
+        )}
       </div>
       {/* Row 2: colors — scrollable on mobile */}
       <div style={{ ...rowStyle, borderTop:'0.5px solid #f0f0f0', gap:5, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling:'touch' }}>
@@ -2003,12 +2048,12 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
 }
 
 // ─── Notes Section (wrapper with sub-tabs) ────────────────────────────────────
-function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup }) {
-  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} />
+function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup, members = [] }) {
+  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} members={members} />
 }
 
 // ─── Notes Tab ───────────────────────────────────────────────────────────────
-function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup }) {
+function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup, members = [] }) {
   const [selectedId, setSelectedId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [dirty, setDirty] = useState(false)
@@ -2328,7 +2373,8 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
             })()}
           </div>
           <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
-            onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }} />
+            onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }}
+            members={members} />
         </>
       )}
     </div>
@@ -4169,7 +4215,8 @@ export default function App() {
     setIsEdit(false)
   }
 
-  const memberNames = teamData.length ? teamData.map(m => m.name) : MEMBERS
+  const memberNames = teamData.length ? teamData.filter(m => m.can_assign_tasks !== false).map(m => m.name) : MEMBERS
+  const followUpPeople = teamData.length ? teamData.map(m => m.name) : DEFAULT_FOLLOW_UP_PEOPLE
 
   // Search: title-first cascade. Show title matches if any; else subtask matches; else notes matches.
   const searchMatchIds = (() => {
@@ -4621,25 +4668,23 @@ export default function App() {
 
       {/* ── Notes ── */}
       {tab === 'notes' && (
-        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} />
+        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} members={memberNames} />
       )}
 
       {/* ── Follow Ups ── */}
       {tab === 'followups' && (
-        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={memberNames} tasks={tasks}
+        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={followUpPeople} tasks={tasks}
           onCreateTask={item => { setForm({ title:item.text, status:'active', owners:[item.person], substatus:'not_started' }); setIsEdit(false) }} />
       )}
 
       {/* ── Settings ── */}
       {tab === 'settings' && (
-        <div style={{ display:'flex', flexDirection:'column', gap:32 }}>
-          <QualTemplateSettings onUpdate={loadData} />
-          <div style={{ display:'flex', gap:32, alignItems:'flex-start' }}>
-            <div style={{ flex:1, minWidth:0 }}><DomainSettings domains={domains} onUpdate={loadData} /></div>
-            <div style={{ flex:1, minWidth:0 }}><TeamSettings teamData={teamData} onUpdate={loadData} /></div>
-          </div>
-          <CalendarSettings calendars={calendarList} onUpdate={loadData} />
-        </div>
+        <SettingsPage
+          domains={domains}
+          teamData={teamData}
+          calendarList={calendarList}
+          onUpdate={loadData}
+        />
       )}
 
       {/* Task form modal */}
@@ -4875,24 +4920,30 @@ function TeamSettings({ teamData, onUpdate }) {
   const [editId, setEditId] = useState(null)
   const [editVals, setEditVals] = useState({})
   const [adding, setAdding] = useState(false)
-  const [newVals, setNewVals] = useState({ name:'', full_name:'', role:'', location:'' })
+  const [newVals, setNewVals] = useState({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true })
 
-  const startEdit = m => { setEditId(m.id); setEditVals({ name:m.name, full_name:m.full_name||'', role:m.role||'', location:m.location||'' }) }
+  const startEdit = m => { setEditId(m.id); setEditVals({ name:m.name, full_name:m.full_name||'', role:m.role||'', location:m.location||'', can_assign_tasks: m.can_assign_tasks !== false }) }
 
   const saveEdit = async id => {
     if (!editVals.name.trim()) return
-    await supabase.from('team_members').update({ name:editVals.name.trim(), full_name:editVals.full_name.trim(), role:editVals.role.trim(), location:editVals.location.trim() }).eq('id', id)
+    await supabase.from('team_members').update({ name:editVals.name.trim(), full_name:editVals.full_name.trim(), role:editVals.role.trim(), location:editVals.location.trim(), can_assign_tasks: editVals.can_assign_tasks }).eq('id', id)
     setEditId(null); onUpdate()
   }
 
   const addMember = async () => {
     if (!newVals.name.trim()) return
     const maxOrder = teamData.length ? Math.max(...teamData.map(m => m.sort_order||0)) : 0
-    await supabase.from('team_members').insert({ name:newVals.name.trim(), full_name:newVals.full_name.trim(), role:newVals.role.trim(), location:newVals.location.trim(), sort_order:maxOrder+1 })
-    setNewVals({ name:'', full_name:'', role:'', location:'' }); setAdding(false); onUpdate()
+    await supabase.from('team_members').insert({ name:newVals.name.trim(), full_name:newVals.full_name.trim(), role:newVals.role.trim(), location:newVals.location.trim(), can_assign_tasks: newVals.can_assign_tasks, sort_order:maxOrder+1 })
+    setNewVals({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true }); setAdding(false); onUpdate()
   }
 
   const removeMember = async id => { await supabase.from('team_members').delete().eq('id', id); onUpdate() }
+
+  const toggleCanAssign = async (m) => {
+    const newVal = m.can_assign_tasks === false ? true : false
+    await supabase.from('team_members').update({ can_assign_tasks: newVal }).eq('id', m.id)
+    onUpdate()
+  }
 
   const inp = (val, setter, ph) => (
     <input value={val} onChange={e => setter(e.target.value)} placeholder={ph}
@@ -4910,21 +4961,32 @@ function TeamSettings({ teamData, onUpdate }) {
       <div style={{ maxWidth:620 }}>
         {teamData.map((m, i) => {
           const c = MEMBER_COLORS[m.name] || MEMBER_COLOR_OPTIONS[i % MEMBER_COLOR_OPTIONS.length]
+          const canAssign = m.can_assign_tasks !== false
           return (
             <div key={m.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'10px 12px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8 }}>
               <div style={{ width:28, height:28, borderRadius:'50%', background:c.bg, color:c.tc, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, flexShrink:0 }}>{m.name[0]}</div>
               {editId === m.id ? (
-                <div style={{ flex:1, display:'flex', gap:6, flexWrap:'wrap' }}>
+                <div style={{ flex:1, display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
                   {inp(editVals.name, v => setEditVals(p=>({...p,name:v})), 'Display name *')}
                   {inp(editVals.full_name, v => setEditVals(p=>({...p,full_name:v})), 'Full name')}
                   {inp(editVals.role, v => setEditVals(p=>({...p,role:v})), 'Role')}
                   {inp(editVals.location, v => setEditVals(p=>({...p,location:v})), 'Location')}
+                  <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#555', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+                    <input type="checkbox" checked={!!editVals.can_assign_tasks} onChange={e => setEditVals(p=>({...p,can_assign_tasks:e.target.checked}))} style={{ width:12, height:12 }} />
+                    Can be assigned tasks
+                  </label>
                 </div>
               ) : (
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:500, color:'#111' }}>{m.name}{m.full_name && m.full_name !== m.name ? <span style={{ fontWeight:400, color:'#555' }}> · {m.full_name}</span> : ''}</div>
                   {(m.role || m.location) && <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{[m.role, m.location].filter(Boolean).join(' · ')}</div>}
                 </div>
+              )}
+              {editId !== m.id && (
+                <button onClick={() => toggleCanAssign(m)} title="Toggle task assignment"
+                  style={{ fontSize:10, padding:'2px 7px', borderRadius:10, border:'none', cursor:'pointer', background: canAssign ? '#dcfce7' : '#f0f0f0', color: canAssign ? '#15803d' : '#888', fontWeight:500, flexShrink:0, lineHeight:1.4 }}>
+                  {canAssign ? 'Tasks ✓' : 'No tasks'}
+                </button>
               )}
               <div style={{ display:'flex', gap:4, flexShrink:0 }}>
                 {editId === m.id ? <>
@@ -4940,15 +5002,19 @@ function TeamSettings({ teamData, onUpdate }) {
         })}
         {adding ? (
           <div style={{ padding:'10px 12px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, marginBottom:8 }}>
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:8 }}>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:8, alignItems:'center' }}>
               {inp(newVals.name, v => setNewVals(p=>({...p,name:v})), 'Display name *')}
               {inp(newVals.full_name, v => setNewVals(p=>({...p,full_name:v})), 'Full name')}
               {inp(newVals.role, v => setNewVals(p=>({...p,role:v})), 'Role')}
               {inp(newVals.location, v => setNewVals(p=>({...p,location:v})), 'Location')}
+              <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#555', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+                <input type="checkbox" checked={!!newVals.can_assign_tasks} onChange={e => setNewVals(p=>({...p,can_assign_tasks:e.target.checked}))} style={{ width:12, height:12 }} />
+                Can be assigned tasks
+              </label>
             </div>
             <div style={{ display:'flex', gap:6 }}>
               <button onClick={addMember} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'5px 14px', cursor:'pointer' }}>Add</button>
-              <button onClick={() => { setAdding(false); setNewVals({ name:'', full_name:'', role:'', location:'' }) }} style={{ fontSize:12, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 14px', cursor:'pointer', color:'#888' }}>Cancel</button>
+              <button onClick={() => { setAdding(false); setNewVals({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true }) }} style={{ fontSize:12, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 14px', cursor:'pointer', color:'#888' }}>Cancel</button>
             </div>
           </div>
         ) : (
@@ -5138,6 +5204,43 @@ function CalendarSettings({ calendars, onUpdate }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Settings Page ─────────────────────────────────────────────────────────────
+function SettingsPage({ domains, teamData, calendarList, onUpdate }) {
+  const [section, setSection] = useState('team')
+
+  const NAV = [
+    { key: 'team',      label: 'Team',      icon: '👥' },
+    { key: 'domains',   label: 'Domains',   icon: '🏷' },
+    { key: 'calendars', label: 'Calendars', icon: '📅' },
+    { key: 'templates', label: 'Templates', icon: '📋' },
+  ]
+
+  return (
+    <div style={{ display:'flex', gap:0, minHeight:500, background:'white', border:'0.5px solid #e5e5e5', borderRadius:12, overflow:'hidden' }}>
+      {/* Left nav */}
+      <div style={{ width:180, borderRight:'0.5px solid #e5e5e5', padding:'16px 0', flexShrink:0, background:'#fafafa' }}>
+        <div style={{ fontSize:10, fontWeight:600, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.08em', padding:'0 16px', marginBottom:8 }}>Settings</div>
+        {NAV.map(item => (
+          <button key={item.key} onClick={() => setSection(item.key)}
+            style={{ width:'100%', textAlign:'left', padding:'9px 16px', background: section===item.key ? '#ede9fe' : 'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color: section===item.key ? '#7c3aed' : '#555', fontWeight: section===item.key ? 600 : 400, fontSize:13, borderLeft: section===item.key ? '3px solid #7c3aed' : '3px solid transparent', boxSizing:'border-box', fontFamily:'inherit' }}
+            onMouseEnter={e => { if (section!==item.key) e.currentTarget.style.background='#f0f0f0' }}
+            onMouseLeave={e => { if (section!==item.key) e.currentTarget.style.background='none' }}>
+            <span>{item.icon}</span>
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+      {/* Right panel */}
+      <div style={{ flex:1, padding:24, overflowY:'auto' }}>
+        {section === 'team'      && <TeamSettings teamData={teamData} onUpdate={onUpdate} />}
+        {section === 'domains'   && <DomainSettings domains={domains} onUpdate={onUpdate} />}
+        {section === 'calendars' && <CalendarSettings calendars={calendarList} onUpdate={onUpdate} />}
+        {section === 'templates' && <QualTemplateSettings onUpdate={onUpdate} />}
+      </div>
     </div>
   )
 }
