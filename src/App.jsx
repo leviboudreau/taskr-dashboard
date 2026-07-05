@@ -4216,7 +4216,7 @@ export default function App() {
   }
 
   const memberNames = teamData.length ? teamData.filter(m => m.can_assign_tasks !== false).map(m => m.name) : MEMBERS
-  const followUpPeople = teamData.length ? teamData.map(m => m.name) : DEFAULT_FOLLOW_UP_PEOPLE
+  const followUpPeople = teamData.length ? teamData.filter(m => m.can_follow_up !== false).map(m => m.name) : DEFAULT_FOLLOW_UP_PEOPLE
 
   // Search: title-first cascade. Show title matches if any; else subtask matches; else notes matches.
   const searchMatchIds = (() => {
@@ -4920,28 +4920,34 @@ function TeamSettings({ teamData, onUpdate }) {
   const [editId, setEditId] = useState(null)
   const [editVals, setEditVals] = useState({})
   const [adding, setAdding] = useState(false)
-  const [newVals, setNewVals] = useState({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true })
+  const [newVals, setNewVals] = useState({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true, can_follow_up:true })
 
-  const startEdit = m => { setEditId(m.id); setEditVals({ name:m.name, full_name:m.full_name||'', role:m.role||'', location:m.location||'', can_assign_tasks: m.can_assign_tasks !== false }) }
+  const startEdit = m => { setEditId(m.id); setEditVals({ name:m.name, full_name:m.full_name||'', role:m.role||'', location:m.location||'', can_assign_tasks: m.can_assign_tasks !== false, can_follow_up: m.can_follow_up !== false }) }
 
   const saveEdit = async id => {
     if (!editVals.name.trim()) return
-    await supabase.from('team_members').update({ name:editVals.name.trim(), full_name:editVals.full_name.trim(), role:editVals.role.trim(), location:editVals.location.trim(), can_assign_tasks: editVals.can_assign_tasks }).eq('id', id)
+    await supabase.from('team_members').update({ name:editVals.name.trim(), full_name:editVals.full_name.trim(), role:editVals.role.trim(), location:editVals.location.trim(), can_assign_tasks: editVals.can_assign_tasks, can_follow_up: editVals.can_follow_up }).eq('id', id)
     setEditId(null); onUpdate()
   }
 
   const addMember = async () => {
     if (!newVals.name.trim()) return
     const maxOrder = teamData.length ? Math.max(...teamData.map(m => m.sort_order||0)) : 0
-    await supabase.from('team_members').insert({ name:newVals.name.trim(), full_name:newVals.full_name.trim(), role:newVals.role.trim(), location:newVals.location.trim(), can_assign_tasks: newVals.can_assign_tasks, sort_order:maxOrder+1 })
-    setNewVals({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true }); setAdding(false); onUpdate()
+    await supabase.from('team_members').insert({ name:newVals.name.trim(), full_name:newVals.full_name.trim(), role:newVals.role.trim(), location:newVals.location.trim(), can_assign_tasks: newVals.can_assign_tasks, can_follow_up: newVals.can_follow_up, sort_order:maxOrder+1 })
+    setNewVals({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true, can_follow_up:true }); setAdding(false); onUpdate()
   }
 
   const removeMember = async id => { await supabase.from('team_members').delete().eq('id', id); onUpdate() }
 
   const toggleCanAssign = async (m) => {
-    const newVal = m.can_assign_tasks === false ? true : false
+    const newVal = m.can_assign_tasks !== false ? false : true
     await supabase.from('team_members').update({ can_assign_tasks: newVal }).eq('id', m.id)
+    onUpdate()
+  }
+
+  const toggleCanFollowUp = async (m) => {
+    const newVal = m.can_follow_up !== false ? false : true
+    await supabase.from('team_members').update({ can_follow_up: newVal }).eq('id', m.id)
     onUpdate()
   }
 
@@ -4962,6 +4968,7 @@ function TeamSettings({ teamData, onUpdate }) {
         {teamData.map((m, i) => {
           const c = MEMBER_COLORS[m.name] || MEMBER_COLOR_OPTIONS[i % MEMBER_COLOR_OPTIONS.length]
           const canAssign = m.can_assign_tasks !== false
+          const canFollowUp = m.can_follow_up !== false
           return (
             <div key={m.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'10px 12px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8 }}>
               <div style={{ width:28, height:28, borderRadius:'50%', background:c.bg, color:c.tc, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, flexShrink:0 }}>{m.name[0]}</div>
@@ -4973,7 +4980,11 @@ function TeamSettings({ teamData, onUpdate }) {
                   {inp(editVals.location, v => setEditVals(p=>({...p,location:v})), 'Location')}
                   <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#555', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
                     <input type="checkbox" checked={!!editVals.can_assign_tasks} onChange={e => setEditVals(p=>({...p,can_assign_tasks:e.target.checked}))} style={{ width:12, height:12 }} />
-                    Can be assigned tasks
+                    Tasks
+                  </label>
+                  <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#555', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+                    <input type="checkbox" checked={!!editVals.can_follow_up} onChange={e => setEditVals(p=>({...p,can_follow_up:e.target.checked}))} style={{ width:12, height:12 }} />
+                    Follow-ups
                   </label>
                 </div>
               ) : (
@@ -4983,10 +4994,16 @@ function TeamSettings({ teamData, onUpdate }) {
                 </div>
               )}
               {editId !== m.id && (
-                <button onClick={() => toggleCanAssign(m)} title="Toggle task assignment"
-                  style={{ fontSize:10, padding:'2px 7px', borderRadius:10, border:'none', cursor:'pointer', background: canAssign ? '#dcfce7' : '#f0f0f0', color: canAssign ? '#15803d' : '#888', fontWeight:500, flexShrink:0, lineHeight:1.4 }}>
-                  {canAssign ? 'Tasks ✓' : 'No tasks'}
-                </button>
+                <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+                  <button onClick={() => toggleCanAssign(m)} title="Toggle task assignment"
+                    style={{ fontSize:10, padding:'2px 7px', borderRadius:10, border:'none', cursor:'pointer', background: canAssign ? '#dcfce7' : '#f0f0f0', color: canAssign ? '#15803d' : '#888', fontWeight:500, lineHeight:1.4 }}>
+                    {canAssign ? 'Tasks ✓' : 'Tasks —'}
+                  </button>
+                  <button onClick={() => toggleCanFollowUp(m)} title="Toggle follow-ups"
+                    style={{ fontSize:10, padding:'2px 7px', borderRadius:10, border:'none', cursor:'pointer', background: canFollowUp ? '#dbeafe' : '#f0f0f0', color: canFollowUp ? '#1d4ed8' : '#888', fontWeight:500, lineHeight:1.4 }}>
+                    {canFollowUp ? 'Follow-up ✓' : 'Follow-up —'}
+                  </button>
+                </div>
               )}
               <div style={{ display:'flex', gap:4, flexShrink:0 }}>
                 {editId === m.id ? <>
@@ -5009,12 +5026,16 @@ function TeamSettings({ teamData, onUpdate }) {
               {inp(newVals.location, v => setNewVals(p=>({...p,location:v})), 'Location')}
               <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#555', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
                 <input type="checkbox" checked={!!newVals.can_assign_tasks} onChange={e => setNewVals(p=>({...p,can_assign_tasks:e.target.checked}))} style={{ width:12, height:12 }} />
-                Can be assigned tasks
+                Tasks
+              </label>
+              <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#555', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+                <input type="checkbox" checked={!!newVals.can_follow_up} onChange={e => setNewVals(p=>({...p,can_follow_up:e.target.checked}))} style={{ width:12, height:12 }} />
+                Follow-ups
               </label>
             </div>
             <div style={{ display:'flex', gap:6 }}>
               <button onClick={addMember} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'5px 14px', cursor:'pointer' }}>Add</button>
-              <button onClick={() => { setAdding(false); setNewVals({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true }) }} style={{ fontSize:12, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 14px', cursor:'pointer', color:'#888' }}>Cancel</button>
+              <button onClick={() => { setAdding(false); setNewVals({ name:'', full_name:'', role:'', location:'', can_assign_tasks:true, can_follow_up:true }) }} style={{ fontSize:12, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'5px 14px', cursor:'pointer', color:'#888' }}>Cancel</button>
             </div>
           </div>
         ) : (
