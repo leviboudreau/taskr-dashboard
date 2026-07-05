@@ -82,10 +82,10 @@ const CAL_TOTAL_H = (CAL_END_HOUR - CAL_START_HOUR) * CAL_HOUR_H
 // ─── Pure Helpers ─────────────────────────────────────────────────────────────
 const flagBg = c => ({ red: '#FCEBEB', orange: '#FFF0E8', yellow: '#FEFCE8', green: '#EAF3DE', blue: '#E6F1FB', violet: '#EEEDFE' }[c] || null)
 const flagBorder = c => ({ red: '#E24B4A', orange: '#F97316', yellow: '#EAB308', green: '#639922', blue: '#378ADD', violet: '#7F77DD' }[c] || null)
-const evTypeBg = ev => ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':(flagBg(ev.color)||'#E6F1FB')
-const evTypeBdr = ev => ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':(flagBorder(ev.color)||'#85B7EB')
-const evTypeTc = ev => ev.type==='travel'?'#633806':ev.type==='audit'?'#5B21B6':ev.type==='vacation'?'#065F46':'#0C447C'
-const evTypeIcon = ev => ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':''
+const evTypeBg = ev => ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':ev.type==='holiday'?'#f0fdf4':(flagBg(ev.color)||'#E6F1FB')
+const evTypeBdr = ev => ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':ev.type==='holiday'?'#86efac':(flagBorder(ev.color)||'#85B7EB')
+const evTypeTc = ev => ev.type==='travel'?'#633806':ev.type==='audit'?'#5B21B6':ev.type==='vacation'?'#065F46':ev.type==='holiday'?'#15803d':'#0C447C'
+const evTypeIcon = ev => ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':ev.type==='holiday'?'★ ':''
 const subStyle = k => SUBSTATUS.find(s => s.key === k) || SUBSTATUS[0]
 const fmtTs = ts => { const d = new Date(ts); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) }
 
@@ -352,7 +352,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
 
 // ─── Today Strip ──────────────────────────────────────────────────────────────
 function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop, onDragOver, onDragLeave, isOver, onRemove, onAdd, onComplete, entityMap = {}, isOpen = true, onToggle, onTaskDragOver, todayDropTarget }) {
-  const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete')
+  const todayTasks = tasks.filter(t => t.today && t.substatus !== 'complete').sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
   return (
     <div onDragOver={e => { e.preventDefault(); onDragOver('today') }} onDragLeave={onDragLeave} onDrop={e => { e.preventDefault(); onDrop(e.dataTransfer.getData('text/plain'), 'today') }}
       style={{ background:isOver?'#EEF4FF':'#f7f7f5', border:isOver?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12 }}>
@@ -727,7 +727,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [], noBor
   return (
     <div style={{ marginBottom: noBorder ? 0 : 12, paddingBottom: noBorder ? 0 : 12, borderBottom: noBorder ? 'none' : '0.5px solid #f0f0f0' }}
       onDragOver={e => e.preventDefault()}
-      onDrop={e => { e.preventDefault(); const id = parseInt(e.dataTransfer.getData('text/plain')); if (id && dropTarget && onReorder) onReorder(id, dropTarget.id, dropTarget.position); setDraggingId(null); setDropTarget(null) }}
+      onDrop={e => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); if (id && dropTarget && onReorder) onReorder(id, dropTarget.id, dropTarget.position); setDraggingId(null); setDropTarget(null) }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropTarget(null) }}>
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
         {projects.map(p => (
@@ -890,7 +890,7 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen, onReorder, isOp
       {/* Cards */}
       {isOpen && (
         <div onDragOver={e => e.preventDefault()}
-          onDrop={e => { e.preventDefault(); const id = parseInt(e.dataTransfer.getData('text/plain')); if (id && dropTarget && onReorder) onReorder(id, dropTarget.id, dropTarget.position); setDraggingId(null); setDropTarget(null) }}
+          onDrop={e => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); if (id && dropTarget && onReorder) onReorder(id, dropTarget.id, dropTarget.position); setDraggingId(null); setDropTarget(null) }}
           onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropTarget(null) }}>
           <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
             {escalations.map(e => (
@@ -2915,23 +2915,25 @@ function CalendarWeekView({ events, weekStart, onDayClick, onEventClick }) {
           <div style={{ width:50, flexShrink:0, borderRight:'0.5px solid #d8d8d8' }} />
           {weekDates.map((d, i) => {
             const ds = toISODate(d), isToday = ds === todayStr
+            const dayHoliday = allExpanded.find(ev => ev.type === 'holiday' && ev.start_date === ds)
             return (
               <div key={i} onClick={() => onDayClick(d)} style={{ flex:1, textAlign:'center', padding:'10px 0 8px', borderLeft:'0.5px solid #d8d8d8', cursor:'pointer', background:d.getDay()===0||d.getDay()===6?'#f5f4f0':'white' }}>
                 <div style={{ fontSize:10, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.04em' }}>{DOW_SHORT[d.getDay()]}</div>
                 <div style={{ width:30, height:30, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:400, marginTop:2, background:isToday?'#111':'transparent', color:isToday?'white':'#111' }}>
                   {d.getDate()}
                 </div>
+                {dayHoliday && <div style={{ fontSize:9, color:'#15803d', fontWeight:600, marginTop:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', padding:'0 4px' }}>★ {dayHoliday.title}</div>}
               </div>
             )
           })}
         </div>
 
         {/* All-day row */}
-        {allDayEvs.length > 0 && (
+        {allDayEvs.filter(ev => ev.type !== 'holiday').length > 0 && (
           <div style={{ display:'flex', borderBottom:'0.5px solid #d8d8d8', minHeight:32 }}>
             <div style={{ width:50, flexShrink:0, fontSize:9, color:'#ccc', padding:'8px 4px 0 6px', borderRight:'0.5px solid #d8d8d8' }}>all-day</div>
             <div style={{ flex:1, display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, padding:'4px 2px' }}>
-              {allDayEvs.map((ev, i) => {
+              {allDayEvs.filter(ev => ev.type !== 'holiday').map((ev, i) => {
                 const evS = fromISODate(ev.start_date)
                 const evE = ev.end_date ? fromISODate(ev.end_date) : evS
                 const dispS = evS < rangeStart ? rangeStart : evS
@@ -3084,7 +3086,9 @@ function CalendarMonthView({ events, year, month, onDayClick, onShowDay, onEvent
           const dayMulti = multiByDay[ds] || []
           const byLane = {}
           dayMulti.forEach(ev => { byLane[ev._lane] = ev })
-          const singles = singleByDay[ds] || []
+          const allSingles = singleByDay[ds] || []
+          const dayHolidays = allSingles.filter(ev => ev.type === 'holiday')
+          const singles = allSingles.filter(ev => ev.type !== 'holiday')
           const singlesSlots = Math.max(0, 3 - laneCount)
           const overflow = Math.max(0, singles.length - singlesSlots)
           return (
@@ -3092,12 +3096,20 @@ function CalendarMonthView({ events, year, month, onDayClick, onShowDay, onEvent
               style={{ minHeight:80, padding:'6px 4px 4px', borderTop:i>=7?'0.5px solid #d8d8d8':undefined, borderLeft:i%7!==0?'0.5px solid #d8d8d8':undefined, cursor:'pointer', background:d.getDay()===0||d.getDay()===6?'#f5f4f0':'transparent' }}
               onMouseEnter={e => e.currentTarget.style.background=d.getDay()===0||d.getDay()===6?'#eceae5':'#f5f5f3'}
               onMouseLeave={e => e.currentTarget.style.background=d.getDay()===0||d.getDay()===6?'#f5f4f0':'transparent'}>
-              <div onClick={e => { e.stopPropagation(); onShowDay(d) }}
-                style={{ width:22, height:22, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:12, marginBottom:3, background:isToday?'#111':'transparent', color:isToday?'white':inMonth?'#111':'#ccc', fontWeight:isToday?500:400, cursor:'pointer' }}
-                onMouseEnter={e => { if (!isToday) e.currentTarget.style.background='#e8e8e8' }}
-                onMouseLeave={e => { if (!isToday) e.currentTarget.style.background='transparent' }}>
-                {d.getDate()}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: dayHolidays.length ? 2 : 3 }}>
+                <div onClick={e => { e.stopPropagation(); onShowDay(d) }}
+                  style={{ width:22, height:22, borderRadius:'50%', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:12, background:isToday?'#111':'transparent', color:isToday?'white':inMonth?'#111':'#ccc', fontWeight:isToday?500:400, cursor:'pointer' }}
+                  onMouseEnter={e => { if (!isToday) e.currentTarget.style.background='#e8e8e8' }}
+                  onMouseLeave={e => { if (!isToday) e.currentTarget.style.background='transparent' }}>
+                  {d.getDate()}
+                </div>
               </div>
+              {dayHolidays.map((ev, hi) => (
+                <div key={`h-${hi}`} onClick={e => { e.stopPropagation(); onEventClick(ev) }}
+                  style={{ fontSize:10, fontWeight:600, color:'#15803d', padding:'1px 4px', marginBottom:2, borderRadius:3, background:'#dcfce7', border:'0.5px solid #86efac', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'pointer', width:'100%', boxSizing:'border-box' }}>
+                  ★ {ev.title}
+                </div>
+              ))}
               {Array.from({ length: laneCount }, (_, li) => {
                 const ev = byLane[li]
                 if (!ev) return <div key={`sp-${li}`} style={{ height:20, marginBottom:2 }} />
@@ -3359,6 +3371,7 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS, calendars = 
 
   const visibleCalIds = new Set(calendars.filter(c => c.visible).map(c => c.id))
   const defaultCalId = calendars.find(c => c.type === 'default')?.id
+  const allHidden = calendars.length > 0 && visibleCalIds.size === 0
   // Events with no calendar_id belong to the default calendar; treat as visible when default is visible
   const filteredEvents = calendars.length === 0 ? events : events.filter(ev =>
     ev.calendar_id ? visibleCalIds.has(ev.calendar_id) : (defaultCalId ? visibleCalIds.has(defaultCalId) : true)
@@ -3469,7 +3482,9 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS, calendars = 
         </div>
       </div>
 
-      {calView === 'week'
+      {allHidden
+        ? <div style={{ textAlign:'center', padding:'48px 0', color:'#aaa', fontSize:13 }}>All calendars are hidden — toggle one above to show events.</div>
+        : calView === 'week'
         ? <CalendarWeekView events={filteredEvents} weekStart={weekStart} onDayClick={handleDayClick} onEventClick={handleEventClick} />
         : calView === 'month'
         ? <CalendarMonthView events={filteredEvents} year={year} month={month} onDayClick={handleDayClick} onShowDay={handleShowDay} onEventClick={handleEventClick} />
@@ -3770,7 +3785,7 @@ export default function App() {
   const isSectionOpen = key => sectionsOpen[key] !== false
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
   const [mobileCol, setMobileCol] = useState('not_started')
-  const [viewMode, setViewMode] = useState('order') // 'order' | 'dynamic' | 'domain'
+  const [viewMode, setViewMode] = useState('dynamic') // 'order' | 'dynamic' | 'domain'
   const [filterOwner, setFilterOwner] = useState('all')
   const [showCompleted, setShowCompleted] = useState(true)
   const [taskSearch, setTaskSearch] = useState('')
@@ -3793,9 +3808,9 @@ export default function App() {
     const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
-      supabase.from('projects').select('*').order('created_at', { ascending: true }),
+      supabase.from('projects').select('*').order('sort_order', { ascending: true }),
       supabase.from('calendar_events').select('*').order('created_at', { ascending: true }),
-      supabase.from('escalations').select('*').order('created_at', { ascending: true }),
+      supabase.from('escalations').select('*').order('sort_order', { ascending: true }),
       supabase.from('notes').select('*').order('updated_at', { ascending: false }),
       supabase.from('follow_ups').select('*').order('created_at', { ascending: true }),
       supabase.from('team_members').select('*').order('sort_order', { ascending: true }),
@@ -3835,15 +3850,27 @@ export default function App() {
     const inserts = []
     if (!hasDefault) inserts.push({ name: 'My Events', color: '#4f46e5', visible: true, type: 'default', sort_order: 0 })
     if (!hasHolidays) inserts.push({ name: 'US Holidays', color: '#16a34a', visible: true, type: 'holidays', sort_order: 1 })
+    let holidayCalId = existing?.find(c => c.type === 'holidays')?.id
     if (inserts.length > 0) {
       const { data: created } = await supabase.from('calendars').insert(inserts).select()
-      const holidayCal = created?.find(c => c.type === 'holidays')
-      if (holidayCal) {
-        const thisYear = new Date().getFullYear()
-        const holidays = [...generateUSHolidays(thisYear, holidayCal.id), ...generateUSHolidays(thisYear + 1, holidayCal.id)]
-        await supabase.from('calendar_events').insert(holidays)
-      }
+      const newHolidayCal = created?.find(c => c.type === 'holidays')
+      if (newHolidayCal) holidayCalId = newHolidayCal.id
       await loadData(true)
+    }
+    if (holidayCalId) {
+      const thisYear = new Date().getFullYear()
+      const { data: existingHols } = await supabase.from('calendar_events')
+        .select('start_date').eq('calendar_id', holidayCalId)
+        .gte('start_date', `${thisYear}-01-01`).lte('start_date', `${thisYear + 1}-12-31`)
+      const existingDates = new Set((existingHols || []).map(h => h.start_date))
+      const toAdd = [
+        ...generateUSHolidays(thisYear, holidayCalId),
+        ...generateUSHolidays(thisYear + 1, holidayCalId),
+      ].filter(h => !existingDates.has(h.start_date))
+      if (toAdd.length > 0) {
+        await supabase.from('calendar_events').insert(toAdd)
+        await loadData(true)
+      }
     }
   }, [loadData])
 
@@ -4057,9 +4084,9 @@ export default function App() {
     const insertAt = position === 'before' ? targetIdx : targetIdx + 1
     const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
     colTasks.splice(Math.max(0, adjustedInsert), 0, ...moved)
-    const updates = colTasks.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, substatus: col, updated_at: new Date().toISOString() }).eq('id', t.id))
-    await Promise.all(updates)
-    await loadData()
+    const newOrders = Object.fromEntries(colTasks.map((t, i) => [t.id, i+1]))
+    setTasks(prev => prev.map(t => newOrders[t.id] !== undefined ? { ...t, sort_order: newOrders[t.id], substatus: col } : t))
+    await Promise.all(colTasks.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, substatus: col, updated_at: new Date().toISOString() }).eq('id', t.id)))
   }
 
   const reorderTodayTask = async (dragId, targetId, position) => {
@@ -4071,8 +4098,9 @@ export default function App() {
     const insertAt = position === 'before' ? targetIdx : targetIdx + 1
     const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
     list.splice(Math.max(0, adjustedInsert), 0, ...moved)
+    const newOrders = Object.fromEntries(list.map((t, i) => [t.id, i+1]))
+    setTasks(prev => prev.map(t => newOrders[t.id] !== undefined ? { ...t, sort_order: newOrders[t.id] } : t))
     await Promise.all(list.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, updated_at: new Date().toISOString() }).eq('id', t.id)))
-    await loadData()
   }
 
   const reorderProject = async (dragId, targetId, position) => {
@@ -4084,8 +4112,8 @@ export default function App() {
     const insertAt = position === 'before' ? targetIdx : targetIdx + 1
     const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
     list.splice(Math.max(0, adjustedInsert), 0, ...moved)
+    setProjects(list.map((p, i) => ({ ...p, sort_order: i+1 })))
     await Promise.all(list.map((p, i) => supabase.from('projects').update({ sort_order: i+1 }).eq('id', p.id)))
-    await loadData()
   }
 
   const reorderEscalation = async (dragId, targetId, position) => {
@@ -4097,20 +4125,21 @@ export default function App() {
     const insertAt = position === 'before' ? targetIdx : targetIdx + 1
     const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
     list.splice(Math.max(0, adjustedInsert), 0, ...moved)
+    setEscalations(list.map((e, i) => ({ ...e, sort_order: i+1 })))
     await Promise.all(list.map((e, i) => supabase.from('escalations').update({ sort_order: i+1 }).eq('id', e.id)))
-    await loadData()
   }
 
   const drop = async (id, col) => {
     if (!id) return
     if (col === 'today') {
       if (todayDropTarget?.taskId) {
-        await reorderTodayTask(parseInt(id), todayDropTarget.taskId, todayDropTarget.position)
+        await reorderTodayTask(id, todayDropTarget.taskId, todayDropTarget.position)
       } else {
         await toggleToday(id, true)
       }
       setTodayDropTarget(null)
     } else {
+      if (viewMode === 'order') return
       if (dropTarget && dropTarget.taskId) {
         await reorderTask(id, dropTarget.taskId, dropTarget.position, col)
       } else {
@@ -4165,7 +4194,7 @@ export default function App() {
    .filter(t => !searchMatchIds || searchMatchIds.has(t.id))
 
   const taskSubstatus = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
-  const getColTasks = colKey => filteredTasks.filter(t => taskSubstatus(t) === colKey)
+  const getColTasks = colKey => filteredTasks.filter(t => taskSubstatus(t) === colKey).sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
   const entityMap = Object.fromEntries([
     ...projects.map(p => [p.id, { name: p.title, type: 'project' }]),
     ...escalations.map(e => [e.id, { name: e.title, type: 'escalation' }]),
@@ -4317,7 +4346,7 @@ export default function App() {
               <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null); setTodayDropTarget(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} isOpen={isSectionOpen('today')} onToggle={() => toggleSection('today')} onTaskDragOver={(taskId, pos) => setTodayDropTarget({ taskId, position: pos })} todayDropTarget={todayDropTarget} />
             </div>
             <div style={{ flex:'0 0 432px', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:12, padding:12, alignSelf: isSectionOpen('escalations') ? 'stretch' : 'flex-start' }}>
-              <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} onReorder={reorderEscalation} isOpen={isSectionOpen('escalations')} onToggle={() => toggleSection('escalations')} />
+              <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} onReorder={viewMode !== 'order' ? reorderEscalation : undefined} isOpen={isSectionOpen('escalations')} onToggle={() => toggleSection('escalations')} />
             </div>
           </div>
 
@@ -4327,7 +4356,7 @@ export default function App() {
               <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
             </button>
-            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} noBorder onReorder={reorderProject} />}
+            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} noBorder onReorder={viewMode !== 'order' ? reorderProject : undefined} />}
           </div>
 
           {/* ── Tasks kanban ── */}
@@ -4529,7 +4558,7 @@ export default function App() {
                             onToggleSubtask={toggleSubtask}
                             onComplete={quickComplete}
                             dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null}
-                            onDragOver={(taskId, position) => setDropTarget({ col:col.key, taskId, position })}
+                            onDragOver={viewMode==='dynamic' ? (taskId, position) => setDropTarget({ col:col.key, taskId, position }) : null}
                             entityMap={entityMap}
                           />
                         ))}
@@ -4990,7 +5019,8 @@ function CalendarSettings({ calendars, onUpdate }) {
       await supabase.from('calendar_events').insert({ ...fields, type: 'holiday', all_day: true, calendar_id: holidayCal.id, owners: [], color: '', emoji: '' })
     }
     setEditingHoliday(null); setAddingHoliday(false); setNewHolidayName(''); setNewHolidayDate('')
-    supabase.from('calendar_events').select('*').eq('calendar_id', holidayCal.id).gte('start_date', `${holidayYear}-01-01`).lte('start_date', `${holidayYear}-12-31`).order('start_date').then(({ data }) => setHolidayEvents(data || []))
+    const { data } = await supabase.from('calendar_events').select('*').eq('calendar_id', holidayCal.id).gte('start_date', `${holidayYear}-01-01`).lte('start_date', `${holidayYear}-12-31`).order('start_date')
+    setHolidayEvents(data || [])
   }
 
   const deleteHoliday = async (id) => {
@@ -5004,7 +5034,8 @@ function CalendarSettings({ calendars, onUpdate }) {
     const toAdd = generateUSHolidays(year, holidayCal.id).filter(h => !existing.includes(h.start_date))
     if (toAdd.length === 0) return
     await supabase.from('calendar_events').insert(toAdd)
-    supabase.from('calendar_events').select('*').eq('calendar_id', holidayCal.id).gte('start_date', `${year}-01-01`).lte('start_date', `${year}-12-31`).order('start_date').then(({ data }) => setHolidayEvents(data || []))
+    const { data } = await supabase.from('calendar_events').select('*').eq('calendar_id', holidayCal.id).gte('start_date', `${year}-01-01`).lte('start_date', `${year}-12-31`).order('start_date')
+    setHolidayEvents(data || [])
   }
 
   return (
