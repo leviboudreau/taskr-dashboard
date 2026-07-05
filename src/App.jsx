@@ -88,6 +88,28 @@ const evTypeTc = ev => ev.type==='travel'?'#633806':ev.type==='audit'?'#5B21B6':
 const evTypeIcon = ev => ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':ev.type==='holiday'?'★ ':''
 const subStyle = k => SUBSTATUS.find(s => s.key === k) || SUBSTATUS[0]
 const fmtTs = ts => { const d = new Date(ts); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) }
+const fmtDateTime = iso => { if (!iso) return '—'; const d = new Date(iso); return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) + ' · ' + d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) }
+
+// ─── Shared modal / form styling (matches the app's menu + pill language) ──────
+const MODAL_OVERLAY = { position:'fixed', inset:0, background:'rgba(40,30,60,0.32)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingBottom:'env(safe-area-inset-bottom)', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)' }
+const MODAL_CARD = { background:'white', borderRadius:16, border:'0.5px solid #e5e5e5', boxShadow:'0 12px 40px rgba(80,60,120,0.18)', padding:'1.1rem 1.25rem', width:'100%', maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }
+const FIELD_LABEL = { fontSize:10, fontWeight:600, color:'#a99fc0', display:'block', marginBottom:5, textTransform:'uppercase', letterSpacing:'0.06em' }
+const FIELD_SELECT = { width:'100%', fontSize:13, padding:'7px 9px', border:'0.5px solid #e0e0e0', borderRadius:8, background:'white', outline:'none', fontFamily:'inherit', color:'#333', cursor:'pointer' }
+const FIELD_INPUT = { width:'100%', boxSizing:'border-box', fontSize:13, padding:'7px 9px', border:'0.5px solid #e0e0e0', borderRadius:8, background:'white', outline:'none', fontFamily:'inherit', color:'#333' }
+const BTN_PRIMARY = { fontSize:13, background:'linear-gradient(135deg,#4f46e5,#7c3aed)', color:'white', border:'none', borderRadius:8, cursor:'pointer', fontWeight:500, fontFamily:'inherit' }
+const BTN_GHOST = { fontSize:13, background:'white', border:'0.5px solid #c4b5fd', borderRadius:8, cursor:'pointer', color:'#7c3aed', fontFamily:'inherit' }
+
+// Created / Modified timestamp line shown at the top of task & project/escalation popups
+function TimestampMeta({ created, updated }) {
+  if (!created && !updated) return null
+  const showEdited = updated && updated !== created
+  return (
+    <div style={{ display:'flex', gap:10, flexWrap:'wrap', fontSize:10, color:'#bbb', marginBottom:14 }}>
+      {created && <span>Created {fmtDateTime(created)}</span>}
+      {showEdited && <span style={{ color:'#c4b5fd' }}>· Modified {fmtDateTime(updated)}</span>}
+    </div>
+  )
+}
 
 // ─── Calendar Helpers ─────────────────────────────────────────────────────────
 const toISODate = d => { const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}` }
@@ -474,13 +496,14 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
   return (
     <>
-      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
-        <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:520, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
+      <div style={{ ...MODAL_OVERLAY, zIndex:50 }}>
+        <div style={{ ...MODAL_CARD, maxWidth:520 }}>
 
           {/* Title */}
           <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)}
             placeholder={isProject ? 'Project title...' : 'Escalation title...'}
-            style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: entity.template_name ? 6 : 14, color:isProject?'#111':RED, background:'transparent', padding:0 }} />
+            style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: 6, color:isProject?'#111':RED, background:'transparent', padding:0 }} />
+          <TimestampMeta created={entity.created_at} updated={entity.updated_at} />
           {entity.template_name && (
             <div style={{ marginBottom:14 }}>
               <span style={{ fontSize:11, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:20, padding:'2px 10px' }}>
@@ -491,24 +514,24 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
           {/* Status + Priority */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Status</label>
-              <select value={f.status} onChange={e => set('status', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+            <div><label style={FIELD_LABEL}>Status</label>
+              <select value={f.status} onChange={e => set('status', e.target.value)} style={FIELD_SELECT}>
                 {['active','waiting','someday','done'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
               </select></div>
-            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Priority</label>
-              <select value={f.priority} onChange={e => set('priority', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+            <div><label style={FIELD_LABEL}>Priority</label>
+              <select value={f.priority} onChange={e => set('priority', e.target.value)} style={FIELD_SELECT}>
                 <option value="">Normal</option><option value="high">High</option>
               </select></div>
           </div>
 
           {/* Sub-status + Domain */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Sub-status</label>
-              <select value={f.substatus||''} onChange={e => set('substatus', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+            <div><label style={FIELD_LABEL}>Sub-status</label>
+              <select value={f.substatus||''} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
                 {SUBSTATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select></div>
-            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Domain</label>
-              <select value={f.domain} onChange={e => set('domain', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+            <div><label style={FIELD_LABEL}>Domain</label>
+              <select value={f.domain} onChange={e => set('domain', e.target.value)} style={FIELD_SELECT}>
                 <option value="">— none —</option>
                 {domains.map(d => <option key={d} value={d}>{d}</option>)}
               </select></div>
@@ -516,9 +539,9 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
           {/* Due date + Flag color */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Due date</label>
+            <div><label style={FIELD_LABEL}>Due date</label>
               <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
-            <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Flag color</label>
+            <div><label style={FIELD_LABEL}>Flag color</label>
               <div style={{ display:'flex', gap:6, alignItems:'center' }}>
                 {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
               </div></div>
@@ -526,7 +549,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
           {/* Assigned to */}
           <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
+            <label style={FIELD_LABEL}>Assigned to</label>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
               {members.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
             </div>
@@ -534,7 +557,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
           {/* Notes */}
           <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
-            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Notes</label>
+            <label style={FIELD_LABEL}>Notes</label>
             {f.notes.map(n => (
               <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
                 <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
@@ -555,7 +578,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
             ))}
             <div style={{ display:'flex', gap:8, marginTop:4 }}>
               <input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addNote()}} placeholder="Add a note..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
-              <button onClick={addNote} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+              <button onClick={addNote} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
             </div>
           </div>
 
@@ -631,7 +654,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
                 Cancel
               </button>
               <button onClick={() => { onSaveEntity(f, entity.id); onClose() }}
-                style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'5px 14px', cursor:'pointer', fontFamily:'inherit' }}>
+                style={{ ...BTN_PRIMARY, fontSize:12, padding:'6px 16px' }}>
                 Save
               </button>
             </div>
@@ -2574,7 +2597,7 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
   }
   return (
     <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:4 }}>
-      <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Attachments</label>
+      <label style={FIELD_LABEL}>Attachments</label>
       {attachments.map(att => (
         <div key={att.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0' }}>
           <span style={{ fontSize:11, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{att.name}</span>
@@ -2630,26 +2653,26 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
   const detailsSection = (
     <>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-        <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Priority</label>
-          <select value={f.priority} onChange={e => set('priority', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+        <div><label style={FIELD_LABEL}>Priority</label>
+          <select value={f.priority} onChange={e => set('priority', e.target.value)} style={FIELD_SELECT}>
             <option value="">Normal</option><option value="high">High</option>
           </select></div>
-        <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Domain</label>
-          <select value={f.domain} onChange={e => set('domain', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+        <div><label style={FIELD_LABEL}>Domain</label>
+          <select value={f.domain} onChange={e => set('domain', e.target.value)} style={FIELD_SELECT}>
             <option value="">— none —</option>
             {(domains||[]).map(d => <option key={d} value={d}>{d}</option>)}
           </select></div>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-        <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Due date</label>
+        <div><label style={FIELD_LABEL}>Due date</label>
           <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
-        <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Flag color</label>
+        <div><label style={FIELD_LABEL}>Flag color</label>
           <div style={{ display:'flex', gap:6, alignItems:'center' }}>
             {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
           </div></div>
       </div>
       <div style={{ marginBottom:12 }}>
-        <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Assigned to</label>
+        <label style={FIELD_LABEL}>Assigned to</label>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
           {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
         </div>
@@ -2668,16 +2691,17 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
 
   const expandBtn = (
     <button onClick={() => setShowDetails(v => !v)}
-      style={{ fontSize:12, color:'#888', background:'none', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'5px 12px', cursor:'pointer', marginBottom:14, display:'block' }}>
+      style={{ fontSize:12, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:8, padding:'6px 12px', cursor:'pointer', marginBottom:14, display:'block', fontWeight:500 }}>
       {showDetails ? '▴ Hide details' : '▾ Add details'}
     </button>
   )
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex }}>
-      <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
+    <div style={{ ...MODAL_OVERLAY, zIndex }}>
+      <div style={{ ...MODAL_CARD, maxWidth:480 }}>
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Task title..."
-          style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:14, color:'#111', background:'transparent', padding:0 }} />
+          style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: isEdit ? 6 : 14, color:'#111', background:'transparent', padding:0 }} />
+        {isEdit && <TimestampMeta created={task?.created_at} updated={task?.updated_at} />}
 
         {!isEdit ? (
           /* ── New task: title + optional details ── */
@@ -2686,14 +2710,14 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
             {showDetails && (
               <>
                 <div style={{ marginBottom:12 }}>
-                  <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Status</label>
-                  <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+                  <label style={FIELD_LABEL}>Status</label>
+                  <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
                     {SUBSTATUS.filter(s => s.key && s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
                 {detailsSection}
                 <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
-                  <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Subtasks</label>
+                  <label style={FIELD_LABEL}>Subtasks</label>
                   {f.subtasks.map(st => (
                     <SubtaskRow key={st.id} st={st}
                       onChange={updated => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?updated:s) }))}
@@ -2701,15 +2725,15 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
                   ))}
                   <div style={{ display:'flex', gap:8, marginTop:4 }}>
                     <input type="text" value={newSub} onChange={e => setNewSub(e.target.value)} onKeyDown={e => { if (e.key==='Enter') addSub() }} placeholder="Add a subtask..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
-                    <button onClick={addSub} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+                    <button onClick={addSub} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
                   </div>
                 </div>
                 <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4, marginTop:4 }}>
-                  <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Notes</label>
+                  <label style={FIELD_LABEL}>Notes</label>
                   {f.notes.map(n => <NoteItem key={n.id} note={n} onDelete={removeNote} onSave={editNote} />)}
                   <div style={{ display:'flex', gap:8, marginTop:4 }}>
                     <textarea value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key==='Enter'&&(e.metaKey||e.ctrlKey)) addNote() }} placeholder="Add a note... (⌘+Enter to save)" style={{ flex:1, fontSize:12, height:56, resize:'none', fontFamily:'inherit', padding:'7px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
-                    <button onClick={addNote} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+                    <button onClick={addNote} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
                   </div>
                 </div>
               </>
@@ -2719,13 +2743,13 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
           /* ── Edit task: key fields visible, rest collapsible ── */
           <>
             <div style={{ marginBottom:12 }}>
-              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Status</label>
-              <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={{ width:'100%', fontSize:13 }}>
+              <label style={FIELD_LABEL}>Status</label>
+              <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
                 {SUBSTATUS.filter(s => s.key && s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
             </div>
             <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
-              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Subtasks</label>
+              <label style={FIELD_LABEL}>Subtasks</label>
               {f.subtasks.map(st => (
                 <SubtaskRow key={st.id} st={st}
                   onChange={updated => setF(p => ({ ...p, subtasks:p.subtasks.map(s => s.id===st.id?updated:s) }))}
@@ -2733,19 +2757,19 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
               ))}
               <div style={{ display:'flex', gap:8, marginTop:4 }}>
                 <input type="text" value={newSub} onChange={e => setNewSub(e.target.value)} onKeyDown={e => { if (e.key==='Enter') addSub() }} placeholder="Add a subtask..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
-                <button onClick={addSub} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+                <button onClick={addSub} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
               </div>
             </div>
             <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:12, marginTop:4 }}>
-              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:8 }}>Notes</label>
+              <label style={FIELD_LABEL}>Notes</label>
               {f.notes.map(n => <NoteItem key={n.id} note={n} onDelete={removeNote} onSave={editNote} />)}
               <div style={{ display:'flex', gap:8, marginTop:4 }}>
                 <textarea value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key==='Enter'&&(e.metaKey||e.ctrlKey)) addNote() }} placeholder="Add a note... (⌘+Enter to save)" style={{ flex:1, fontSize:12, height:56, resize:'none', fontFamily:'inherit', padding:'7px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
-                <button onClick={addNote} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+                <button onClick={addNote} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
               </div>
             </div>
             <button onClick={() => setShowDetails(v => !v)}
-              style={{ fontSize:12, color:'#888', background:'none', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'5px 12px', cursor:'pointer', marginBottom:14, display:'block' }}>
+              style={{ fontSize:12, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:8, padding:'6px 12px', cursor:'pointer', marginBottom:14, display:'block', fontWeight:500 }}>
               {showDetails ? '▴ Hide details' : '▾ Show details'}
             </button>
             {showDetails && detailsSection}
@@ -2756,7 +2780,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
           <div>{isEdit && <ConfirmDeleteButton onConfirm={() => onDelete(task.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</ConfirmDeleteButton>}</div>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={onClose} style={{ fontSize:13, background:'none', border:'0.5px solid #ccc', borderRadius:8, padding:'7px 14px', cursor:'pointer', color:'#444' }}>Cancel</button>
-            <button onClick={() => { if (f.title.trim()) onSave(f) }} disabled={!f.title.trim()} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:f.title.trim()?'pointer':'not-allowed', opacity:f.title.trim()?1:0.4 }}>Save</button>
+            <button onClick={() => { if (f.title.trim()) onSave(f) }} disabled={!f.title.trim()} style={{ ...BTN_PRIMARY, padding:'7px 18px', cursor:f.title.trim()?'pointer':'not-allowed', opacity:f.title.trim()?1:0.4 }}>Save</button>
           </div>
         </div>
       </div>
@@ -2783,8 +2807,8 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
   const rd = f.recurrence_data || {}
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:50 }}>
-      <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:500, maxHeight:'90dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
+    <div style={{ ...MODAL_OVERLAY, zIndex:50 }}>
+      <div style={{ ...MODAL_CARD, maxWidth:500 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
           <div style={{ position:'relative', flexShrink:0 }}>
             <button onClick={() => setEmojiOpen(o => !o)}
@@ -2815,7 +2839,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
         {/* Calendar */}
         {calendars.filter(c => c.type !== 'holidays').length > 0 && (
           <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Calendar</label>
+            <label style={FIELD_LABEL}>Calendar</label>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
               {calendars.filter(c => c.type !== 'holidays').map(c => (
                 <button key={c.id} onClick={() => set('calendar_id', c.id)}
@@ -2839,9 +2863,9 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
 
         {/* Dates */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Start date</label>
+          <div><label style={FIELD_LABEL}>Start date</label>
             <DatePickerISO value={f.start_date} onChange={v => { set('start_date', v); if (f.end_date && f.end_date < v) set('end_date', '') }} /></div>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>{['travel','audit','vacation'].includes(f.type)?'End date':'End date (optional)'}</label>
+          <div><label style={FIELD_LABEL}>{['travel','audit','vacation'].includes(f.type)?'End date':'End date (optional)'}</label>
             <DatePickerISO value={f.end_date} onChange={v => set('end_date', v)} initialMonth={f.start_date||undefined} minDate={f.start_date||undefined} /></div>
         </div>
 
@@ -2853,9 +2877,9 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
             </label>
             {!f.all_day && (
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Start time</label>
+                <div><label style={FIELD_LABEL}>Start time</label>
                   <input type="time" value={f.start_time} onChange={e => set('start_time', e.target.value)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} /></div>
-                <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>End time</label>
+                <div><label style={FIELD_LABEL}>End time</label>
                   <input type="time" value={f.end_time} onChange={e => set('end_time', e.target.value)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} /></div>
               </div>
             )}
@@ -2864,7 +2888,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
 
         {/* Recurrence */}
         <div style={{ marginBottom:14 }}>
-          <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Repeats</label>
+          <label style={FIELD_LABEL}>Repeats</label>
           <select value={f.recurrence_type} onChange={e => { set('recurrence_type', e.target.value); setF(p => ({ ...p, recurrence_data:{} })) }} style={{ width:'100%', fontSize:13, marginBottom:8, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', fontFamily:'inherit', boxSizing:'border-box' }}>
             {RECURRENCE_TYPES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
           </select>
@@ -2878,7 +2902,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
                 })}
               </div>
               {f.recurrence_type === 'biweekly' && (
-                <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Starting from (anchor week)</label>
+                <div><label style={FIELD_LABEL}>Starting from (anchor week)</label>
                   <DatePickerISO value={f.recurrence_start||f.start_date} onChange={v => set('recurrence_start', v)} /></div>
               )}
             </div>
@@ -2886,9 +2910,9 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
 
           {f.recurrence_type === 'monthly_date' && (
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-              <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Day of month</label>
+              <div><label style={FIELD_LABEL}>Day of month</label>
                 <input type="number" min={1} max={31} value={rd.date||1} onChange={e => setRd('date', parseInt(e.target.value)||1)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} /></div>
-              <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>If weekend</label>
+              <div><label style={FIELD_LABEL}>If weekend</label>
                 <select value={rd.business_day_adjustment||''} onChange={e => setRd('business_day_adjustment', e.target.value||null)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', fontFamily:'inherit', boxSizing:'border-box' }}>
                   <option value="">No adjustment</option>
                   <option value="forward">Move to Monday</option>
@@ -2900,11 +2924,11 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
 
           {f.recurrence_type === 'monthly_dow' && (
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-              <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Which week</label>
+              <div><label style={FIELD_LABEL}>Which week</label>
                 <select value={rd.week||1} onChange={e => setRd('week', parseInt(e.target.value))} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', fontFamily:'inherit', boxSizing:'border-box' }}>
                   <option value={1}>1st</option><option value={2}>2nd</option><option value={3}>3rd</option><option value={4}>4th</option><option value={-1}>Last</option>
                 </select></div>
-              <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Day of week</label>
+              <div><label style={FIELD_LABEL}>Day of week</label>
                 <select value={rd.dow||'Mon'} onChange={e => setRd('dow', e.target.value)} style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', fontFamily:'inherit', boxSizing:'border-box' }}>
                   {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <option key={d} value={d}>{d}</option>)}
                 </select></div>
@@ -2913,7 +2937,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
 
           {f.recurrence_type === 'monthly_biz_day' && (
             <div style={{ maxWidth:160 }}>
-              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Business day of month</label>
+              <label style={FIELD_LABEL}>Business day of month</label>
               <input type="number" min={1} max={23} value={rd.biz_day||1} onChange={e => setRd('biz_day', Math.min(23, Math.max(1, parseInt(e.target.value)||1)))}
                 style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} />
             </div>
@@ -2921,7 +2945,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
 
           {f.recurrence_type && (
             <div style={{ marginTop:8 }}>
-              <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Recurrence ends (optional)</label>
+              <label style={FIELD_LABEL}>Recurrence ends (optional)</label>
               <DatePickerISO value={f.recurrence_end||''} onChange={v => set('recurrence_end', v)} />
             </div>
           )}
@@ -2929,7 +2953,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
 
         {/* Owners */}
         <div style={{ marginBottom:12 }}>
-          <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Attendees</label>
+          <label style={FIELD_LABEL}>Attendees</label>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
             {members.map(m => { const sel = (f.owners||[]).includes(m); const c = MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
           </div>
@@ -2937,16 +2961,16 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
 
         {/* Color + description */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:6 }}>Color</label>
+          <div><label style={FIELD_LABEL}>Color</label>
             <div style={{ display:'flex', gap:6, alignItems:'center' }}>
               {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
             </div></div>
-          <div><label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Location</label>
+          <div><label style={FIELD_LABEL}>Location</label>
             <input type="text" value={f.location||''} onChange={e => set('location', e.target.value)} placeholder="optional" style={{ width:'100%', fontSize:13, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'5px 8px', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} /></div>
         </div>
 
         <div style={{ marginBottom:14 }}>
-          <label style={{ fontSize:12, color:'#888', display:'block', marginBottom:4 }}>Notes</label>
+          <label style={FIELD_LABEL}>Notes</label>
           <textarea value={f.description||''} onChange={e => set('description', e.target.value)} placeholder="Add notes..." rows={3} style={{ width:'100%', fontSize:12, resize:'vertical', fontFamily:'inherit', padding:'7px 9px', border:'0.5px solid #e0e0e0', borderRadius:6 }} />
         </div>
 
@@ -2954,7 +2978,7 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
           <div>{isEdit && <ConfirmDeleteButton onConfirm={() => onDelete(event.id)} style={{ fontSize:13, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>Delete</ConfirmDeleteButton>}</div>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={onClose} style={{ fontSize:13, background:'none', border:'0.5px solid #ccc', borderRadius:8, padding:'7px 14px', cursor:'pointer', color:'#444' }}>Cancel</button>
-            <button onClick={() => { if (f.title.trim()) onSave(f) }} disabled={!f.title.trim()} style={{ fontSize:13, background:'#111', color:'white', border:'none', borderRadius:8, padding:'7px 16px', cursor:f.title.trim()?'pointer':'not-allowed', opacity:f.title.trim()?1:0.4 }}>Save</button>
+            <button onClick={() => { if (f.title.trim()) onSave(f) }} disabled={!f.title.trim()} style={{ ...BTN_PRIMARY, padding:'7px 18px', cursor:f.title.trim()?'pointer':'not-allowed', opacity:f.title.trim()?1:0.4 }}>Save</button>
           </div>
         </div>
       </div>
@@ -4024,7 +4048,8 @@ export default function App() {
 
   const saveProject = async (data, id) => {
     const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[], attachments:data.attachments||[] }
-    await supabase.from('projects').update(payload).eq('id', id)
+    let { error } = await supabase.from('projects').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) await supabase.from('projects').update(payload).eq('id', id) // fallback if updated_at column not yet added
     await supabase.from('tasks').update({ color: data.color||'' }).eq('project_id', id)
     await loadData(true)
   }
@@ -4042,7 +4067,8 @@ export default function App() {
 
   const saveEscalation = async (data, id) => {
     const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[], attachments:data.attachments||[] }
-    await supabase.from('escalations').update(payload).eq('id', id)
+    let { error } = await supabase.from('escalations').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) await supabase.from('escalations').update(payload).eq('id', id) // fallback if updated_at column not yet added
     await supabase.from('tasks').update({ color: data.color||'' }).eq('escalation_id', id)
     await loadData(true)
   }
@@ -4876,7 +4902,7 @@ function QualTemplateSettings({ onUpdate }) {
               onKeyDown={e => { if (e.key==='Enter') addTask() }}
               placeholder="Add a task..."
               style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6, fontFamily:'inherit', outline:'none' }} />
-            <button onClick={addTask} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:6, padding:'0 14px', cursor:'pointer' }}>Add</button>
+            <button onClick={addTask} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
           </div>
           <div style={{ display:'flex', gap:6 }}>
             <button onClick={saveDraft} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 16px', cursor:'pointer' }}>Save template</button>
