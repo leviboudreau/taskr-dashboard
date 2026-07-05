@@ -29,3 +29,14 @@ body {
 /* Ghost select on gradient strip */
 .gradient-select option { background: #5b21b6; color: white; }
 
+/* Hide desktop-only affordances (e.g. drag hints) on phones */
+@media (max-width: 640px) {
+  .desktop-only { display: none !important; }
+}
+
+/* Project / bundle / escalation cards: fixed width on desktop, 2-up on phones */
+.proj-card { width: 200px; }
+@media (max-width: 640px) {
+  .proj-card { width: calc(50% - 4px); }
+}
+

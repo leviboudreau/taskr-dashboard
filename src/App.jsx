@@ -367,7 +367,7 @@ function TodayStrip({ tasks, onEdit, onDragStart, onDragEnd, draggingId, onDrop,
               <button onClick={onAdd} style={{ fontSize:11, color:'#aaa', background:'none', border:'0.5px dashed #ccc', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}
                 onMouseEnter={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#444' }}
                 onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='#aaa' }}>+ Add task</button>
-              <span style={{ fontSize:11, color:'#bbb' }}>or drag tasks here</span>
+              <span className="desktop-only" style={{ fontSize:11, color:'#bbb' }}>or drag tasks here</span>
             </>
           )}
           <button onClick={onToggle} style={{ background:'none', border:'none', cursor:'pointer', padding:'0 2px', color:'#bbb', fontSize:10, lineHeight:1 }}>
@@ -658,7 +658,7 @@ function ProjectCard({ project, taskCount, noteCount = 0, attachCount = 0, onOpe
   const owners = project.owners || ['Levi']
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
   return (
-    <div style={{ position:'relative', flexShrink:0, width:200 }}>
+    <div className="proj-card" style={{ position:'relative', flexShrink:0 }}>
       {dropIndicator === 'before' && <div style={{ height:2, background:'#378ADD', borderRadius:1, marginBottom:4 }} />}
       <div
         draggable
@@ -813,7 +813,7 @@ function EscalationCard({ escalation, taskCount, noteCount = 0, attachCount = 0,
   const owners = escalation.owners || ['Levi']
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
   return (
-    <div style={{ position:'relative', flexShrink:0, width:200 }}>
+    <div className="proj-card" style={{ position:'relative', flexShrink:0 }}>
       {dropIndicator === 'before' && <div style={{ height:2, background:'#378ADD', borderRadius:1, marginBottom:4 }} />}
       <div
         draggable
@@ -4275,17 +4275,17 @@ export default function App() {
     <div style={{ fontFamily:'system-ui,sans-serif', padding:isMobile?'0.75rem':'1.25rem 1.5rem', maxWidth:1400, margin:'0 auto' }}>
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'1.25rem', paddingBottom:'1rem', borderBottom:'0.5px solid #e5e5e5' }}>
-        <h1 style={{ fontSize:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
-            <span style={{ fontSize:12, color:'#7c3aed' }}>{new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
-            <span style={{ fontSize:10, color:'#c4b5fd' }}>Live · Supabase</span>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, marginBottom:isMobile?'0.9rem':'1.25rem', paddingBottom:isMobile?'0.75rem':'1rem', borderBottom:'0.5px solid #e5e5e5' }}>
+        <h1 style={{ fontSize:isMobile?18:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', whiteSpace:'nowrap', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <div style={{ display:'flex', alignItems:'center', gap:isMobile?6:10, minWidth:0 }}>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:isMobile?1:4 }}>
+            <span style={{ fontSize:isMobile?11:12, color:'#7c3aed', whiteSpace:'nowrap' }}>{new Date().toLocaleDateString('en-US', isMobile ? { weekday:'short', month:'short', day:'numeric' } : { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
+            <span style={{ fontSize:10, color:'#c4b5fd', whiteSpace:'nowrap' }}>Live · Supabase</span>
           </div>
           {/* Profile menu */}
           <div style={{ position:'relative' }}>
             <button onClick={() => setShowProfileMenu(m => !m)}
-              style={{ fontSize:12, padding:'6px 12px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'#ede9fe', color:'#7c3aed', cursor:'pointer', fontFamily:'inherit', fontWeight:500 }}>
+              style={{ fontSize:12, padding:'6px 12px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'#ede9fe', color:'#7c3aed', cursor:'pointer', fontFamily:'inherit', fontWeight:500, maxWidth:isMobile?110:'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
               {currentUserName || session.user.email.split('@')[0]} ▾
             </button>
             {showProfileMenu && (
@@ -4309,8 +4309,8 @@ export default function App() {
       </div>
 
       {/* Menu + World Clock — unified gradient strip */}
-      <div style={{ display:'flex', alignItems:'stretch', background:'linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a855f7 100%)', borderRadius:14, marginBottom:'1.25rem', overflow:'hidden' }}>
-        <div style={{ display:'flex', gap:2, padding:5, flexShrink:0 }}>
+      <div style={{ display:'flex', flexDirection:isMobile?'column':'row', alignItems:'stretch', background:'linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a855f7 100%)', borderRadius:14, marginBottom:'1.25rem', overflow:'hidden' }}>
+        <div style={{ display:'flex', gap:2, padding:5, flexShrink:0, ...(isMobile ? { width:'100%' } : {}) }}>
           {[
             { key:'briefing', label:'Briefing', Icon:Newspaper },
             { key:'tasks', label:'Tasks', Icon:ClipboardList },
@@ -4320,13 +4320,13 @@ export default function App() {
             { key:'settings', label:'Settings', Icon:Settings },
           ].map(({ key, label, Icon }) => (
             <button key={key} onClick={() => switchTab(key)}
-              style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, padding:'7px 14px', cursor:'pointer', background:tab===key?'rgba(255,255,255,0.18)':'transparent', border:'none', borderRadius:10, color:tab===key?'#fff':'rgba(255,255,255,0.6)', fontWeight:tab===key?600:400, whiteSpace:'nowrap', flexShrink:0, transition:'background 0.15s, color 0.15s' }}>
-              <Icon size={15} strokeWidth={tab===key?2.2:1.8} />
-              {label}
+              style={{ display:'flex', flexDirection:isMobile?'column':'row', alignItems:'center', justifyContent:'center', gap:isMobile?3:6, fontSize:isMobile?10:13, padding:isMobile?'8px 2px':'7px 14px', cursor:'pointer', background:tab===key?'rgba(255,255,255,0.18)':'transparent', border:'none', borderRadius:10, color:tab===key?'#fff':'rgba(255,255,255,0.6)', fontWeight:tab===key?600:400, whiteSpace:'nowrap', flexShrink:0, flex:isMobile?1:'none', minWidth:0, transition:'background 0.15s, color 0.15s' }}>
+              <Icon size={isMobile?18:15} strokeWidth={tab===key?2.2:1.8} />
+              {isMobile ? label.split(' ')[0] : label}
             </button>
           ))}
         </div>
-        <div style={{ width:'1px', background:'rgba(255,255,255,0.2)', flexShrink:0, margin:'8px 0' }} />
+        <div style={{ ...(isMobile ? { height:'1px', margin:'0 8px' } : { width:'1px', margin:'8px 0' }), background:'rgba(255,255,255,0.2)', flexShrink:0 }} />
         <WorldClock style={{ flex:1, minWidth:0, background:'rgba(0,0,0,0.12)' }} />
       </div>
 
@@ -4337,7 +4337,7 @@ export default function App() {
       {tab === 'tasks' && (
         <>
           {/* View controls */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', marginBottom:12, gap:6, flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:isMobile?'flex-start':'flex-end', marginBottom:12, gap:6, flexWrap:'wrap' }}>
             {/* View mode pills */}
             <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
               {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }].map(v => (
@@ -4374,11 +4374,11 @@ export default function App() {
               )}
             </button>
             {/* Search — far right */}
-            <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+            <div style={{ position:'relative', display:'flex', alignItems:'center', ...(isMobile ? { flex:'1 1 100%' } : {}) }}>
               <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
               <input type="text" value={taskSearch} onChange={e => setTaskSearch(e.target.value)}
                 placeholder="Search tasks…"
-                style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:28, outline:'none', width:160, color:'#333', boxSizing:'border-box' }} />
+                style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:28, outline:'none', width:isMobile?'100%':160, color:'#333', boxSizing:'border-box' }} />
               {taskSearch && (
                 <button onClick={() => setTaskSearch('')} style={{ position:'absolute', right:6, fontSize:12, color:'#a78bfa', background:'none', border:'none', cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
               )}
@@ -4468,10 +4468,10 @@ export default function App() {
 
           {/* ── List / Table view ── */}
           {listView && (() => {
-            const COL_GRID = '24px 1fr 110px 90px 80px 80px'
+            const COL_GRID = isMobile ? '20px 1fr auto auto' : '24px 1fr 110px 90px 80px 80px'
             const TableHeader = () => (
-              <div style={{ display:'grid', gridTemplateColumns:COL_GRID, background:'#f7f7f5', borderBottom:'0.5px solid #e5e5e5', padding:'6px 12px', alignItems:'center' }}>
-                {['', 'Task', 'Status', 'Domain', 'Due', 'Owner'].map((h, i) => (
+              <div style={{ display:'grid', gridTemplateColumns:COL_GRID, gap:isMobile?6:0, background:'#f7f7f5', borderBottom:'0.5px solid #e5e5e5', padding:'6px 12px', alignItems:'center' }}>
+                {(isMobile ? ['', 'Task', 'Status', 'Due'] : ['', 'Task', 'Status', 'Domain', 'Due', 'Owner']).map((h, i) => (
                   <span key={i} style={{ fontSize:10, fontWeight:600, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.06em' }}>{h}</span>
                 ))}
               </div>
@@ -4481,7 +4481,7 @@ export default function App() {
               const owners = t.owners || []
               return (
                 <div onClick={() => { setForm({...t}); setIsEdit(true) }}
-                  style={{ display:'grid', gridTemplateColumns:COL_GRID, padding:'8px 12px', alignItems:'center', borderBottom: last ? 'none' : '0.5px solid #f0f0f0', cursor:'pointer', background:'white' }}
+                  style={{ display:'grid', gridTemplateColumns:COL_GRID, gap:isMobile?6:0, padding:'8px 12px', alignItems:'center', borderBottom: last ? 'none' : '0.5px solid #f0f0f0', cursor:'pointer', background:'white' }}
                   onMouseEnter={e => e.currentTarget.style.background='#fafafa'}
                   onMouseLeave={e => e.currentTarget.style.background='white'}>
                   <div onClick={e => { e.stopPropagation(); quickComplete(t.id, taskSubstatus(t) !== 'complete') }} style={{ width:14, height:14, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: taskSubstatus(t)==='complete'?(ss.bg||'#eee'):'white', cursor:'pointer', flexShrink:0 }} />
@@ -4490,11 +4490,11 @@ export default function App() {
                     {t.title}
                   </span>
                   <span style={{ fontSize:10, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'2px 7px', whiteSpace:'nowrap', width:'fit-content' }}>{ss.label||'—'}</span>
-                  <span style={{ fontSize:10, color:t.domain?'#0C447C':'#ccc', background:t.domain?'#E6F1FB':'transparent', border:t.domain?'0.5px solid #85B7EB':'none', borderRadius:20, padding:t.domain?'2px 7px':'0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.domain||'—'}</span>
-                  <span style={{ fontSize:11, color:t.due?(t.due<today()?'#c0392b':'#888'):'#ccc' }}>{t.due||'—'}</span>
-                  <div style={{ display:'flex', gap:3, flexWrap:'wrap' }}>
+                  {!isMobile && <span style={{ fontSize:10, color:t.domain?'#0C447C':'#ccc', background:t.domain?'#E6F1FB':'transparent', border:t.domain?'0.5px solid #85B7EB':'none', borderRadius:20, padding:t.domain?'2px 7px':'0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.domain||'—'}</span>}
+                  <span style={{ fontSize:11, color:t.due?(t.due<today()?'#c0392b':'#888'):'#ccc', whiteSpace:'nowrap' }}>{t.due||'—'}</span>
+                  {!isMobile && <div style={{ display:'flex', gap:3, flexWrap:'wrap' }}>
                     {owners.length ? owners.map(o => <OwnerPip key={o} name={o} />) : <span style={{ fontSize:11, color:'#ccc' }}>—</span>}
-                  </div>
+                  </div>}
                 </div>
               )
             }
@@ -4684,6 +4684,7 @@ export default function App() {
           teamData={teamData}
           calendarList={calendarList}
           onUpdate={loadData}
+          isMobile={isMobile}
         />
       )}
 
@@ -5230,7 +5231,7 @@ function CalendarSettings({ calendars, onUpdate }) {
 }
 
 // ─── Settings Page ─────────────────────────────────────────────────────────────
-function SettingsPage({ domains, teamData, calendarList, onUpdate }) {
+function SettingsPage({ domains, teamData, calendarList, onUpdate, isMobile = false }) {
   const [section, setSection] = useState('team')
 
   const NAV = [
@@ -5241,22 +5242,26 @@ function SettingsPage({ domains, teamData, calendarList, onUpdate }) {
   ]
 
   return (
-    <div style={{ display:'flex', gap:0, minHeight:500, background:'white', border:'0.5px solid #e5e5e5', borderRadius:12, overflow:'hidden' }}>
-      {/* Left nav */}
-      <div style={{ width:180, borderRight:'0.5px solid #e5e5e5', padding:'16px 0', flexShrink:0, background:'#fafafa' }}>
-        <div style={{ fontSize:10, fontWeight:600, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.08em', padding:'0 16px', marginBottom:8 }}>Settings</div>
+    <div style={{ display:'flex', flexDirection:isMobile?'column':'row', gap:0, minHeight:isMobile?0:500, background:'white', border:'0.5px solid #e5e5e5', borderRadius:12, overflow:'hidden' }}>
+      {/* Nav — left rail on desktop, top tab row on mobile */}
+      <div style={{ ...(isMobile
+        ? { display:'flex', gap:2, padding:8, borderBottom:'0.5px solid #e5e5e5', overflowX:'auto', WebkitOverflowScrolling:'touch' }
+        : { width:180, borderRight:'0.5px solid #e5e5e5', padding:'16px 0' }), flexShrink:0, background:'#fafafa' }}>
+        {!isMobile && <div style={{ fontSize:10, fontWeight:600, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.08em', padding:'0 16px', marginBottom:8 }}>Settings</div>}
         {NAV.map(item => (
           <button key={item.key} onClick={() => setSection(item.key)}
-            style={{ width:'100%', textAlign:'left', padding:'9px 16px', background: section===item.key ? '#ede9fe' : 'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color: section===item.key ? '#7c3aed' : '#555', fontWeight: section===item.key ? 600 : 400, fontSize:13, borderLeft: section===item.key ? '3px solid #7c3aed' : '3px solid transparent', boxSizing:'border-box', fontFamily:'inherit' }}
-            onMouseEnter={e => { if (section!==item.key) e.currentTarget.style.background='#f0f0f0' }}
-            onMouseLeave={e => { if (section!==item.key) e.currentTarget.style.background='none' }}>
+            style={ isMobile
+              ? { flexShrink:0, padding:'7px 12px', borderRadius:8, background: section===item.key ? '#ede9fe' : 'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color: section===item.key ? '#7c3aed' : '#555', fontWeight: section===item.key ? 600 : 400, fontSize:13, whiteSpace:'nowrap', fontFamily:'inherit' }
+              : { width:'100%', textAlign:'left', padding:'9px 16px', background: section===item.key ? '#ede9fe' : 'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color: section===item.key ? '#7c3aed' : '#555', fontWeight: section===item.key ? 600 : 400, fontSize:13, borderLeft: section===item.key ? '3px solid #7c3aed' : '3px solid transparent', boxSizing:'border-box', fontFamily:'inherit' } }
+            onMouseEnter={e => { if (section!==item.key && !isMobile) e.currentTarget.style.background='#f0f0f0' }}
+            onMouseLeave={e => { if (section!==item.key && !isMobile) e.currentTarget.style.background='none' }}>
             <span>{item.icon}</span>
             <span>{item.label}</span>
           </button>
         ))}
       </div>
       {/* Right panel */}
-      <div style={{ flex:1, padding:24, overflowY:'auto' }}>
+      <div style={{ flex:1, padding:isMobile?14:24, overflowY:'auto' }}>
         {section === 'team'      && <TeamSettings teamData={teamData} onUpdate={onUpdate} />}
         {section === 'domains'   && <DomainSettings domains={domains} onUpdate={onUpdate} />}
         {section === 'calendars' && <CalendarSettings calendars={calendarList} onUpdate={onUpdate} />}
