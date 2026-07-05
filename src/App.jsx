@@ -4392,7 +4392,7 @@ export default function App() {
             <div style={{ flex:1, minWidth:0 }}>
               <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null); setTodayDropTarget(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} isOpen={isSectionOpen('today')} onToggle={() => toggleSection('today')} onTaskDragOver={(taskId, pos) => setTodayDropTarget({ taskId, position: pos })} todayDropTarget={todayDropTarget} />
             </div>
-            <div style={{ flex: isMobile ? '1 1 auto' : '0 0 432px', minWidth:0, background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:12, padding:12, alignSelf: (!isMobile && isSectionOpen('escalations')) ? 'stretch' : 'flex-start' }}>
+            <div style={{ flex: isMobile ? '1 1 auto' : '0 0 432px', minWidth:0, background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:12, padding:12, alignSelf: isMobile ? 'stretch' : (isSectionOpen('escalations') ? 'stretch' : 'flex-start') }}>
               <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} onReorder={viewMode !== 'order' ? reorderEscalation : undefined} isOpen={isSectionOpen('escalations')} onToggle={() => toggleSection('escalations')} />
             </div>
           </div>
