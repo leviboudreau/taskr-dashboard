@@ -39,8 +39,8 @@ const MEMBER_COLORS = {
   Matthew: { bg: '#EEEDFE', tc: '#3C3489' },
 }
 const CITIES = [
-  { name: 'Greenwood, SC', tz: 'America/New_York' },
   { name: 'Puebla, MX', tz: 'America/Mexico_City' },
+  { name: 'Greenwood, SC', tz: 'America/New_York' },
   { name: 'Bornem/Colmar', tz: 'Europe/Paris' },
   { name: 'Rewari, India', tz: 'Asia/Kolkata' },
   { name: 'Jakarta', tz: 'Asia/Jakarta' },
@@ -2096,6 +2096,28 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
     return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update) }
   }, [isMobileNotes])
 
+  // Full-screen (browser Fullscreen API) editing — pairs with focus overlay
+  const fsTriggeredFocus = useRef(false)
+  const toggleFullscreen = () => {
+    const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement)
+    if (inFs) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document)
+    } else {
+      if (!focused) { setFocused(true); fsTriggeredFocus.current = true }
+      const el = document.documentElement
+      ;(el.requestFullscreen || el.webkitRequestFullscreen)?.call(el)
+    }
+  }
+  useEffect(() => {
+    const onChange = () => {
+      const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement)
+      if (!inFs && fsTriggeredFocus.current) { setFocused(false); fsTriggeredFocus.current = false }
+    }
+    document.addEventListener('fullscreenchange', onChange)
+    document.addEventListener('webkitfullscreenchange', onChange)
+    return () => { document.removeEventListener('fullscreenchange', onChange); document.removeEventListener('webkitfullscreenchange', onChange) }
+  }, [])
+
   useEffect(() => {
     if (notes.length > 0 && !selectedId) {
       setSelectedId(notes[0].id)
@@ -2352,6 +2374,13 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                     title={focused ? 'Exit focus mode' : 'Focus mode'}
                     style={{ fontSize:13, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 8px', cursor:'pointer', color:'#555', lineHeight:1 }}>
                     {focused ? '⤡' : '⤢'}
+                  </button>
+                )}
+                {!isMobileNotes && (
+                  <button onClick={toggleFullscreen}
+                    title="Full screen"
+                    style={{ fontSize:13, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 8px', cursor:'pointer', color:'#555', lineHeight:1 }}>
+                    ⛶
                   </button>
                 )}
                 <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
@@ -3833,6 +3862,7 @@ export default function App() {
   const [mobileCol, setMobileCol] = useState('not_started')
   const [viewMode, setViewMode] = useState('dynamic') // 'order' | 'dynamic' | 'domain'
   const [filterOwner, setFilterOwner] = useState('all')
+  const [ownerFilterOpen, setOwnerFilterOpen] = useState(false)
   const [showCompleted, setShowCompleted] = useState(true)
   const [taskSearch, setTaskSearch] = useState('')
   const [listView, setListView] = useState(false)
@@ -4339,8 +4369,8 @@ export default function App() {
           {/* View controls */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:isMobile?'flex-start':'flex-end', marginBottom:12, gap:6, flexWrap:'wrap' }}>
             {/* View mode pills */}
-            <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
-              {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }].map(v => (
+            <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3, maxWidth:'100%', overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
+              {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }, { k:'priority', l:'By priority' }].map(v => (
                 <button key={v.k} onClick={() => setViewMode(v.k)}
                   style={{ fontSize:11, padding:'4px 10px', border:'none', background:viewMode===v.k?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:viewMode===v.k?'white':'#7c3aed', fontWeight:viewMode===v.k?600:400, cursor:'pointer', borderRadius:8, transition:'background 0.15s, color 0.15s', whiteSpace:'nowrap' }}>
                   {v.l}
@@ -4348,11 +4378,29 @@ export default function App() {
               ))}
             </div>
             {/* Owner filter */}
-            <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)}
-              style={{ fontSize:11, padding:'4px 8px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', cursor:'pointer', color:filterOwner==='all'?'#888':'#4f46e5', height:28, outline:'none' }}>
-              <option value="all">👥 All</option>
-              {memberNames.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
+            <div style={{ position:'relative' }}>
+              <button onClick={() => setOwnerFilterOpen(o => !o)} title="Filter by owner"
+                style={{ fontSize:11, background: filterOwner!=='all' ? 'linear-gradient(135deg,#4f46e5,#7c3aed)' : 'white', border: filterOwner!=='all' ? 'none' : '0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, color: filterOwner!=='all' ? 'white' : '#7c3aed', transition:'background 0.15s, color 0.15s', display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap' }}>
+                <span>{filterOwner === 'all' ? '👥 All' : filterOwner}</span>
+                <span style={{ fontSize:9, opacity:0.7 }}>▾</span>
+              </button>
+              {ownerFilterOpen && (
+                <>
+                  <div onClick={() => setOwnerFilterOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
+                  <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, minWidth:150, maxHeight:280, overflowY:'auto', padding:4 }}>
+                    {[{ v:'all', l:'👥 All' }, ...memberNames.map(n => ({ v:n, l:n }))].map(opt => (
+                      <button key={opt.v} onClick={() => { setFilterOwner(opt.v); setOwnerFilterOpen(false) }}
+                        style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'7px 10px', background: filterOwner===opt.v ? '#ede9fe' : 'none', border:'none', borderRadius:7, cursor:'pointer', fontSize:12, color: filterOwner===opt.v ? '#7c3aed' : '#444', fontWeight: filterOwner===opt.v ? 600 : 400, fontFamily:'inherit' }}
+                        onMouseEnter={e => { if (filterOwner!==opt.v) e.currentTarget.style.background='#f5f5f3' }}
+                        onMouseLeave={e => { if (filterOwner!==opt.v) e.currentTarget.style.background='none' }}>
+                        {opt.v !== 'all' && <OwnerPip name={opt.v} />}
+                        {opt.l}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             {/* List toggle */}
             <button onClick={() => setListView(v => !v)} title={listView ? 'Board view' : 'List view'}
               style={{ fontSize:11, background:listView?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', border:listView?'none':'0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, color:listView?'white':'#7c3aed', transition:'background 0.15s, color 0.15s' }}>
@@ -4464,6 +4512,30 @@ export default function App() {
               })}
             </div>
           )}
+
+          {isSectionOpen('kanban') && viewMode === 'priority' && (
+            <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto' }}>
+              {[{ key:'high', lbl:'High' }, { key:'', lbl:'Normal' }].map(priCol => {
+                const ct = filteredTasks.filter(t => (t.priority||'') === priCol.key)
+                return (
+                  <div key={priCol.key || '__normal'} style={{ flex:'0 0 220px', background:'#f7f7f5', borderRadius:12, padding:12, minHeight:180 }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                      <span style={{ fontSize:11, fontWeight:500, color:priCol.key?'#791F1F':'#aaa', textTransform:'uppercase', letterSpacing:'0.06em' }}>{priCol.lbl}</span>
+                      <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{ct.length}</span>
+                    </div>
+                    <button onClick={() => { setForm({ priority: priCol.key, status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>
+                      + Add task
+                    </button>
+                    {ct.map(t => (
+                      <div key={t.id} style={{ marginBottom:8 }}>
+                        <TaskCard task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={quickComplete} entityMap={entityMap} />
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )}
           </>}
 
           {/* ── List / Table view ── */}
@@ -4529,6 +4601,11 @@ export default function App() {
                 key: o||'__unassigned', label: o||'Unassigned', type: 'none',
                 tasks: filteredTasks.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0)
               }))
+            } else if (viewMode === 'priority') {
+              groups = [
+                { key:'high', label:'High', type:'none', tasks: filteredTasks.filter(t => (t.priority||'') === 'high') },
+                { key:'normal', label:'Normal', type:'none', tasks: filteredTasks.filter(t => (t.priority||'') !== 'high') },
+              ]
             } else {
               // order / dynamic — group by escalation, project, then ungrouped
               const escGroups = visibleEscalations
@@ -4552,7 +4629,7 @@ export default function App() {
           })()}
 
           {/* ── Standard / Dynamic column view ── */}
-          {isSectionOpen('kanban') && !listView && viewMode !== 'domain' && viewMode !== 'owner' && (
+          {isSectionOpen('kanban') && !listView && viewMode !== 'domain' && viewMode !== 'owner' && viewMode !== 'priority' && (
             isMobile ? (
               <div>
                 <div style={{ display:'flex', gap:6, marginBottom:10, overflowX:'auto' }}>
