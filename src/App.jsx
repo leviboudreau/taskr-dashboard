@@ -2076,21 +2076,24 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
   const [groupBy, setGroupBy] = useState('status')
   const [showDone, setShowDone] = useState(false)
   const [colsByGroup, setColsByGroup] = useState(() => { try { return JSON.parse(localStorage.getItem('taskr-linear-cols')) || {} } catch { return {} } })
-  const [dragKey, setDragKey] = useState(null)
-  const [overCol, setOverCol] = useState(null)
+  const [drag, setDrag] = useState(null)          // { key, x, y, offsetX, offsetY, w }
+  const [dropTarget, setDropTarget] = useState(null) // { col, index }
+  const containerRef = useRef(null)
+  const dragRef = useRef(null)
+  const dropRef = useRef(null)
 
   const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
-  const active = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete'))
+  const activeTasks = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete'))
 
   let groups = []
   if (groupBy === 'status') {
-    groups = COLS.map(c => ({ key:c.key, label:c.lbl, tasks: active.filter(t => tss(t) === c.key) }))
+    groups = COLS.map(c => ({ key:c.key, label:c.lbl, tasks: activeTasks.filter(t => tss(t) === c.key) }))
   } else if (groupBy === 'domain') {
-    const dk = [...new Set(active.map(t => t.domain||''))].sort((a,b) => a ? (b ? a.localeCompare(b) : -1) : 1)
-    groups = dk.map(d => ({ key:d||'__none', label:d||'No domain', tasks: active.filter(t => (t.domain||'') === d) }))
+    const dk = [...new Set(activeTasks.map(t => t.domain||''))].sort((a,b) => a ? (b ? a.localeCompare(b) : -1) : 1)
+    groups = dk.map(d => ({ key:d||'__none', label:d||'No domain', tasks: activeTasks.filter(t => (t.domain||'') === d) }))
   } else {
     const ok = [...memberNames, '']
-    groups = ok.map(o => ({ key:o||'__un', label:o||'Unassigned', tasks: active.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0) }))
+    groups = ok.map(o => ({ key:o||'__un', label:o||'Unassigned', tasks: activeTasks.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0) }))
   }
   groups = groups.filter(g => g.tasks.length > 0)
   const groupMap = Object.fromEntries(groups.map(g => [g.key, g]))
@@ -2107,15 +2110,51 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
   const columns = buildColumns()
 
   const persist = next => { setColsByGroup(next); try { localStorage.setItem('taskr-linear-cols', JSON.stringify(next)) } catch {} }
-  const moveCategory = (key, targetCol, beforeKey) => {
+  const moveByIndex = (key, col, index) => {
     const cols = columns.map(c => c.filter(k => k !== key))
-    const target = cols[targetCol]
-    let idx = beforeKey ? target.indexOf(beforeKey) : target.length
-    if (idx < 0) idx = target.length
-    target.splice(idx, 0, key)
+    const target = cols[col] || cols[0]
+    const ti = cols[col] ? col : 0
+    cols[ti].splice(Math.max(0, Math.min(index, target.length)), 0, key)
     persist({ ...colsByGroup, [groupBy]: cols })
   }
   const resetLayout = () => persist({ ...colsByGroup, [groupBy]: undefined })
+
+  // ── Custom pointer-drag: lift a section and drop it above/after any other ──
+  const startDrag = (e, g) => {
+    if (isMobile || e.button !== 0) return
+    e.preventDefault()
+    const cardEl = e.currentTarget.closest('[data-lcard]')
+    const r = cardEl ? cardEl.getBoundingClientRect() : { left:e.clientX, top:e.clientY, width:280 }
+    dragRef.current = { key:g.key, active:false, startX:e.clientX, startY:e.clientY, offsetX:e.clientX - r.left, offsetY:e.clientY - r.top, w:r.width }
+
+    const onMove = ev => {
+      const d = dragRef.current; if (!d) return
+      const x = ev.clientX, y = ev.clientY
+      if (!d.active) { if (Math.hypot(x - d.startX, y - d.startY) < 5) return; d.active = true }
+      const cont = containerRef.current
+      if (cont) {
+        const colEls = [...cont.querySelectorAll('[data-lcol]')]
+        let ci = 0, best = Infinity
+        colEls.forEach((el, i) => { const cr = el.getBoundingClientRect(); const cx = (cr.left + cr.right) / 2; const dd = Math.abs(x - cx); if (dd < best) { best = dd; ci = i } })
+        const cards = colEls[ci] ? [...colEls[ci].querySelectorAll('[data-lcard]')] : []
+        let index = cards.length
+        for (let i = 0; i < cards.length; i++) { const cr = cards[i].getBoundingClientRect(); if (y < cr.top + cr.height / 2) { index = i; break } }
+        dropRef.current = { col: ci, index }
+        setDropTarget({ col: ci, index })
+      }
+      setDrag({ key:d.key, x, y, offsetX:d.offsetX, offsetY:d.offsetY, w:d.w })
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      const d = dragRef.current, dt = dropRef.current
+      if (d && d.active && dt) moveByIndex(d.key, dt.col, dt.index)
+      dragRef.current = null; dropRef.current = null
+      setDrag(null); setDropTarget(null)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 
   const Row = ({ t }) => {
     const ss = subStyle(tss(t))
@@ -2149,16 +2188,11 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
     )
   }
 
-  const CategoryCard = ({ g, ci }) => (
-    <div
-      onDragOver={dragKey && !isMobile ? e => { e.preventDefault(); e.stopPropagation() } : undefined}
-      onDrop={dragKey && !isMobile ? e => { e.preventDefault(); e.stopPropagation(); if (dragKey && dragKey !== g.key) moveCategory(dragKey, ci, g.key); setDragKey(null); setOverCol(null) } : undefined}
-      style={{ background:'#f7f7f5', borderRadius:12, padding:12, opacity: dragKey===g.key ? 0.45 : 1 }}>
-      <div draggable={!isMobile}
-        onDragStart={!isMobile ? e => { e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', g.key); setDragKey(g.key) } : undefined}
-        onDragEnd={() => { setDragKey(null); setOverCol(null) }}
-        style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, cursor: isMobile ? 'default' : 'grab' }}>
-        {!isMobile && <span title="Drag to rearrange" style={{ color:'#c9c2da', fontSize:13, lineHeight:1, cursor:'grab' }}>⠿</span>}
+  const CategoryCard = ({ g, onGrab, ghost }) => (
+    <div data-lcard style={{ background:'#f7f7f5', borderRadius:12, padding:12, visibility: ghost ? 'hidden' : 'visible' }}>
+      <div onPointerDown={onGrab}
+        style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, cursor: onGrab ? 'grab' : 'default', touchAction:'none', userSelect:'none' }}>
+        {!isMobile && <span title="Drag to rearrange" style={{ color:'#bfb6d6', fontSize:14, lineHeight:1 }}>⠿</span>}
         <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{g.label}</span>
         <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{g.tasks.length}</span>
       </div>
@@ -2166,15 +2200,20 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
     </div>
   )
 
+  const Indicator = () => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#4f46e5,#7c3aed)', margin:'-3px 4px 0', boxShadow:'0 0 6px rgba(124,58,237,0.4)' }} />
+
   const pill = (activeVal, val, label, onClick) => (
-    <button onClick={onClick}
+    <button key={val} onClick={onClick}
       style={{ fontSize:11, padding:'4px 12px', border:'none', background:activeVal===val?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:activeVal===val?'white':'#7c3aed', fontWeight:activeVal===val?600:400, cursor:'pointer', borderRadius:8, whiteSpace:'nowrap' }}>
       {label}
     </button>
   )
 
+  // Columns to render, with the lifted section removed so the rest float up live
+  const displayCols = columns.map(col => col.filter(k => !(drag && k === drag.key)))
+
   return (
-    <div>
+    <div style={{ userSelect: drag ? 'none' : undefined }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
         <span style={{ fontSize:10, color:'#a99fc0', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.07em', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:20, padding:'2px 10px' }}>Linear · Mockup</span>
         <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
@@ -2194,18 +2233,32 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
         <div style={{ textAlign:'center', padding:'40px 0', color:'#bbb', fontSize:13 }}>No tasks</div>
       ) : isMobile ? (
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          {groups.map(g => <CategoryCard key={g.key} g={g} ci={0} />)}
+          {groups.map(g => <CategoryCard key={g.key} g={g} />)}
         </div>
       ) : (
-        <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
-          {columns.map((colKeys, ci) => (
-            <div key={ci}
-              onDragOver={dragKey ? e => { e.preventDefault(); setOverCol(ci) } : undefined}
-              onDrop={dragKey ? e => { e.preventDefault(); if (dragKey) moveCategory(dragKey, ci, null); setDragKey(null); setOverCol(null) } : undefined}
-              style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:12, minHeight:80, borderRadius:12, padding:2, outline: (overCol===ci && dragKey) ? '2px dashed #c4b5fd' : '2px solid transparent', transition:'outline-color 0.12s' }}>
-              {colKeys.map(key => groupMap[key] ? <CategoryCard key={key} g={groupMap[key]} ci={ci} /> : null)}
-            </div>
-          ))}
+        <div ref={containerRef} style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
+          {displayCols.map((colKeys, ci) => {
+            const items = []
+            const showInd = i => drag && dropTarget && dropTarget.col === ci && dropTarget.index === i
+            if (showInd(0)) items.push(<Indicator key="ind-0" />)
+            colKeys.forEach((key, i) => {
+              if (groupMap[key]) items.push(<CategoryCard key={key} g={groupMap[key]} onGrab={e => startDrag(e, groupMap[key])} />)
+              if (showInd(i + 1)) items.push(<Indicator key={`ind-${i+1}`} />)
+            })
+            return (
+              <div key={ci} data-lcol
+                style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:12, minHeight:80, borderRadius:12, padding:2, outline: (drag && dropTarget && dropTarget.col === ci) ? '2px dashed #c4b5fd' : '2px solid transparent', transition:'outline-color 0.12s' }}>
+                {items.length ? items : <div style={{ minHeight:40 }} />}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Lifted clone following the cursor */}
+      {drag && groupMap[drag.key] && (
+        <div style={{ position:'fixed', left: drag.x - drag.offsetX, top: drag.y - drag.offsetY, width: drag.w, pointerEvents:'none', zIndex:1000, transform:'rotate(-1.5deg) scale(1.02)', opacity:0.96, filter:'drop-shadow(0 18px 34px rgba(80,60,120,0.35))', maxHeight:300, overflow:'hidden', borderRadius:12 }}>
+          <CategoryCard g={groupMap[drag.key]} />
         </div>
       )}
     </div>
