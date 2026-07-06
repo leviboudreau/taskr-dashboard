@@ -3884,7 +3884,7 @@ export default function App() {
   const isSectionOpen = key => sectionsOpen[key] !== false
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
   const [mobileCol, setMobileCol] = useState('not_started')
-  const [viewMode, setViewMode] = useState('dynamic') // 'order' | 'dynamic' | 'domain'
+  const [viewMode, setViewMode] = useState('domain') // 'kanban' | 'domain' | 'owner' | 'priority'
   const [filterOwner, setFilterOwner] = useState('all')
   const [ownerFilterOpen, setOwnerFilterOpen] = useState(false)
   const [showCompleted, setShowCompleted] = useState(true)
@@ -4241,7 +4241,6 @@ export default function App() {
       }
       setTodayDropTarget(null)
     } else {
-      if (viewMode === 'order') return
       if (dropTarget && dropTarget.taskId) {
         await reorderTask(id, dropTarget.taskId, dropTarget.position, col)
       } else {
@@ -4396,7 +4395,7 @@ export default function App() {
           <div style={{ display:'flex', alignItems:'center', justifyContent:isMobile?'flex-start':'flex-end', marginBottom:12, gap:6, flexWrap:'wrap' }}>
             {/* View mode pills */}
             <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3, maxWidth:'100%', overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
-              {[{ k:'order', l:'In order' }, { k:'dynamic', l:'Dynamic' }, { k:'domain', l:'By domain' }, { k:'owner', l:'By owner' }, { k:'priority', l:'By priority' }].map(v => (
+              {[{ k:'kanban', l:'Kanban' }, { k:'domain', l:'Domain' }, { k:'owner', l:'Owner' }, { k:'priority', l:'Priority' }].map(v => (
                 <button key={v.k} onClick={() => setViewMode(v.k)}
                   style={{ fontSize:11, padding:'4px 10px', border:'none', background:viewMode===v.k?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:viewMode===v.k?'white':'#7c3aed', fontWeight:viewMode===v.k?600:400, cursor:'pointer', borderRadius:8, transition:'background 0.15s, color 0.15s', whiteSpace:'nowrap' }}>
                   {v.l}
@@ -4467,7 +4466,7 @@ export default function App() {
               <TodayStrip tasks={filteredTasks} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null); setTodayDropTarget(null) }} draggingId={draggingId} onDrop={drop} onDragOver={setOverCol} onDragLeave={() => setOverCol(null)} isOver={overCol==='today'} onRemove={removeFromToday} onAdd={() => { setForm({ today:true, status:'active', substatus:'not_started' }); setIsEdit(false) }} onComplete={quickComplete} entityMap={entityMap} isOpen={isSectionOpen('today')} onToggle={() => toggleSection('today')} onTaskDragOver={(taskId, pos) => setTodayDropTarget({ taskId, position: pos })} todayDropTarget={todayDropTarget} />
             </div>
             <div style={{ flex: isMobile ? '1 1 auto' : '0 0 432px', minWidth:0, background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:12, padding:12, alignSelf: isMobile ? 'stretch' : (isSectionOpen('escalations') ? 'stretch' : 'flex-start') }}>
-              <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} onReorder={viewMode !== 'order' ? reorderEscalation : undefined} isOpen={isSectionOpen('escalations')} onToggle={() => toggleSection('escalations')} />
+              <EscalationsSection escalations={visibleEscalations} tasks={tasks} onAdd={addEscalation} onOpen={e => setActivePopup({ entity:e, type:'escalation' })} onReorder={reorderEscalation} isOpen={isSectionOpen('escalations')} onToggle={() => toggleSection('escalations')} />
             </div>
           </div>
 
@@ -4477,7 +4476,7 @@ export default function App() {
               <span style={{ fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em' }}>Projects & Bundles</span>
               <span style={{ fontSize:11 }}>{isSectionOpen('projects') ? '▴' : '▾'}</span>
             </button>
-            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} noBorder onReorder={viewMode !== 'order' ? reorderProject : undefined} />}
+            {isSectionOpen('projects') && <ProjectsSection projects={visibleProjects} tasks={tasks} onAdd={addProject} onOpen={p => setActivePopup({ entity:p, type:'project' })} templates={qualTemplates} noBorder onReorder={reorderProject} />}
           </div>
 
           {/* ── Tasks kanban ── */}
@@ -4655,7 +4654,7 @@ export default function App() {
           })()}
 
           {/* ── Standard / Dynamic column view ── */}
-          {isSectionOpen('kanban') && !listView && viewMode !== 'domain' && viewMode !== 'owner' && viewMode !== 'priority' && (
+          {isSectionOpen('kanban') && !listView && viewMode === 'kanban' && (
             isMobile ? (
               <div>
                 <div style={{ display:'flex', gap:6, marginBottom:10, overflowX:'auto' }}>
@@ -4670,7 +4669,7 @@ export default function App() {
                   const ct = getColTasks(col.key)
                   return <div key={col.key} onDragOver={e => { e.preventDefault(); setOverCol(col.key) }} onDragLeave={() => setOverCol(null)} onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }} style={{ background:'#f7f7f5', borderRadius:12, padding:12, minHeight:200 }}>
                     <button onClick={() => { setForm({ substatus:col.key, status:'active' }); setIsEdit(false) }} style={{ width:'100%', marginBottom:8, padding:'10px 0', fontSize:13, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>+ Add task</button>
-                    {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={quickComplete} entityMap={entityMap} dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null} onDragOver={viewMode==='dynamic'?(taskId,position)=>setDropTarget({col:col.key,taskId,position}):null} />)}
+                    {ct.map(t => <TaskCard key={t.id} task={t} onEdit={t => { setForm({...t}); setIsEdit(true) }} onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===t.id} onToggleSubtask={toggleSubtask} onComplete={quickComplete} entityMap={entityMap} dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null} onDragOver={viewMode==='kanban'?(taskId,position)=>setDropTarget({col:col.key,taskId,position}):null} />)}
                   </div>
                 })}
               </div>
@@ -4708,7 +4707,7 @@ export default function App() {
                             onToggleSubtask={toggleSubtask}
                             onComplete={quickComplete}
                             dropIndicator={dropTarget?.col===col.key&&dropTarget?.taskId===t.id?dropTarget.position:null}
-                            onDragOver={viewMode==='dynamic' ? (taskId, position) => setDropTarget({ col:col.key, taskId, position }) : null}
+                            onDragOver={viewMode==='kanban' ? (taskId, position) => setDropTarget({ col:col.key, taskId, position }) : null}
                             entityMap={entityMap}
                           />
                         ))}
