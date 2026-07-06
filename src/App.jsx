@@ -2071,22 +2071,51 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
 }
 
 // ─── Linear Task Page (mockup) ────────────────────────────────────────────────
-function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [], onEdit, onComplete }) {
+const LINEAR_NCOL = 3
+function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [], isMobile = false, onEdit, onComplete }) {
   const [groupBy, setGroupBy] = useState('status')
+  const [showDone, setShowDone] = useState(false)
+  const [colsByGroup, setColsByGroup] = useState(() => { try { return JSON.parse(localStorage.getItem('taskr-linear-cols')) || {} } catch { return {} } })
+  const [dragKey, setDragKey] = useState(null)
+  const [overCol, setOverCol] = useState(null)
+
   const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
-  const active = tasks.filter(t => tss(t) !== 'canceled')
+  const active = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete'))
 
   let groups = []
   if (groupBy === 'status') {
     groups = COLS.map(c => ({ key:c.key, label:c.lbl, tasks: active.filter(t => tss(t) === c.key) }))
   } else if (groupBy === 'domain') {
-    const keys = [...new Set(active.map(t => t.domain||''))].sort((a,b) => a ? (b ? a.localeCompare(b) : -1) : 1)
-    groups = keys.map(d => ({ key:d||'__none', label:d||'No domain', tasks: active.filter(t => (t.domain||'') === d) }))
+    const dk = [...new Set(active.map(t => t.domain||''))].sort((a,b) => a ? (b ? a.localeCompare(b) : -1) : 1)
+    groups = dk.map(d => ({ key:d||'__none', label:d||'No domain', tasks: active.filter(t => (t.domain||'') === d) }))
   } else {
-    const keys = [...memberNames, '']
-    groups = keys.map(o => ({ key:o||'__un', label:o||'Unassigned', tasks: active.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0) }))
+    const ok = [...memberNames, '']
+    groups = ok.map(o => ({ key:o||'__un', label:o||'Unassigned', tasks: active.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0) }))
   }
   groups = groups.filter(g => g.tasks.length > 0)
+  const groupMap = Object.fromEntries(groups.map(g => [g.key, g]))
+  const keys = groups.map(g => g.key)
+
+  // Derive columns from stored order; append any not-yet-placed category to the shortest column
+  const buildColumns = () => {
+    const stored = colsByGroup[groupBy] || Array.from({ length: LINEAR_NCOL }, () => [])
+    const placed = new Set()
+    const cols = Array.from({ length: LINEAR_NCOL }, (_, i) => (stored[i] || []).filter(k => { if (keys.includes(k) && !placed.has(k)) { placed.add(k); return true } return false }))
+    keys.forEach(k => { if (!placed.has(k)) { const mi = cols.reduce((m, c, i, a) => c.length < a[m].length ? i : m, 0); cols[mi].push(k); placed.add(k) } })
+    return cols
+  }
+  const columns = buildColumns()
+
+  const persist = next => { setColsByGroup(next); try { localStorage.setItem('taskr-linear-cols', JSON.stringify(next)) } catch {} }
+  const moveCategory = (key, targetCol, beforeKey) => {
+    const cols = columns.map(c => c.filter(k => k !== key))
+    const target = cols[targetCol]
+    let idx = beforeKey ? target.indexOf(beforeKey) : target.length
+    if (idx < 0) idx = target.length
+    target.splice(idx, 0, key)
+    persist({ ...colsByGroup, [groupBy]: cols })
+  }
+  const resetLayout = () => persist({ ...colsByGroup, [groupBy]: undefined })
 
   const Row = ({ t }) => {
     const ss = subStyle(tss(t))
@@ -2098,19 +2127,19 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
     const subs = Array.isArray(t.subtasks) ? t.subtasks : []
     return (
       <div onClick={() => onEdit(t)}
-        style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'white', borderRadius:8, border:'0.5px solid #ebebeb', borderLeft: fb ? `3px solid ${fb}` : '0.5px solid #ebebeb', marginBottom:4, cursor:'pointer' }}
+        style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'8px 12px', background:'white', borderRadius:8, border:'0.5px solid #ebebeb', borderLeft: fb ? `3px solid ${fb}` : '0.5px solid #ebebeb', marginBottom:4, cursor:'pointer' }}
         onMouseEnter={e => e.currentTarget.style.borderColor = fb || '#d8d8d8'}
         onMouseLeave={e => e.currentTarget.style.borderColor = '#ebebeb'}>
         <div onClick={e => { e.stopPropagation(); onComplete(t.id, !done) }} title="Toggle complete"
-          style={{ width:16, height:16, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: done ? (ss.bg||'#eee') : 'white', flexShrink:0, cursor:'pointer' }} />
-        <span style={{ flex:1, minWidth:0, fontSize:13, color: done?'#aaa':'#222', textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          style={{ width:16, height:16, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: done ? (ss.bg||'#eee') : 'white', flexShrink:0, marginTop:1, cursor:'pointer' }} />
+        <span style={{ flex:1, minWidth:0, fontSize:13, color: done?'#aaa':'#222', textDecoration: done?'line-through':'none', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.3 }}>
           {t.today && <span style={{ fontSize:9, color:'#E24B4A', marginRight:6, fontWeight:600 }}>TODAY</span>}
           {t.title}
         </span>
-        <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
           {subs.length > 0 && <span style={{ fontSize:10, color:'#aaa' }}>☑ {subs.filter(s => s.done).length}/{subs.length}</span>}
           {groupBy !== 'status' && <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap' }}>{ss.label}</span>}
-          {linked && <span style={{ fontSize:10, fontWeight:500, background:linked.type==='project'?'#EAF3DE':'#FCEBEB', color:linked.type==='project'?'#27500A':'#791F1F', padding:'2px 7px', borderRadius:20, border:`0.5px solid ${linked.type==='project'?'#97C459':'#F09595'}`, whiteSpace:'nowrap', maxWidth:150, overflow:'hidden', textOverflow:'ellipsis' }}>{linked.name}</span>}
+          {linked && <span style={{ fontSize:10, fontWeight:500, background:linked.type==='project'?'#EAF3DE':'#FCEBEB', color:linked.type==='project'?'#27500A':'#791F1F', padding:'2px 7px', borderRadius:20, border:`0.5px solid ${linked.type==='project'?'#97C459':'#F09595'}`, whiteSpace:'nowrap', maxWidth:130, overflow:'hidden', textOverflow:'ellipsis' }}>{linked.name}</span>}
           {groupBy !== 'domain' && t.domain && <Badge type="domain">{t.domain}</Badge>}
           {t.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, border:'0.5px solid #F09595', whiteSpace:'nowrap' }}>High</span>}
           {groupBy !== 'owner' && showOwners && owners.map(o => <OwnerPip key={o} name={o} />)}
@@ -2120,31 +2149,65 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
     )
   }
 
+  const CategoryCard = ({ g, ci }) => (
+    <div
+      onDragOver={dragKey && !isMobile ? e => { e.preventDefault(); e.stopPropagation() } : undefined}
+      onDrop={dragKey && !isMobile ? e => { e.preventDefault(); e.stopPropagation(); if (dragKey && dragKey !== g.key) moveCategory(dragKey, ci, g.key); setDragKey(null); setOverCol(null) } : undefined}
+      style={{ background:'#f7f7f5', borderRadius:12, padding:12, opacity: dragKey===g.key ? 0.45 : 1 }}>
+      <div draggable={!isMobile}
+        onDragStart={!isMobile ? e => { e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', g.key); setDragKey(g.key) } : undefined}
+        onDragEnd={() => { setDragKey(null); setOverCol(null) }}
+        style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, cursor: isMobile ? 'default' : 'grab' }}>
+        {!isMobile && <span title="Drag to rearrange" style={{ color:'#c9c2da', fontSize:13, lineHeight:1, cursor:'grab' }}>⠿</span>}
+        <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{g.label}</span>
+        <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{g.tasks.length}</span>
+      </div>
+      {g.tasks.map(t => <Row key={t.id} t={t} />)}
+    </div>
+  )
+
+  const pill = (activeVal, val, label, onClick) => (
+    <button onClick={onClick}
+      style={{ fontSize:11, padding:'4px 12px', border:'none', background:activeVal===val?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:activeVal===val?'white':'#7c3aed', fontWeight:activeVal===val?600:400, cursor:'pointer', borderRadius:8, whiteSpace:'nowrap' }}>
+      {label}
+    </button>
+  )
+
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
         <span style={{ fontSize:10, color:'#a99fc0', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.07em', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:20, padding:'2px 10px' }}>Linear · Mockup</span>
         <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
-          {[{k:'status',l:'Status'},{k:'domain',l:'Domain'},{k:'owner',l:'Owner'}].map(g => (
-            <button key={g.k} onClick={() => setGroupBy(g.k)}
-              style={{ fontSize:11, padding:'4px 12px', border:'none', background:groupBy===g.k?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:groupBy===g.k?'white':'#7c3aed', fontWeight:groupBy===g.k?600:400, cursor:'pointer', borderRadius:8, whiteSpace:'nowrap' }}>
-              {g.l}
-            </button>
+          {[{k:'status',l:'Status'},{k:'domain',l:'Domain'},{k:'owner',l:'Owner'}].map(g => pill(groupBy, g.k, g.l, () => setGroupBy(g.k)))}
+        </div>
+        <button onClick={() => setShowDone(v => !v)}
+          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:showDone?'none':'0.5px solid #c4b5fd', background:showDone?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:showDone?'white':'#7c3aed', height:26 }}>
+          ✓ Done
+        </button>
+        {!isMobile && <button onClick={resetLayout} title="Reset column layout"
+          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #e0e0e0', background:'white', color:'#888', height:26 }}>
+          ⟲ Reset layout
+        </button>}
+      </div>
+
+      {groups.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'40px 0', color:'#bbb', fontSize:13 }}>No tasks</div>
+      ) : isMobile ? (
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          {groups.map(g => <CategoryCard key={g.key} g={g} ci={0} />)}
+        </div>
+      ) : (
+        <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
+          {columns.map((colKeys, ci) => (
+            <div key={ci}
+              onDragOver={dragKey ? e => { e.preventDefault(); setOverCol(ci) } : undefined}
+              onDrop={dragKey ? e => { e.preventDefault(); if (dragKey) moveCategory(dragKey, ci, null); setDragKey(null); setOverCol(null) } : undefined}
+              style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:12, minHeight:80, borderRadius:12, padding:2, outline: (overCol===ci && dragKey) ? '2px dashed #c4b5fd' : '2px solid transparent', transition:'outline-color 0.12s' }}>
+              {colKeys.map(key => groupMap[key] ? <CategoryCard key={key} g={groupMap[key]} ci={ci} /> : null)}
+            </div>
           ))}
         </div>
-      </div>
-      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-        {groups.map(g => (
-          <div key={g.key} style={{ background:'#f7f7f5', borderRadius:12, padding:12 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-              <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{g.label}</span>
-              <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{g.tasks.length}</span>
-            </div>
-            {g.tasks.map(t => <Row key={t.id} t={t} />)}
-          </div>
-        ))}
-        {groups.length === 0 && <div style={{ textAlign:'center', padding:'40px 0', color:'#bbb', fontSize:13 }}>No tasks</div>}
-      </div>
+      )}
     </div>
   )
 }
@@ -4470,7 +4533,7 @@ export default function App() {
 
       {/* ── Linear task mockup ── */}
       {tab === 'linear' && (
-        <TaskLinearMockup tasks={tasks} entityMap={entityMap} domains={domains} memberNames={memberNames}
+        <TaskLinearMockup tasks={tasks} entityMap={entityMap} domains={domains} memberNames={memberNames} isMobile={isMobile}
           onEdit={t => { setForm({...t}); setIsEdit(true) }} onComplete={quickComplete} />
       )}
 
