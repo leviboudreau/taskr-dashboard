@@ -3031,6 +3031,15 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                     ⛶
                   </button>
                 )}
+                {groups.length > 0 && (
+                  <select title="Move to group"
+                    value={(draft.group_id !== undefined ? draft.group_id : notes.find(n => n.id === selectedId)?.group_id) || ''}
+                    onChange={e => { const gid = e.target.value || null; setDraft(p => ({ ...p, group_id: gid })); onSave({ ...draft, group_id: gid }, selectedId); setDirty(false) }}
+                    style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 8px', cursor:'pointer', color:'#555', outline:'none', maxWidth:130 }}>
+                    <option value="">Ungrouped</option>
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                )}
                 <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
                   {copied ? '✓' : '📋'}
                 </button>
