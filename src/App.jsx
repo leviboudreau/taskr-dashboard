@@ -512,38 +512,30 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
             </div>
           )}
 
-          {/* Status + Priority */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+          {/* Status + Priority + Due */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
             <div><label style={FIELD_LABEL}>Status</label>
-              <select value={f.status} onChange={e => set('status', e.target.value)} style={FIELD_SELECT}>
-                {['active','waiting','someday','done'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+              <select value={f.substatus||''} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
+                {SUBSTATUS.filter(s => s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select></div>
             <div><label style={FIELD_LABEL}>Priority</label>
               <select value={f.priority} onChange={e => set('priority', e.target.value)} style={FIELD_SELECT}>
                 <option value="">Normal</option><option value="high">High</option>
               </select></div>
+            <div><label style={FIELD_LABEL}>Due date</label>
+              <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
           </div>
 
-          {/* Sub-status + Domain */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-            <div><label style={FIELD_LABEL}>Sub-status</label>
-              <select value={f.substatus||''} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
-                {SUBSTATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </select></div>
+          {/* Domain + Flag color */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12, alignItems:'end' }}>
             <div><label style={FIELD_LABEL}>Domain</label>
               <select value={f.domain} onChange={e => set('domain', e.target.value)} style={FIELD_SELECT}>
                 <option value="">— none —</option>
                 {domains.map(d => <option key={d} value={d}>{d}</option>)}
               </select></div>
-          </div>
-
-          {/* Due date + Flag color */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-            <div><label style={FIELD_LABEL}>Due date</label>
-              <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
             <div><label style={FIELD_LABEL}>Flag color</label>
-              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-                {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
+              <div style={{ display:'flex', gap:5, alignItems:'center', height:32, flexWrap:'wrap' }}>
+                {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?18:13, height:fc.key?18:13, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
               </div></div>
           </div>
 
@@ -2072,18 +2064,278 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
 
 // ─── Linear Task Page (mockup) ────────────────────────────────────────────────
 const LINEAR_NCOL = 3
-function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [], isMobile = false, onEdit, onComplete }) {
-  const [groupBy, setGroupBy] = useState('status')
+
+// ─── Linear page building blocks (module scope so they don't remount on every render) ──
+function OwnerStack({ owners }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center' }}>
+      {owners.map((o, i) => {
+        const c = MEMBER_COLORS[o] || { bg:'#f0f0f0', tc:'#888' }
+        return (
+          <div key={o} title={o}
+            style={{ width:18, height:18, borderRadius:'50%', background:c.bg, color:c.tc, fontSize:10, fontWeight:500, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid white', boxSizing:'content-box', marginLeft: i === 0 ? 0 : -8, position:'relative', zIndex: owners.length - i }}>
+            {o[0]}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+const Indicator = () => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#4f46e5,#7c3aed)', margin:'-3px 4px 0', boxShadow:'0 0 6px rgba(124,58,237,0.4)' }} />
+const chevronBtn = (open, onClick) => (
+  <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onClick() }}
+    style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'#bbb', fontSize:11, lineHeight:1, padding:'2px 4px', flexShrink:0 }}>
+    {open ? '▾' : '▸'}
+  </button>
+)
+const pill = (activeVal, val, label, onClick) => (
+  <button key={val} onClick={onClick}
+    style={{ fontSize:11, padding:'4px 12px', border:'none', background:activeVal===val?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:activeVal===val?'white':'#7c3aed', fontWeight:activeVal===val?600:400, cursor:'pointer', borderRadius:8, whiteSpace:'nowrap' }}>
+    {label}
+  </button>
+)
+
+function Row({ t, hideLinked, listTasks, listId, v }) {
+  const ss = subStyle(v.tss(t))
+  const done = v.tss(t) === 'complete'
+  const owners = t.owners || []
+  const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
+  const linked = v.entityMap[t.project_id] || v.entityMap[t.escalation_id] || null
+  const hideLink = hideLinked || v.groupBy === 'project'
+  const fb = flagBorder(t.color)
+  const subs = Array.isArray(t.subtasks) ? t.subtasks : []
+  const notes = Array.isArray(t.notes) ? t.notes : []
+  const notesOpen = v.openNotes.has(t.id)
+  const siblings = listTasks || []
+  const siblingIds = siblings.map(x => x.id)
+  const rowDrop = v.rowDrop
+  const dropInd = pos => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#4f46e5,#7c3aed)', margin: pos === 'before' ? '0 0 3px' : '3px 0 0' }} />
+  return (
+    <div style={{ marginBottom:4 }}>
+      {rowDrop && rowDrop.overId === t.id && rowDrop.pos === 'before' && dropInd('before')}
+      <div draggable onClick={() => v.onEdit(t)}
+        onDragStart={e => { e.stopPropagation(); v.dragTaskRef.current = t.id; e.dataTransfer.setData('text/task', t.id); if (listId) e.dataTransfer.setData('text/fromlist', listId); e.dataTransfer.effectAllowed = 'move' }}
+        onDragEnd={() => { v.dragTaskRef.current = null; v.setRowDrop(null); v.clearOutlines() }}
+        onDragOver={e => { const d = v.dragTaskRef.current; if (d && d !== t.id && siblingIds.includes(d)) { e.preventDefault(); e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); v.setRowDrop({ overId: t.id, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } }}
+        onDrop={e => { const d = v.dragTaskRef.current; if (d && siblingIds.includes(d) && listId) { e.preventDefault(); e.stopPropagation(); v.reorderTo(siblings, d, t.id, rowDrop?.pos || 'before', listId) } v.dragTaskRef.current = null; v.setRowDrop(null) }}
+        style={{ display:'flex', alignItems:'center', gap:9, padding:'6px 10px', background:'white', borderRadius:8, border:'0.5px solid #ebebeb', borderLeft: fb ? `3px solid ${fb}` : '0.5px solid #ebebeb', cursor:'pointer' }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = fb || '#d8d8d8'}
+        onMouseLeave={e => e.currentTarget.style.borderColor = '#ebebeb'}>
+        <div onClick={e => { e.stopPropagation(); v.onComplete(t.id, !done) }} title="Toggle complete"
+          style={{ width:15, height:15, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: done ? (ss.bg||'#eee') : 'white', flexShrink:0, boxSizing:'border-box', cursor:'pointer' }} />
+        <span style={{ flex:1, minWidth:0, fontSize:13, color: done?'#aaa':'#222', textDecoration: done?'line-through':'none', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.35 }}>
+          {t.today && <span style={{ fontSize:9, color:'#E24B4A', marginRight:6, fontWeight:600 }}>TODAY</span>}
+          {t.title}
+        </span>
+        <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
+          {subs.length > 0 && <span style={{ fontSize:10, color:'#aaa' }}>☑ {subs.filter(s => s.done).length}/{subs.length}</span>}
+          {notes.length > 0 && <button onClick={e => { e.stopPropagation(); v.toggleNotes(t.id) }} title="Notes"
+            style={{ fontSize:10, color: notesOpen?'#7c3aed':'#aaa', background: notesOpen?'#ede9fe':'none', border:'none', borderRadius:6, padding:'1px 4px', cursor:'pointer', fontFamily:'inherit' }}>❏ {notes.length}</button>}
+          {v.groupBy !== 'status' && <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap' }}>{ss.label}</span>}
+          {!hideLink && linked && <span style={{ fontSize:10, fontWeight:500, background:linked.type==='project'?'#EAF3DE':'#FCEBEB', color:linked.type==='project'?'#27500A':'#791F1F', padding:'2px 7px', borderRadius:20, border:`0.5px solid ${linked.type==='project'?'#97C459':'#F09595'}`, whiteSpace:'nowrap', maxWidth:130, overflow:'hidden', textOverflow:'ellipsis' }}>{linked.name}</span>}
+          {v.groupBy !== 'domain' && t.domain && <Badge type="domain">{t.domain}</Badge>}
+          {t.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, border:'0.5px solid #F09595', whiteSpace:'nowrap' }}>High</span>}
+          {v.groupBy !== 'owner' && showOwners && <OwnerStack owners={owners} />}
+          {t.due && <Badge type="due">{t.due}</Badge>}
+        </div>
+      </div>
+      {rowDrop && rowDrop.overId === t.id && rowDrop.pos === 'after' && dropInd('after')}
+      {notesOpen && notes.length > 0 && (
+        <div style={{ background:'#fafafa', border:'0.5px solid #ececec', borderRadius:8, padding:'8px 10px', marginTop:3 }}>
+          {notes.map(n => (
+            <div key={n.id} style={{ fontSize:11, color:'#555', lineHeight:1.5, marginBottom:4 }}>
+              <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EscRow({ e, v }) {
+  const ss = subStyle(e.substatus || 'not_started')
+  const owners = e.owners || []
+  const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
+  const escTasks = v.tasks.filter(t => t.escalation_id === e.id && v.tss(t) !== 'canceled' && (v.showDone || v.tss(t) !== 'complete') && v.ownerMatch(t)).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+  const notes = Array.isArray(e.notes) ? e.notes : []
+  const fb = flagBorder(e.color)
+  const id = `esc:${e.id}`
+  const open = !v.isMin(id)
+  const noteKey = `escnotes:${e.id}`
+  const notesOpen = v.openNotes.has(noteKey)
+  return (
+    <div style={{ background:'#fdf6f6', borderRadius:8, border:'0.5px solid #f2dede', borderLeft:`3px solid ${fb || '#F09595'}`, marginBottom:4, padding:'8px 10px' }}>
+      <div onDoubleClick={() => v.onOpenEscalation && v.onOpenEscalation(e)} title="Double-click to open"
+        style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:500, color:'#8a2b2b', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.3 }}>{e.title}</span>
+        <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
+          {escTasks.length > 0 && <span style={{ fontSize:10, color:'#aaa' }}>{escTasks.length} task{escTasks.length!==1?'s':''}</span>}
+          {notes.length > 0 && <button onClick={ev => { ev.stopPropagation(); v.toggleNotes(noteKey) }} title="Notes"
+            style={{ fontSize:10, color: notesOpen?'#7c3aed':'#aaa', background: notesOpen?'#ede9fe':'none', border:'none', borderRadius:6, padding:'1px 4px', cursor:'pointer', fontFamily:'inherit' }}>❏ {notes.length}</button>}
+          {e.substatus && <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap' }}>{ss.label}</span>}
+          {e.domain && <Badge type="domain">{e.domain}</Badge>}
+          {e.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, border:'0.5px solid #F09595', whiteSpace:'nowrap' }}>High</span>}
+          {showOwners && <OwnerStack owners={owners} />}
+          {e.due && <Badge type="due">{e.due}</Badge>}
+        </div>
+        {chevronBtn(open, () => v.toggleMin(id))}
+      </div>
+      {open && escTasks.length > 0 && (() => {
+        const escListId = `esc:${e.id}`
+        const ordered = v.orderList(escListId, escTasks)
+        return (
+          <div style={{ marginTop:8 }}>
+            {ordered.map(t => <Row key={t.id} t={t} listTasks={ordered} listId={escListId} v={v} />)}
+          </div>
+        )
+      })()}
+      {notesOpen && notes.length > 0 && (
+        <div style={{ background:'#fafafa', border:'0.5px solid #ececec', borderRadius:8, padding:'8px 10px', marginTop:8 }}>
+          {notes.map(n => (
+            <div key={n.id} style={{ fontSize:11, color:'#555', lineHeight:1.5, marginBottom:4 }}>
+              <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SectionCard({ label, count, accent, bg = '#f7f7f5', border, minId, children, v }) {
+  const open = !minId || !v.isMin(minId)
+  return (
+    <div style={{ background:bg, border: border ? `0.5px solid ${border}` : undefined, borderRadius:12, padding:12 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: open ? 10 : 0 }}>
+        {accent && <span style={{ width:7, height:7, borderRadius:'50%', background:accent }} />}
+        <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</span>
+        <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{count}</span>
+        {minId && chevronBtn(open, () => v.toggleMin(minId))}
+      </div>
+      {open && children}
+    </div>
+  )
+}
+
+function CategoryCard({ g, onGrab, ghost, v, renderTasks }) {
+  const id = `cat:${v.groupBy}:${g.key}`
+  const open = !v.isMin(id)
+  return (
+    <div data-lcard
+      onDragOver={onGrab ? e => { e.preventDefault() } : undefined}
+      onDragEnter={onGrab ? e => { e.currentTarget.style.outline = '2px dashed #7c3aed'; e.currentTarget.style.outlineOffset = '2px' } : undefined}
+      onDragLeave={onGrab ? e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.style.outline = 'none' } : undefined}
+      onDrop={onGrab ? e => v.handleSectionDrop(e, g) : undefined}
+      style={{ background:'#f7f7f5', borderRadius:12, padding:12, visibility: ghost ? 'hidden' : 'visible' }}>
+      <div onPointerDown={onGrab}
+        onDoubleClick={v.groupBy === 'project' && g.key !== '__none' ? () => v.onOpenProject && v.onOpenProject(g.key) : undefined}
+        title={v.groupBy === 'project' && g.key !== '__none' ? 'Double-click to open' : undefined}
+        style={{ display:'flex', alignItems:'center', gap:8, marginBottom: open ? 10 : 0, cursor: onGrab ? 'grab' : 'default', touchAction:'none', userSelect:'none' }}>
+        {!v.isMobile && <span title="Drag to rearrange" style={{ color:'#bfb6d6', fontSize:14, lineHeight:1 }}>⠿</span>}
+        <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{g.label}</span>
+        <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{g.tasks.length}</span>
+        {chevronBtn(open, () => v.toggleMin(id))}
+      </div>
+      {open && renderTasks(g.tasks, g.key)}
+    </div>
+  )
+}
+
+function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [], escalations = [], isMobile = false, onEdit, onComplete, onOpenEscalation, onOpenProject, onUpdateTasks }) {
+  const [groupBy, setGroupByState] = useState(() => localStorage.getItem('taskr-linear-group') || 'domain')
+  const setGroupBy = k => { setGroupByState(k); try { localStorage.setItem('taskr-linear-group', k) } catch {} }
   const [showDone, setShowDone] = useState(false)
+  const [listView, setListView] = useState(false)
+  const [filterOwner, setFilterOwner] = useState('all')
+  const [ownerMenuOpen, setOwnerMenuOpen] = useState(false)
+  const [sortCol, setSortCol] = useState('title')
+  const [sortDir, setSortDir] = useState('asc')
+  const [colFilters, setColFilters] = useState({ status:'', domain:'', owner:'' })
   const [colsByGroup, setColsByGroup] = useState(() => { try { return JSON.parse(localStorage.getItem('taskr-linear-cols')) || {} } catch { return {} } })
+  const [orders, setOrders] = useState(() => { try { return JSON.parse(localStorage.getItem('taskr-linear-order')) || {} } catch { return {} } })
+  const [minimized, setMinimized] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-linear-min')) || []) } catch { return new Set() } })
+  const [openNotes, setOpenNotes] = useState(() => new Set())
+  const toggleNotes = id => setOpenNotes(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const persistMin = n => { try { localStorage.setItem('taskr-linear-min', JSON.stringify([...n])) } catch {} }
+  const isMin = id => minimized.has(id)
+  const toggleMin = id => setMinimized(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); persistMin(n); return n })
   const [drag, setDrag] = useState(null)          // { key, x, y, offsetX, offsetY, w }
   const [dropTarget, setDropTarget] = useState(null) // { col, index }
+  const [rowDrop, setRowDrop] = useState(null)    // { overId, pos } — within-list reorder indicator
   const containerRef = useRef(null)
   const dragRef = useRef(null)
   const dropRef = useRef(null)
+  const dragTaskRef = useRef(null)                // id of task being dragged (for reorder detection)
 
   const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
-  const activeTasks = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete'))
+  const ownerMatch = t => filterOwner === 'all' || (t.owners || []).includes(filterOwner)
+  const activeTasks = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete') && ownerMatch(t))
+    .slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+  // Per-view manual ordering (client-side, keyed per list so it never touches the global board order)
+  const orderList = (listId, list) => {
+    const ord = orders[listId]
+    if (!ord) return list
+    const pos = Object.fromEntries(ord.map((id, i) => [id, i]))
+    return list.slice().sort((a, b) => {
+      const pa = pos[a.id] ?? Infinity, pb = pos[b.id] ?? Infinity
+      return pa !== pb ? pa - pb : (a.sort_order || 0) - (b.sort_order || 0)
+    })
+  }
+  const saveOrder = (listId, orderedIds) => {
+    const next = { ...orders, [listId]: orderedIds }
+    setOrders(next)
+    try { localStorage.setItem('taskr-linear-order', JSON.stringify(next)) } catch {}
+  }
+  const reorderTo = (listTasks, draggedId, overId, pos, listId) => {
+    const ids = listTasks.map(t => t.id).filter(id => id !== draggedId)
+    let idx = overId ? ids.indexOf(overId) : ids.length
+    if (idx < 0) idx = ids.length
+    if (pos === 'after') idx += 1
+    ids.splice(idx, 0, draggedId)
+    if (ids.join(',') !== listTasks.map(t => t.id).join(',')) saveOrder(listId, ids)
+  }
+
+  // Move task(s) into a category by changing the underlying grouping attribute
+  const applyMove = (ids, targetKey) => {
+    if (!onUpdateTasks || !ids?.length) return
+    let patch = null
+    if (groupBy === 'status') patch = { substatus: targetKey }
+    else if (groupBy === 'domain') patch = { domain: targetKey === '__none' ? '' : targetKey }
+    else if (groupBy === 'owner') patch = { owners: targetKey === '__un' ? [] : [targetKey] }
+    else if (groupBy === 'project') patch = { project_id: targetKey === '__none' ? null : targetKey }
+    if (patch) onUpdateTasks(ids, patch)
+  }
+  // Owner move: swap the source owner for the target so other co-owners are preserved
+  const moveTaskToOwner = (taskId, targetKey, fromListId) => {
+    if (!onUpdateTasks) return
+    if (targetKey === '__un') { onUpdateTasks([taskId], { owners: [] }); return }
+    const srcOwner = fromListId ? fromListId.split(':')[1] : null // "owner:<name>:main"
+    const cur = tasks.find(t => t.id === taskId)?.owners || []
+    const next = cur.filter(o => o !== srcOwner)
+    if (!next.includes(targetKey)) next.push(targetKey)
+    onUpdateTasks([taskId], { owners: next })
+  }
+  const mainListId = sectionKey => `${groupBy}:${sectionKey}:main`
+  const handleSectionDrop = (e, g) => {
+    e.preventDefault()
+    e.currentTarget.style.outline = 'none'
+    const taskId = e.dataTransfer.getData('text/task')
+    const taskIds = e.dataTransfer.getData('text/tasks')
+    if (taskId) {
+      const listForReorder = orderList(mainListId(g.key), groupBy === 'project' ? (g.tasks || []) : (g.tasks || []).filter(t => !t.project_id))
+      if (listForReorder.some(t => t.id === taskId)) {
+        // dropped in this section's empty area but already belongs here → move to the end
+        reorderTo(listForReorder, taskId, null, 'after', mainListId(g.key))
+      } else if (groupBy === 'owner') {
+        moveTaskToOwner(taskId, g.key, e.dataTransfer.getData('text/fromlist'))
+      } else {
+        applyMove([taskId], g.key)
+      }
+    } else if (taskIds) applyMove(taskIds.split(','), g.key)
+  }
+  const clearOutlines = () => { if (containerRef.current) containerRef.current.querySelectorAll('[data-lcard]').forEach(el => { el.style.outline = 'none' }) }
 
   let groups = []
   if (groupBy === 'status') {
@@ -2091,9 +2343,14 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
   } else if (groupBy === 'domain') {
     const dk = [...new Set(activeTasks.map(t => t.domain||''))].sort((a,b) => a ? (b ? a.localeCompare(b) : -1) : 1)
     groups = dk.map(d => ({ key:d||'__none', label:d||'No domain', tasks: activeTasks.filter(t => (t.domain||'') === d) }))
-  } else {
+  } else if (groupBy === 'owner') {
     const ok = [...memberNames, '']
     groups = ok.map(o => ({ key:o||'__un', label:o||'Unassigned', tasks: activeTasks.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0) }))
+  } else { // project / bundle
+    const byId = {}
+    activeTasks.forEach(t => { const pid = t.project_id || '__none'; (byId[pid] = byId[pid] || []).push(t) })
+    groups = Object.entries(byId).map(([id, ts]) => ({ key:id, label: id === '__none' ? 'No project / bundle' : (entityMap[id]?.name || 'Unknown'), tasks: ts }))
+    groups.sort((a, b) => a.key === '__none' ? 1 : b.key === '__none' ? -1 : a.label.localeCompare(b.label))
   }
   groups = groups.filter(g => g.tasks.length > 0)
   const groupMap = Object.fromEntries(groups.map(g => [g.key, g]))
@@ -2156,84 +2413,237 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
     window.addEventListener('pointerup', onUp)
   }
 
-  const Row = ({ t }) => {
-    const ss = subStyle(tss(t))
-    const done = tss(t) === 'complete'
-    const owners = t.owners || []
-    const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
-    const linked = entityMap[t.project_id] || entityMap[t.escalation_id] || null
-    const fb = flagBorder(t.color)
-    const subs = Array.isArray(t.subtasks) ? t.subtasks : []
+
+  const todayTasks = activeTasks.filter(t => t.today)
+
+  // Context handed to the module-scope building blocks (Row/EscRow/SectionCard/CategoryCard)
+  const v = { tss, entityMap, groupBy, openNotes, rowDrop, onEdit, dragTaskRef, setRowDrop, clearOutlines, reorderTo, onComplete, toggleNotes, tasks, showDone, ownerMatch, isMin, toggleMin, onOpenEscalation, orderList, isMobile, onOpenProject, handleSectionDrop }
+
+  // Within a category, cluster tasks that belong to a project/bundle into a titled container
+  const renderTasks = (list, sectionKey) => {
+    if (groupBy === 'project') {
+      const ordered = orderList(mainListId(sectionKey), list)
+      return ordered.map(t => <Row key={t.id} t={t} listTasks={ordered} listId={mainListId(sectionKey)} v={v} />)
+    }
+    const standalone = orderList(mainListId(sectionKey), list.filter(t => !t.project_id))
+    const byProj = {}
+    list.filter(t => t.project_id).forEach(t => { (byProj[t.project_id] = byProj[t.project_id] || []).push(t) })
+    const clusters = Object.entries(byProj).sort((a, b) => (entityMap[a[0]]?.name||'').localeCompare(entityMap[b[0]]?.name||''))
     return (
-      <div onClick={() => onEdit(t)}
-        style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'8px 12px', background:'white', borderRadius:8, border:'0.5px solid #ebebeb', borderLeft: fb ? `3px solid ${fb}` : '0.5px solid #ebebeb', marginBottom:4, cursor:'pointer' }}
-        onMouseEnter={e => e.currentTarget.style.borderColor = fb || '#d8d8d8'}
-        onMouseLeave={e => e.currentTarget.style.borderColor = '#ebebeb'}>
-        <div onClick={e => { e.stopPropagation(); onComplete(t.id, !done) }} title="Toggle complete"
-          style={{ width:16, height:16, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: done ? (ss.bg||'#eee') : 'white', flexShrink:0, marginTop:1, cursor:'pointer' }} />
-        <span style={{ flex:1, minWidth:0, fontSize:13, color: done?'#aaa':'#222', textDecoration: done?'line-through':'none', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.3 }}>
-          {t.today && <span style={{ fontSize:9, color:'#E24B4A', marginRight:6, fontWeight:600 }}>TODAY</span>}
-          {t.title}
-        </span>
-        <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
-          {subs.length > 0 && <span style={{ fontSize:10, color:'#aaa' }}>☑ {subs.filter(s => s.done).length}/{subs.length}</span>}
-          {groupBy !== 'status' && <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap' }}>{ss.label}</span>}
-          {linked && <span style={{ fontSize:10, fontWeight:500, background:linked.type==='project'?'#EAF3DE':'#FCEBEB', color:linked.type==='project'?'#27500A':'#791F1F', padding:'2px 7px', borderRadius:20, border:`0.5px solid ${linked.type==='project'?'#97C459':'#F09595'}`, whiteSpace:'nowrap', maxWidth:130, overflow:'hidden', textOverflow:'ellipsis' }}>{linked.name}</span>}
-          {groupBy !== 'domain' && t.domain && <Badge type="domain">{t.domain}</Badge>}
-          {t.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, border:'0.5px solid #F09595', whiteSpace:'nowrap' }}>High</span>}
-          {groupBy !== 'owner' && showOwners && owners.map(o => <OwnerPip key={o} name={o} />)}
-          {t.due && <Badge type="due">{t.due}</Badge>}
-        </div>
-      </div>
+      <>
+        {standalone.map(t => <Row key={t.id} t={t} listTasks={standalone} listId={mainListId(sectionKey)} v={v} />)}
+        {clusters.map(([pid, tsRaw]) => {
+          const clusterListId = `${groupBy}:${sectionKey}:proj:${pid}`
+          const ts = orderList(clusterListId, tsRaw)
+          const ent = entityMap[pid]
+          const cbg = flagBg(ent?.color) || '#f4f2ec'
+          const cbd = flagBorder(ent?.color) || '#d8d4c8'
+          const pnotes = Array.isArray(ent?.notes) ? ent.notes : []
+          const id = clusterListId // section-specific collapse id
+          const open = !isMin(id)
+          return (
+            <div key={pid} style={{ border:`1px solid ${cbd}`, borderRadius:8, padding: open ? '7px 7px 3px' : '7px', marginBottom:4, background:cbg }}>
+              <div draggable onDragStart={e => { e.stopPropagation(); e.dataTransfer.setData('text/tasks', ts.map(x => x.id).join(',')); e.dataTransfer.effectAllowed = 'move' }}
+                onDragEnd={clearOutlines}
+                onDoubleClick={() => onOpenProject && onOpenProject(pid)} title="Double-click to open"
+                style={{ display:'flex', alignItems:'center', gap:6, padding: open ? '0 3px 6px' : '0 3px', cursor:'grab' }}>
+                <span style={{ fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color:'#555', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ent?.name || 'Project'}</span>
+                <span style={{ fontSize:9, color:'#888', background:'white', border:`0.5px solid ${cbd}`, borderRadius:8, padding:'0 6px', flexShrink:0 }}>{ts.length}</span>
+                {pnotes.length > 0 && <span style={{ fontSize:9, color:'#999' }}>❏ {pnotes.length}</span>}
+                {chevronBtn(open, () => toggleMin(id))}
+              </div>
+              {open && ts.map(t => <Row key={t.id} t={t} hideLinked listTasks={ts} listId={clusterListId} v={v} />)}
+              {open && pnotes.length > 0 && (
+                <div style={{ background:'#fafafa', border:'0.5px solid #ececec', borderRadius:8, padding:'8px 10px', margin:'0 0 4px' }}>
+                  {pnotes.map(n => (
+                    <div key={n.id} style={{ fontSize:11, color:'#555', lineHeight:1.5, marginBottom:4 }}>
+                      <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </>
     )
   }
 
-  const CategoryCard = ({ g, onGrab, ghost }) => (
-    <div data-lcard style={{ background:'#f7f7f5', borderRadius:12, padding:12, visibility: ghost ? 'hidden' : 'visible' }}>
-      <div onPointerDown={onGrab}
-        style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, cursor: onGrab ? 'grab' : 'default', touchAction:'none', userSelect:'none' }}>
-        {!isMobile && <span title="Drag to rearrange" style={{ color:'#bfb6d6', fontSize:14, lineHeight:1 }}>⠿</span>}
-        <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{g.label}</span>
-        <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{g.tasks.length}</span>
-      </div>
-      {g.tasks.map(t => <Row key={t.id} t={t} />)}
-    </div>
-  )
-
-  const Indicator = () => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#4f46e5,#7c3aed)', margin:'-3px 4px 0', boxShadow:'0 0 6px rgba(124,58,237,0.4)' }} />
-
-  const pill = (activeVal, val, label, onClick) => (
-    <button key={val} onClick={onClick}
-      style={{ fontSize:11, padding:'4px 12px', border:'none', background:activeVal===val?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:activeVal===val?'white':'#7c3aed', fontWeight:activeVal===val?600:400, cursor:'pointer', borderRadius:8, whiteSpace:'nowrap' }}>
-      {label}
-    </button>
-  )
 
   // Columns to render, with the lifted section removed so the rest float up live
   const displayCols = columns.map(col => col.filter(k => !(drag && k === drag.key)))
+
+  // Collapse / expand all
+  const clusterIds = groupBy === 'project' ? [] : groups.flatMap(g => [...new Set(g.tasks.filter(t => t.project_id).map(t => t.project_id))].map(pid => `${groupBy}:${g.key}:proj:${pid}`))
+  const allCollapsibleIds = [
+    ...(todayTasks.length ? ['sec:today'] : []),
+    ...(escalations.length ? ['sec:esc'] : []),
+    ...groups.map(g => `cat:${groupBy}:${g.key}`),
+    ...clusterIds,
+  ]
+  const anyOpen = allCollapsibleIds.some(id => !minimized.has(id))
+  const toggleAll = () => {
+    const n = anyOpen
+      ? new Set([...minimized, ...allCollapsibleIds])
+      : new Set([...minimized].filter(id => !allCollapsibleIds.includes(id)))
+    setMinimized(n); persistMin(n)
+  }
+
+  // Collapse / expand just the projects, bundles & escalations
+  const projEscIds = [
+    ...escalations.map(e => `esc:${e.id}`),
+    ...(groupBy === 'project'
+      ? groups.filter(g => g.key !== '__none').map(g => `cat:project:${g.key}`)
+      : clusterIds),
+  ]
+  const anyProjOpen = projEscIds.some(id => !minimized.has(id))
+  const toggleProjEsc = () => {
+    const n = anyProjOpen
+      ? new Set([...minimized, ...projEscIds])
+      : new Set([...minimized].filter(id => !projEscIds.includes(id)))
+    setMinimized(n); persistMin(n)
+  }
+
+  // ── List view (sortable + per-column filters) ──
+  const setSort = col => { if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(col); setSortDir('asc') } }
+  const renderListView = () => {
+    const rows = activeTasks
+      .filter(t => !colFilters.status || tss(t) === colFilters.status)
+      .filter(t => !colFilters.domain || (t.domain || '') === colFilters.domain)
+      .filter(t => !colFilters.owner || (t.owners || []).includes(colFilters.owner))
+      .slice()
+      .sort((a, b) => {
+        const val = t => sortCol === 'status' ? (subStyle(tss(t)).label || '') : sortCol === 'domain' ? (t.domain || '') : sortCol === 'due' ? (t.due || '9999-99-99') : sortCol === 'owner' ? ((t.owners || [])[0] || '') : (t.title || '')
+        const cmp = String(val(a)).localeCompare(String(val(b)), undefined, { numeric:true })
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+    const GRID = isMobile ? '20px 1fr auto auto' : '22px 1fr 120px 120px 90px 110px'
+    const domainOpts = [...new Set(tasks.map(t => t.domain).filter(Boolean))].sort()
+    const H = ({ col, label }) => (
+      <button onClick={() => setSort(col)} style={{ display:'flex', alignItems:'center', gap:3, background:'none', border:'none', cursor:'pointer', padding:0, fontSize:10, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.05em', fontFamily:'inherit' }}>
+        {label}{sortCol === col && <span style={{ fontSize:8 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+      </button>
+    )
+    const selStyle = { fontSize:10, padding:'2px 4px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', color:'#555', maxWidth:'100%', outline:'none' }
+    return (
+      <div style={{ border:'0.5px solid #e5e5e5', borderRadius:10, overflow:'hidden' }}>
+        <div style={{ display:'grid', gridTemplateColumns:GRID, gap:isMobile?6:8, padding:'8px 12px', background:'#f7f7f5', borderBottom:'0.5px solid #e5e5e5', alignItems:'center' }}>
+          <span />
+          <H col="title" label="Task" />
+          <div style={{ display:'flex', flexDirection:'column', gap:3 }}><H col="status" label="Status" />
+            <select value={colFilters.status} onChange={e => setColFilters(f => ({ ...f, status:e.target.value }))} style={selStyle}>
+              <option value="">All</option>{COLS.map(c => <option key={c.key} value={c.key}>{c.lbl}</option>)}
+            </select></div>
+          {!isMobile && <div style={{ display:'flex', flexDirection:'column', gap:3 }}><H col="domain" label="Domain" />
+            <select value={colFilters.domain} onChange={e => setColFilters(f => ({ ...f, domain:e.target.value }))} style={selStyle}>
+              <option value="">All</option>{domainOpts.map(d => <option key={d} value={d}>{d}</option>)}
+            </select></div>}
+          <H col="due" label="Due" />
+          {!isMobile && <div style={{ display:'flex', flexDirection:'column', gap:3 }}><H col="owner" label="Owner" />
+            <select value={colFilters.owner} onChange={e => setColFilters(f => ({ ...f, owner:e.target.value }))} style={selStyle}>
+              <option value="">All</option>{memberNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select></div>}
+        </div>
+        {rows.map((t, i) => {
+          const ss = subStyle(tss(t)); const done = tss(t) === 'complete'; const owners = t.owners || []
+          return (
+            <div key={t.id} onClick={() => onEdit(t)}
+              style={{ display:'grid', gridTemplateColumns:GRID, gap:isMobile?6:8, padding:'7px 12px', alignItems:'center', borderBottom: i === rows.length-1 ? 'none' : '0.5px solid #f0f0f0', cursor:'pointer', background:'white' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#fafafa'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+              <div onClick={e => { e.stopPropagation(); onComplete(t.id, !done) }} style={{ width:14, height:14, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: done ? (ss.bg||'#eee') : 'white', cursor:'pointer', boxSizing:'border-box' }} />
+              <span style={{ fontSize:13, color: done?'#aaa':'#111', textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', paddingRight:8 }}>
+                {t.today && <span style={{ fontSize:9, color:'#E24B4A', marginRight:5, fontWeight:600 }}>TODAY</span>}{t.title}
+              </span>
+              <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap', width:'fit-content' }}>{ss.label||'—'}</span>
+              {!isMobile && <span style={{ fontSize:10, color:t.domain?'#0C447C':'#ccc', background:t.domain?'#E6F1FB':'transparent', border:t.domain?'0.5px solid #85B7EB':'none', borderRadius:20, padding:t.domain?'2px 7px':'0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', width:'fit-content' }}>{t.domain||'—'}</span>}
+              <span style={{ fontSize:11, color:t.due?(t.due<today()?'#c0392b':'#888'):'#ccc', whiteSpace:'nowrap' }}>{t.due||'—'}</span>
+              {!isMobile && <div style={{ display:'flex' }}>{owners.length ? <OwnerStack owners={owners} /> : <span style={{ fontSize:11, color:'#ccc' }}>—</span>}</div>}
+            </div>
+          )
+        })}
+        {rows.length === 0 && <div style={{ padding:'28px 12px', textAlign:'center', fontSize:13, color:'#bbb' }}>No tasks</div>}
+      </div>
+    )
+  }
 
   return (
     <div style={{ userSelect: drag ? 'none' : undefined }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
         <span style={{ fontSize:10, color:'#a99fc0', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.07em', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:20, padding:'2px 10px' }}>Linear · Mockup</span>
         <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
-          {[{k:'status',l:'Status'},{k:'domain',l:'Domain'},{k:'owner',l:'Owner'}].map(g => pill(groupBy, g.k, g.l, () => setGroupBy(g.k)))}
+          {[{k:'domain',l:'Domain'},{k:'status',l:'Status'},{k:'owner',l:'Owner'},{k:'project',l:'Project'}].map(g => pill(groupBy, g.k, g.l, () => setGroupBy(g.k)))}
+        </div>
+        {/* Owner filter */}
+        <div style={{ position:'relative' }}>
+          <button onClick={() => setOwnerMenuOpen(o => !o)} title="Filter by owner"
+            style={{ fontSize:11, background: filterOwner!=='all' ? 'linear-gradient(135deg,#4f46e5,#7c3aed)' : 'white', border: filterOwner!=='all' ? 'none' : '0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:26, color: filterOwner!=='all' ? 'white' : '#7c3aed', display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap' }}>
+            <span>{filterOwner === 'all' ? '👥 All' : filterOwner}</span><span style={{ fontSize:9, opacity:0.7 }}>▾</span>
+          </button>
+          {ownerMenuOpen && (
+            <>
+              <div onClick={() => setOwnerMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
+              <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, minWidth:150, maxHeight:280, overflowY:'auto', padding:4 }}>
+                {[{ v:'all', l:'👥 All' }, ...memberNames.map(n => ({ v:n, l:n }))].map(opt => (
+                  <button key={opt.v} onClick={() => { setFilterOwner(opt.v); setOwnerMenuOpen(false) }}
+                    style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'7px 10px', background: filterOwner===opt.v ? '#ede9fe' : 'none', border:'none', borderRadius:7, cursor:'pointer', fontSize:12, color: filterOwner===opt.v ? '#7c3aed' : '#444', fontWeight: filterOwner===opt.v ? 600 : 400, fontFamily:'inherit' }}>
+                    {opt.v !== 'all' && <OwnerPip name={opt.v} />}{opt.l}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <button onClick={() => setShowDone(v => !v)}
           style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:showDone?'none':'0.5px solid #c4b5fd', background:showDone?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:showDone?'white':'#7c3aed', height:26 }}>
           ✓ Done
         </button>
-        {!isMobile && <button onClick={resetLayout} title="Reset column layout"
+        <button onClick={() => setListView(v => !v)} title={listView ? 'Board view' : 'List view'}
+          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:listView?'none':'0.5px solid #c4b5fd', background:listView?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:listView?'white':'#7c3aed', height:26 }}>
+          ☰ List
+        </button>
+        {!listView && <button onClick={toggleAll} title={anyOpen ? 'Collapse all' : 'Expand all'}
+          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #c4b5fd', background:'white', color:'#7c3aed', height:26 }}>
+          {anyOpen ? '⊟ Collapse all' : '⊞ Expand all'}
+        </button>}
+        {!listView && projEscIds.length > 0 && <button onClick={toggleProjEsc} title="Collapse/expand projects, bundles & escalations"
+          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #c4b5fd', background:'white', color:'#7c3aed', height:26 }}>
+          {anyProjOpen ? '⊟' : '⊞'} 📁 P/B/E
+        </button>}
+        {!isMobile && !listView && <button onClick={resetLayout} title="Reset column layout"
           style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #e0e0e0', background:'white', color:'#888', height:26 }}>
           ⟲ Reset layout
         </button>}
       </div>
 
-      {groups.length === 0 ? (
+      {listView && renderListView()}
+
+      {/* Today (2 cols) + Escalations (1 col) — one row, linear formatting */}
+      {!listView && (todayTasks.length > 0 || escalations.length > 0) && (
+        <div style={{ display:'flex', flexDirection:isMobile?'column':'row', gap:12, marginBottom:12, alignItems:'flex-start' }}>
+          {todayTasks.length > 0 && (
+            <div style={{ flex: isMobile ? '1 1 auto' : 2, minWidth:0, width:isMobile?'100%':undefined }}>
+              <SectionCard label="Today" count={todayTasks.length} accent="#E24B4A" bg="#fdf2f1" border="#f2d9d5" minId="sec:today" v={v}>
+                <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', columnGap:8 }}>
+                  {(() => { const td = orderList('today', todayTasks); return td.map(t => <Row key={t.id} t={t} listTasks={td} listId="today" v={v} />) })()}
+                </div>
+              </SectionCard>
+            </div>
+          )}
+          {escalations.length > 0 && (
+            <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
+              <SectionCard label="Escalations" count={escalations.length} accent="#7c3aed" bg="#ede9fe" border="#c4b5fd" minId="sec:esc" v={v}>
+                {escalations.map(e => <EscRow key={e.id} e={e} v={v} />)}
+              </SectionCard>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!listView && (groups.length === 0 ? (
         <div style={{ textAlign:'center', padding:'40px 0', color:'#bbb', fontSize:13 }}>No tasks</div>
       ) : isMobile ? (
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          {groups.map(g => <CategoryCard key={g.key} g={g} />)}
+          {groups.map(g => <CategoryCard key={g.key} g={g} v={v} renderTasks={renderTasks} />)}
         </div>
       ) : (
         <div ref={containerRef} style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
@@ -2242,7 +2652,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
             const showInd = i => drag && dropTarget && dropTarget.col === ci && dropTarget.index === i
             if (showInd(0)) items.push(<Indicator key="ind-0" />)
             colKeys.forEach((key, i) => {
-              if (groupMap[key]) items.push(<CategoryCard key={key} g={groupMap[key]} onGrab={e => startDrag(e, groupMap[key])} />)
+              if (groupMap[key]) items.push(<CategoryCard key={key} g={groupMap[key]} onGrab={e => startDrag(e, groupMap[key])} v={v} renderTasks={renderTasks} />)
               if (showInd(i + 1)) items.push(<Indicator key={`ind-${i+1}`} />)
             })
             return (
@@ -2253,12 +2663,12 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
             )
           })}
         </div>
-      )}
+      ))}
 
       {/* Lifted clone following the cursor */}
       {drag && groupMap[drag.key] && (
         <div style={{ position:'fixed', left: drag.x - drag.offsetX, top: drag.y - drag.offsetY, width: drag.w, pointerEvents:'none', zIndex:1000, transform:'rotate(-1.5deg) scale(1.02)', opacity:0.96, filter:'drop-shadow(0 18px 34px rgba(80,60,120,0.35))', maxHeight:300, overflow:'hidden', borderRadius:12 }}>
-          <CategoryCard g={groupMap[drag.key]} />
+          <CategoryCard g={groupMap[drag.key]} v={v} renderTasks={renderTasks} />
         </div>
       )}
     </div>
@@ -2845,27 +3255,36 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
   const editNote = (id, text) => { if (!text) removeNote(id); else set('notes', f.notes.map(n => n.id===id?{...n,text}:n)) }
   const addSub = () => { const text = newSub.trim(); if (!text) return; set('subtasks', [...f.subtasks, { id:'st'+Date.now(), title:text, done:false }]); setNewSub('') }
 
-  const detailsSection = (
+  const coreFields = (
     <>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
+        <div><label style={FIELD_LABEL}>Status</label>
+          <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
+            {SUBSTATUS.filter(s => s.key && s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select></div>
         <div><label style={FIELD_LABEL}>Priority</label>
           <select value={f.priority} onChange={e => set('priority', e.target.value)} style={FIELD_SELECT}>
             <option value="">Normal</option><option value="high">High</option>
           </select></div>
+        <div><label style={FIELD_LABEL}>Due date</label>
+          <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12, alignItems:'end' }}>
         <div><label style={FIELD_LABEL}>Domain</label>
           <select value={f.domain} onChange={e => set('domain', e.target.value)} style={FIELD_SELECT}>
             <option value="">— none —</option>
             {(domains||[]).map(d => <option key={d} value={d}>{d}</option>)}
           </select></div>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-        <div><label style={FIELD_LABEL}>Due date</label>
-          <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
         <div><label style={FIELD_LABEL}>Flag color</label>
-          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+          <div style={{ display:'flex', gap:6, alignItems:'center', height:32 }}>
             {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
           </div></div>
       </div>
+    </>
+  )
+
+  const detailsSection = (
+    <>
       <div style={{ marginBottom:12 }}>
         <label style={FIELD_LABEL}>Assigned to</label>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
@@ -2904,12 +3323,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
             {expandBtn}
             {showDetails && (
               <>
-                <div style={{ marginBottom:12 }}>
-                  <label style={FIELD_LABEL}>Status</label>
-                  <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
-                    {SUBSTATUS.filter(s => s.key && s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
-                </div>
+                {coreFields}
                 {detailsSection}
                 <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
                   <label style={FIELD_LABEL}>Subtasks</label>
@@ -2937,12 +3351,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
         ) : (
           /* ── Edit task: key fields visible, rest collapsible ── */
           <>
-            <div style={{ marginBottom:12 }}>
-              <label style={FIELD_LABEL}>Status</label>
-              <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
-                {SUBSTATUS.filter(s => s.key && s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </select>
-            </div>
+            {coreFields}
             <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
               <label style={FIELD_LABEL}>Subtasks</label>
               {f.subtasks.map(st => (
@@ -2965,7 +3374,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
             </div>
             <button onClick={() => setShowDetails(v => !v)}
               style={{ fontSize:12, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:8, padding:'6px 12px', cursor:'pointer', marginBottom:14, display:'block', fontWeight:500 }}>
-              {showDetails ? '▴ Hide details' : '▾ Show details'}
+              {showDetails ? '▴ Hide details' : '▾ More details'}
             </button>
             {showDetails && detailsSection}
           </>
@@ -4355,21 +4764,33 @@ export default function App() {
   const quickComplete = async (id, complete) => {
     const prior = tasks.find(t => t.id === id)
     const substatus = complete ? 'complete' : (prior?.substatus && prior.substatus !== 'complete' ? prior.substatus : 'not_started')
-    await supabase.from('tasks').update({ substatus, updated_at: new Date().toISOString() }).eq('id', id)
-    await loadData()
+    const updated_at = new Date().toISOString()
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, substatus, updated_at } : t)) // optimistic — no full reload
+    await supabase.from('tasks').update({ substatus, updated_at }).eq('id', id)
   }
 
+  // Apply a field patch to many tasks at once (used by the Linear page drag-to-section)
+  const updateTasksFields = async (ids, patch) => {
+    if (!ids?.length || !patch) return
+    const updated_at = new Date().toISOString()
+    setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, ...patch, updated_at } : t)) // optimistic
+    await Promise.all(ids.map(id => supabase.from('tasks').update({ ...patch, updated_at }).eq('id', id)))
+  }
+
+
   const toggleToday = async (id, todayVal) => {
-    await supabase.from('tasks').update({ today: todayVal, updated_at: new Date().toISOString() }).eq('id', id)
-    await loadData()
+    const updated_at = new Date().toISOString()
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, today: todayVal, updated_at } : t)) // optimistic — no full reload
+    await supabase.from('tasks').update({ today: todayVal, updated_at }).eq('id', id)
   }
 
   const toggleSubtask = async (taskId, subtaskId, done) => {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
     const subtasks = (task.subtasks||[]).map(s => s.id===subtaskId?{...s,done}:s)
-    await supabase.from('tasks').update({ subtasks, updated_at: new Date().toISOString() }).eq('id', taskId)
-    await loadData()
+    const updated_at = new Date().toISOString()
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, subtasks, updated_at } : t)) // optimistic — no full reload
+    await supabase.from('tasks').update({ subtasks, updated_at }).eq('id', taskId)
   }
 
   const reorderTask = async (dragId, targetId, position, col) => {
@@ -4493,8 +4914,8 @@ export default function App() {
   const taskSubstatus = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
   const getColTasks = colKey => filteredTasks.filter(t => taskSubstatus(t) === colKey).sort((a,b) => (a.sort_order||0)-(b.sort_order||0))
   const entityMap = Object.fromEntries([
-    ...projects.map(p => [p.id, { name: p.title, type: 'project' }]),
-    ...escalations.map(e => [e.id, { name: e.title, type: 'escalation' }]),
+    ...projects.map(p => [p.id, { name: p.title, type: 'project', color: p.color, notes: p.notes }]),
+    ...escalations.map(e => [e.id, { name: e.title, type: 'escalation', color: e.color, notes: e.notes }]),
   ])
 
   const searchQ = taskSearch.trim().toLowerCase()
@@ -4587,7 +5008,10 @@ export default function App() {
       {/* ── Linear task mockup ── */}
       {tab === 'linear' && (
         <TaskLinearMockup tasks={tasks} entityMap={entityMap} domains={domains} memberNames={memberNames} isMobile={isMobile}
-          onEdit={t => { setForm({...t}); setIsEdit(true) }} onComplete={quickComplete} />
+          escalations={visibleEscalations}
+          onEdit={t => { setForm({...t}); setIsEdit(true) }} onComplete={quickComplete} onUpdateTasks={updateTasksFields}
+          onOpenEscalation={e => setActivePopup({ entity:e, type:'escalation' })}
+          onOpenProject={id => { const p = projects.find(x => x.id === id); if (p) setActivePopup({ entity:p, type:'project' }) }} />
       )}
 
       {/* ── Task Board ── */}
