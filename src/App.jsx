@@ -2111,7 +2111,7 @@ function Row({ t, hideLinked, listTasks, listId, v }) {
   const rowDrop = v.rowDrop
   const dropInd = pos => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#4f46e5,#7c3aed)', margin: pos === 'before' ? '0 0 3px' : '3px 0 0' }} />
   return (
-    <div style={{ marginBottom:4 }}>
+    <div data-tid={t.id} style={{ marginBottom:4 }}>
       {rowDrop && rowDrop.overId === t.id && rowDrop.pos === 'before' && dropInd('before')}
       <div draggable onClick={() => v.onEdit(t)}
         onDragStart={e => { e.stopPropagation(); v.dragTaskRef.current = t.id; e.dataTransfer.setData('text/task', t.id); if (listId) e.dataTransfer.setData('text/fromlist', listId); e.dataTransfer.effectAllowed = 'move' }}
@@ -2620,15 +2620,35 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
       {/* Today (2 cols) + Escalations (1 col) — one row, linear formatting */}
       {!listView && (todayTasks.length > 0 || escalations.length > 0) && (
         <div style={{ display:'flex', flexDirection:isMobile?'column':'row', gap:12, marginBottom:12, alignItems:'flex-start' }}>
-          {todayTasks.length > 0 && (
+          {todayTasks.length > 0 && (() => {
+            const td = orderList('today', todayTasks)
+            const inToday = id => td.some(x => x.id === id)
+            return (
             <div style={{ flex: isMobile ? '1 1 auto' : 2, minWidth:0, width:isMobile?'100%':undefined }}>
               <SectionCard label="Today" count={todayTasks.length} accent="#E24B4A" bg="#fdf2f1" border="#f2d9d5" minId="sec:today" v={v}>
-                <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', columnGap:8 }}>
-                  {(() => { const td = orderList('today', todayTasks); return td.map(t => <Row key={t.id} t={t} listTasks={td} listId="today" v={v} />) })()}
+                <div
+                  onDragOver={e => { const d = dragTaskRef.current || e.dataTransfer.getData('text/task'); if (inToday(d)) e.preventDefault() }}
+                  onDrop={e => {
+                    const d = dragTaskRef.current || e.dataTransfer.getData('text/task')
+                    if (!d || !inToday(d)) return
+                    e.preventDefault()
+                    let overId = null, pos = 'after'
+                    for (const el of e.currentTarget.querySelectorAll('[data-tid]')) {
+                      const r = el.getBoundingClientRect()
+                      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+                        overId = el.getAttribute('data-tid'); pos = e.clientX < r.left + r.width / 2 ? 'before' : 'after'; break
+                      }
+                    }
+                    reorderTo(td, d, overId, pos, 'today')
+                    dragTaskRef.current = null; setRowDrop(null)
+                  }}
+                  style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', columnGap:8, minHeight:40 }}>
+                  {td.map(t => <Row key={t.id} t={t} listTasks={td} listId="today" v={v} />)}
                 </div>
               </SectionCard>
             </div>
-          )}
+            )
+          })()}
           {escalations.length > 0 && (
             <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
               <SectionCard label="Escalations" count={escalations.length} accent="#7c3aed" bg="#ede9fe" border="#c4b5fd" minId="sec:esc" v={v}>
