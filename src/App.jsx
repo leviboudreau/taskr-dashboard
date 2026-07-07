@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from './supabase'
 import DOMPurify from 'dompurify'
-import { Newspaper, ClipboardList, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList } from 'lucide-react'
+import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
@@ -2084,9 +2084,15 @@ function OwnerStack({ owners }) {
 const Indicator = () => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#4f46e5,#7c3aed)', margin:'-3px 4px 0', boxShadow:'0 0 6px rgba(124,58,237,0.4)' }} />
 const chevronBtn = (open, onClick) => (
   <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onClick() }}
-    style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'#bbb', fontSize:11, lineHeight:1, padding:'2px 4px', flexShrink:0 }}>
+    style={{ background:'none', border:'none', cursor:'pointer', color:'#bbb', fontSize:11, lineHeight:1, padding:'2px 4px', flexShrink:0 }}>
     {open ? '▾' : '▸'}
   </button>
+)
+// Wraps trailing header controls (add button, chevron, etc.) and pushes the group flush right together
+const linHeaderRight = (...nodes) => (
+  <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:2, flexShrink:0 }}>
+    {nodes}
+  </div>
 )
 const pill = (activeVal, val, label, onClick) => (
   <button key={val} onClick={onClick}
@@ -2094,6 +2100,52 @@ const pill = (activeVal, val, label, onClick) => (
     {label}
   </button>
 )
+const linAddIconBtn = onClick => (
+  <button onClick={e => { e.stopPropagation(); onClick() }} onPointerDown={e => e.stopPropagation()} title="Add task"
+    style={{ background:'none', border:'none', cursor:'pointer', color:'#bbb', fontSize:15, lineHeight:1, padding:'2px 5px', flexShrink:0, fontWeight:600 }}
+    onMouseEnter={e => e.currentTarget.style.color = '#7c3aed'} onMouseLeave={e => e.currentTarget.style.color = '#bbb'}>
+    +
+  </button>
+)
+const linColorBtn = (onClick, shade) => (
+  <button onClick={e => { e.stopPropagation(); onClick() }} onPointerDown={e => e.stopPropagation()} title="Customize color"
+    style={{ width:13, height:13, borderRadius:'50%', flexShrink:0, padding:0, cursor:'pointer', background: shade || '#e5e5e5', border: shade ? '1.5px solid rgba(0,0,0,0.15)' : '1.5px dashed #bbb' }}
+    onMouseEnter={e => e.currentTarget.style.borderColor = '#7c3aed'}
+    onMouseLeave={e => e.currentTarget.style.borderColor = shade ? 'rgba(0,0,0,0.15)' : '#bbb'} />
+)
+const linHideBtn = onClick => (
+  <button onClick={e => { e.stopPropagation(); onClick() }} onPointerDown={e => e.stopPropagation()} title="Remove from view (empty domain — stays available elsewhere)"
+    style={{ background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:12, lineHeight:1, padding:'2px 4px', flexShrink:0 }}
+    onMouseEnter={e => e.currentTarget.style.color = '#c0392b'} onMouseLeave={e => e.currentTarget.style.color = '#ccc'}>
+    ✕
+  </button>
+)
+
+function DomainColorPopover({ name, meta, onUpdate, onClose }) {
+  return (
+    <>
+      <div onClick={e => { e.stopPropagation(); onClose() }} style={{ position:'fixed', inset:0, zIndex:150 }} />
+      <div onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}
+        style={{ position:'absolute', top:'calc(100% + 4px)', right:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, padding:10, minWidth:170 }}>
+        <div style={{ fontSize:10, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{name}</div>
+        <label style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, fontSize:12, color:'#555', marginBottom:8, cursor:'pointer' }}>
+          Shade
+          <input type="color" value={meta.color || '#f7f7f5'} onChange={e => onUpdate({ color: e.target.value })} style={{ width:32, height:24, border:'none', padding:0, cursor:'pointer', background:'none' }} />
+        </label>
+        <label style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, fontSize:12, color:'#555', marginBottom: (meta.color || meta.text_color) ? 8 : 0, cursor:'pointer' }}>
+          Title color
+          <input type="color" value={meta.text_color || '#888888'} onChange={e => onUpdate({ text_color: e.target.value })} style={{ width:32, height:24, border:'none', padding:0, cursor:'pointer', background:'none' }} />
+        </label>
+        {(meta.color || meta.text_color) && (
+          <button onClick={() => onUpdate({ color:null, text_color:null })}
+            style={{ fontSize:11, color:'#888', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 0', cursor:'pointer', width:'100%' }}>
+            Reset to default
+          </button>
+        )}
+      </div>
+    </>
+  )
+}
 
 function Row({ t, hideLinked, listTasks, listId, v }) {
   const ss = subStyle(v.tss(t))
@@ -2119,18 +2171,18 @@ function Row({ t, hideLinked, listTasks, listId, v }) {
         onDragOver={e => { const d = v.dragTaskRef.current; if (d && d !== t.id && siblingIds.includes(d)) { e.preventDefault(); e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); v.setRowDrop({ overId: t.id, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } }}
         onDrop={e => { const d = v.dragTaskRef.current; if (d && siblingIds.includes(d) && listId) { e.preventDefault(); e.stopPropagation(); v.reorderTo(siblings, d, t.id, rowDrop?.pos || 'before', listId) } v.dragTaskRef.current = null; v.setRowDrop(null) }}
         style={{ display:'flex', alignItems:'center', gap:9, padding:'6px 10px', background:'white', borderRadius:8, border:'0.5px solid #ebebeb', borderLeft: fb ? `3px solid ${fb}` : '0.5px solid #ebebeb', cursor:'pointer' }}
-        onMouseEnter={e => e.currentTarget.style.borderColor = fb || '#d8d8d8'}
-        onMouseLeave={e => e.currentTarget.style.borderColor = '#ebebeb'}>
+        onMouseEnter={e => { e.currentTarget.style.borderColor = fb || '#d8d8d8'; if (fb) e.currentTarget.style.borderLeftColor = fb }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = '#ebebeb'; if (fb) e.currentTarget.style.borderLeftColor = fb }}>
         <div onClick={e => { e.stopPropagation(); v.onComplete(t.id, !done) }} title="Toggle complete"
           style={{ width:15, height:15, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: done ? (ss.bg||'#eee') : 'white', flexShrink:0, boxSizing:'border-box', cursor:'pointer' }} />
-        <span style={{ flex:1, minWidth:0, fontSize:13, color: done?'#aaa':'#222', textDecoration: done?'line-through':'none', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.35 }}>
+        <span style={{ flex:1, minWidth:0, fontSize:12, color: done?'#aaa':'#222', textDecoration: done?'line-through':'none', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.35 }}>
           {t.today && <span style={{ fontSize:9, color:'#E24B4A', marginRight:6, fontWeight:600 }}>TODAY</span>}
           {t.title}
         </span>
         <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
           {subs.length > 0 && <span style={{ fontSize:10, color:'#aaa' }}>☑ {subs.filter(s => s.done).length}/{subs.length}</span>}
           {notes.length > 0 && <button onClick={e => { e.stopPropagation(); v.toggleNotes(t.id) }} title="Notes"
-            style={{ fontSize:10, color: notesOpen?'#7c3aed':'#aaa', background: notesOpen?'#ede9fe':'none', border:'none', borderRadius:6, padding:'1px 4px', cursor:'pointer', fontFamily:'inherit' }}>❏ {notes.length}</button>}
+            style={{ fontSize:10, color: notesOpen?'#7c3aed':'#aaa', background: notesOpen?'#ede9fe':'none', border:'none', borderRadius:6, padding:'1px 5px', cursor:'pointer', fontFamily:'inherit', display:'inline-flex', alignItems:'center', gap:3 }}><StickyNote size={11} strokeWidth={2} /> {notes.length}</button>}
           {v.groupBy !== 'status' && <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap' }}>{ss.label}</span>}
           {!hideLink && linked && <span style={{ fontSize:10, fontWeight:500, background:linked.type==='project'?'#EAF3DE':'#FCEBEB', color:linked.type==='project'?'#27500A':'#791F1F', padding:'2px 7px', borderRadius:20, border:`0.5px solid ${linked.type==='project'?'#97C459':'#F09595'}`, whiteSpace:'nowrap', maxWidth:130, overflow:'hidden', textOverflow:'ellipsis' }}>{linked.name}</span>}
           {v.groupBy !== 'domain' && t.domain && <Badge type="domain">{t.domain}</Badge>}
@@ -2142,6 +2194,7 @@ function Row({ t, hideLinked, listTasks, listId, v }) {
       {rowDrop && rowDrop.overId === t.id && rowDrop.pos === 'after' && dropInd('after')}
       {notesOpen && notes.length > 0 && (
         <div style={{ background:'#fafafa', border:'0.5px solid #ececec', borderRadius:8, padding:'8px 10px', marginTop:3 }}>
+          {t.updated_at && <div style={{ fontSize:9, color:'#a99fc0', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.04em', marginBottom:6 }}>Task modified {fmtDateTime(t.updated_at)}</div>}
           {notes.map(n => (
             <div key={n.id} style={{ fontSize:11, color:'#555', lineHeight:1.5, marginBottom:4 }}>
               <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
@@ -2153,7 +2206,7 @@ function Row({ t, hideLinked, listTasks, listId, v }) {
   )
 }
 
-function EscRow({ e, v }) {
+function EscRow({ e, v, escList }) {
   const ss = subStyle(e.substatus || 'not_started')
   const owners = e.owners || []
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
@@ -2164,22 +2217,33 @@ function EscRow({ e, v }) {
   const open = !v.isMin(id)
   const noteKey = `escnotes:${e.id}`
   const notesOpen = v.openNotes.has(noteKey)
+  const list = escList || []
+  const listIds = list.map(x => x.id)
+  const entDrop = v.entDrop
+  const entInd = pos => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#7c3aed,#a855f7)', margin: pos === 'before' ? '0 0 4px' : '4px 0 0' }} />
   return (
-    <div style={{ background:'#fdf6f6', borderRadius:8, border:'0.5px solid #f2dede', borderLeft:`3px solid ${fb || '#F09595'}`, marginBottom:4, padding:'8px 10px' }}>
-      <div onDoubleClick={() => v.onOpenEscalation && v.onOpenEscalation(e)} title="Double-click to open"
-        style={{ display:'flex', alignItems:'center', gap:10 }}>
-        <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:500, color:'#8a2b2b', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.3 }}>{e.title}</span>
+    <div
+      onDragOver={ev => { const d = v.dragEntRef.current; if (d && d !== e.id && listIds.includes(d)) { ev.preventDefault(); const r = ev.currentTarget.getBoundingClientRect(); v.setEntDrop({ overId: e.id, pos: ev.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } }}
+      onDrop={ev => { const d = v.dragEntRef.current; if (d && listIds.includes(d)) { ev.preventDefault(); v.reorderTo(list, d, e.id, entDrop?.pos || 'before', 'escalations') } v.dragEntRef.current = null; v.setEntDrop(null) }}
+      style={{ background:'transparent' }}>
+      {entDrop && entDrop.overId === e.id && entDrop.pos === 'before' && entInd('before')}
+      <div style={{ background:'#fdf6f6', borderRadius:8, border:'0.5px solid #f2dede', borderLeft:`3px solid ${fb || '#F09595'}`, marginBottom:4, padding:'8px 10px' }}>
+      <div draggable onDragStart={ev => { v.dragEntRef.current = e.id; ev.dataTransfer.setData('text/ent', e.id); ev.dataTransfer.effectAllowed = 'move' }}
+        onDragEnd={() => { v.dragEntRef.current = null; v.setEntDrop(null) }}
+        onDoubleClick={() => v.onOpenEscalation && v.onOpenEscalation(e)} title="Drag to reorder · double-click to open"
+        style={{ display:'flex', alignItems:'center', gap:10, cursor:'grab' }}>
+        <span style={{ flex:1, minWidth:0, fontSize:12, fontWeight:500, color:'#8a2b2b', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.3 }}>{e.title}</span>
         <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
           {escTasks.length > 0 && <span style={{ fontSize:10, color:'#aaa' }}>{escTasks.length} task{escTasks.length!==1?'s':''}</span>}
           {notes.length > 0 && <button onClick={ev => { ev.stopPropagation(); v.toggleNotes(noteKey) }} title="Notes"
-            style={{ fontSize:10, color: notesOpen?'#7c3aed':'#aaa', background: notesOpen?'#ede9fe':'none', border:'none', borderRadius:6, padding:'1px 4px', cursor:'pointer', fontFamily:'inherit' }}>❏ {notes.length}</button>}
+            style={{ fontSize:10, color: notesOpen?'#7c3aed':'#aaa', background: notesOpen?'#ede9fe':'none', border:'none', borderRadius:6, padding:'1px 5px', cursor:'pointer', fontFamily:'inherit', display:'inline-flex', alignItems:'center', gap:3 }}><StickyNote size={11} strokeWidth={2} /> {notes.length}</button>}
           {e.substatus && <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap' }}>{ss.label}</span>}
           {e.domain && <Badge type="domain">{e.domain}</Badge>}
           {e.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, border:'0.5px solid #F09595', whiteSpace:'nowrap' }}>High</span>}
           {showOwners && <OwnerStack owners={owners} />}
           {e.due && <Badge type="due">{e.due}</Badge>}
         </div>
-        {chevronBtn(open, () => v.toggleMin(id))}
+        {linHeaderRight(v.onAddTask && linAddIconBtn(() => v.onAddTask({ escalation_id: e.id })), chevronBtn(open, () => v.toggleMin(id)))}
       </div>
       {open && escTasks.length > 0 && (() => {
         const escListId = `esc:${e.id}`
@@ -2199,11 +2263,13 @@ function EscRow({ e, v }) {
           ))}
         </div>
       )}
+      </div>
+      {entDrop && entDrop.overId === e.id && entDrop.pos === 'after' && entInd('after')}
     </div>
   )
 }
 
-function SectionCard({ label, count, accent, bg = '#f7f7f5', border, minId, children, v }) {
+function SectionCard({ label, count, accent, bg = '#f7f7f5', border, minId, children, v, onAdd }) {
   const open = !minId || !v.isMin(minId)
   return (
     <div style={{ background:bg, border: border ? `0.5px solid ${border}` : undefined, borderRadius:12, padding:12 }}>
@@ -2211,7 +2277,7 @@ function SectionCard({ label, count, accent, bg = '#f7f7f5', border, minId, chil
         {accent && <span style={{ width:7, height:7, borderRadius:'50%', background:accent }} />}
         <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</span>
         <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{count}</span>
-        {minId && chevronBtn(open, () => v.toggleMin(minId))}
+        {linHeaderRight(onAdd && linAddIconBtn(onAdd), minId && chevronBtn(open, () => v.toggleMin(minId)))}
       </div>
       {open && children}
     </div>
@@ -2221,38 +2287,72 @@ function SectionCard({ label, count, accent, bg = '#f7f7f5', border, minId, chil
 function CategoryCard({ g, onGrab, ghost, v, renderTasks }) {
   const id = `cat:${v.groupBy}:${g.key}`
   const open = !v.isMin(id)
+  const isDomain = v.groupBy === 'domain' && g.key !== '__none'
+  const meta = isDomain ? (v.domainMeta[g.key] || {}) : {}
+  const colorOpen = isDomain && v.colorEditKey === g.key
   return (
     <div data-lcard
       onDragOver={onGrab ? e => { e.preventDefault() } : undefined}
       onDragEnter={onGrab ? e => { e.currentTarget.style.outline = '2px dashed #7c3aed'; e.currentTarget.style.outlineOffset = '2px' } : undefined}
       onDragLeave={onGrab ? e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.style.outline = 'none' } : undefined}
       onDrop={onGrab ? e => v.handleSectionDrop(e, g) : undefined}
-      style={{ background:'#f7f7f5', borderRadius:12, padding:12, visibility: ghost ? 'hidden' : 'visible' }}>
+      style={{ background: meta.color || '#f7f7f5', borderRadius:12, padding:12, visibility: ghost ? 'hidden' : 'visible', position:'relative' }}>
       <div onPointerDown={onGrab}
         onDoubleClick={v.groupBy === 'project' && g.key !== '__none' ? () => v.onOpenProject && v.onOpenProject(g.key) : undefined}
         title={v.groupBy === 'project' && g.key !== '__none' ? 'Double-click to open' : undefined}
-        style={{ display:'flex', alignItems:'center', gap:8, marginBottom: open ? 10 : 0, cursor: onGrab ? 'grab' : 'default', touchAction:'none', userSelect:'none' }}>
-        {!v.isMobile && <span title="Drag to rearrange" style={{ color:'#bfb6d6', fontSize:14, lineHeight:1 }}>⠿</span>}
-        <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{g.label}</span>
-        <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px' }}>{g.tasks.length}</span>
-        {chevronBtn(open, () => v.toggleMin(id))}
+        style={{ display:'flex', alignItems:'center', gap:8, marginBottom: open ? 10 : 0, cursor: onGrab ? 'grab' : 'default', touchAction:'none', userSelect:'none', position:'relative' }}>
+        {!v.isMobile && <span title="Drag to rearrange" style={{ color:'#bfb6d6', fontSize:14, lineHeight:1, flexShrink:0 }}>⠿</span>}
+        <span style={v.groupBy === 'project'
+          ? { flex:'1 1 auto', minWidth:0, fontSize:10, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden' }
+          : { fontSize:11, fontWeight:500, color: meta.text_color || '#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{g.label}</span>
+        <span style={{ fontSize:10, color:'#888', background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', flexShrink:0 }}>{g.tasks.length}</span>
+        {linHeaderRight(
+          v.onAddTask && linAddIconBtn(() => v.onAddTask(v.addPrefill(g.key))),
+          isDomain && v.onUpdateDomainMeta && linColorBtn(() => v.setColorEditKey(colorOpen ? null : g.key), meta.color),
+          isDomain && g.tasks.length === 0 && v.hideDomain && linHideBtn(() => v.hideDomain(g.key)),
+          chevronBtn(open, () => v.toggleMin(id))
+        )}
+        {colorOpen && <DomainColorPopover name={g.label} meta={meta}
+          onUpdate={patch => v.onUpdateDomainMeta(g.key, patch)}
+          onClose={() => v.setColorEditKey(null)} />}
       </div>
       {open && renderTasks(g.tasks, g.key)}
     </div>
   )
 }
 
-function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [], escalations = [], isMobile = false, onEdit, onComplete, onOpenEscalation, onOpenProject, onUpdateTasks }) {
+function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}, memberNames = [], escalations = [], isMobile = false, onEdit, onComplete, onOpenEscalation, onOpenProject, onUpdateTasks, onRestoreTask, onDeleteTask, onAddTask, onAddEscalation, onAddDomain, onUpdateDomainMeta, onOpenClassic }) {
   const [groupBy, setGroupByState] = useState(() => localStorage.getItem('taskr-linear-group') || 'domain')
   const setGroupBy = k => { setGroupByState(k); try { localStorage.setItem('taskr-linear-group', k) } catch {} }
   const [showDone, setShowDone] = useState(false)
   const [listView, setListView] = useState(false)
+  const [search, setSearch] = useState('')
+  const [showTrash, setShowTrash] = useState(false)
+  const [addingEsc, setAddingEsc] = useState(false)
+  const [newEscTitle, setNewEscTitle] = useState('')
+  const handleAddEsc = () => {
+    const title = newEscTitle.trim()
+    if (title && onAddEscalation) onAddEscalation(title)
+    setNewEscTitle(''); setAddingEsc(false)
+  }
+  const [addingDomain, setAddingDomain] = useState(false)
+  const [newDomainTitle, setNewDomainTitle] = useState('')
+  const handleAddDomain = () => {
+    const title = newDomainTitle.trim()
+    if (title && onAddDomain) onAddDomain(title)
+    setNewDomainTitle(''); setAddingDomain(false)
+  }
+  const [hiddenDomains, setHiddenDomains] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-linear-hidden-domains')) || []) } catch { return new Set() } })
+  const hideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.add(key); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
+  const [colorEditKey, setColorEditKey] = useState(null)
   const [filterOwner, setFilterOwner] = useState('all')
   const [ownerMenuOpen, setOwnerMenuOpen] = useState(false)
   const [sortCol, setSortCol] = useState('title')
   const [sortDir, setSortDir] = useState('asc')
   const [colFilters, setColFilters] = useState({ status:'', domain:'', owner:'' })
   const [colsByGroup, setColsByGroup] = useState(() => { try { return JSON.parse(localStorage.getItem('taskr-linear-cols')) || {} } catch { return {} } })
+  const [numCols, setNumColsState] = useState(() => { const n = parseInt(localStorage.getItem('taskr-linear-numcols'), 10); return n >= 1 && n <= 8 ? n : LINEAR_NCOL })
+  const setNumCols = n => { const clamped = Math.max(1, Math.min(8, n)); setNumColsState(clamped); try { localStorage.setItem('taskr-linear-numcols', String(clamped)) } catch {} }
   const [orders, setOrders] = useState(() => { try { return JSON.parse(localStorage.getItem('taskr-linear-order')) || {} } catch { return {} } })
   const [minimized, setMinimized] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-linear-min')) || []) } catch { return new Set() } })
   const [openNotes, setOpenNotes] = useState(() => new Set())
@@ -2263,15 +2363,20 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
   const [drag, setDrag] = useState(null)          // { key, x, y, offsetX, offsetY, w }
   const [dropTarget, setDropTarget] = useState(null) // { col, index }
   const [rowDrop, setRowDrop] = useState(null)    // { overId, pos } — within-list reorder indicator
+  const [entDrop, setEntDrop] = useState(null)    // { overId, pos } — escalation/cluster reorder indicator
   const containerRef = useRef(null)
   const dragRef = useRef(null)
   const dropRef = useRef(null)
   const dragTaskRef = useRef(null)                // id of task being dragged (for reorder detection)
+  const dragEntRef = useRef(null)                 // id of escalation/project being dragged (for reorder)
 
   const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
   const ownerMatch = t => filterOwner === 'all' || (t.owners || []).includes(filterOwner)
-  const activeTasks = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete') && ownerMatch(t))
+  const q = search.trim().toLowerCase()
+  const matchSearch = t => !q || (t.title || '').toLowerCase().includes(q) || (Array.isArray(t.notes) && t.notes.some(n => (n.text || '').toLowerCase().includes(q)))
+  const activeTasks = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete') && ownerMatch(t) && matchSearch(t))
     .slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+  const trashTasks = tasks.filter(t => t.substatus === 'canceled')
 
   // Per-view manual ordering (client-side, keyed per list so it never touches the global board order)
   const orderList = (listId, list) => {
@@ -2295,6 +2400,15 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
     if (pos === 'after') idx += 1
     ids.splice(idx, 0, draggedId)
     if (ids.join(',') !== listTasks.map(t => t.id).join(',')) saveOrder(listId, ids)
+  }
+
+  // Prefill for a new task created inside a section (matches the section's grouping attribute)
+  const addPrefill = key => {
+    if (groupBy === 'status') return { substatus: key }
+    if (groupBy === 'domain') return { domain: key === '__none' ? '' : key }
+    if (groupBy === 'owner') return { owners: key === '__un' ? [] : [key] }
+    if (groupBy === 'project') return { project_id: key === '__none' ? null : key }
+    return {}
   }
 
   // Move task(s) into a category by changing the underlying grouping attribute
@@ -2337,30 +2451,42 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
   }
   const clearOutlines = () => { if (containerRef.current) containerRef.current.querySelectorAll('[data-lcard]').forEach(el => { el.style.outline = 'none' }) }
 
+  // Tasks already shown in the Today section are hidden from the board below to avoid duplicates
+  const boardTasks = activeTasks.filter(t => !t.today)
+
   let groups = []
   if (groupBy === 'status') {
-    groups = COLS.map(c => ({ key:c.key, label:c.lbl, tasks: activeTasks.filter(t => tss(t) === c.key) }))
+    groups = COLS.map(c => ({ key:c.key, label:c.lbl, tasks: boardTasks.filter(t => tss(t) === c.key) }))
   } else if (groupBy === 'domain') {
-    const dk = [...new Set(activeTasks.map(t => t.domain||''))].sort((a,b) => a ? (b ? a.localeCompare(b) : -1) : 1)
-    groups = dk.map(d => ({ key:d||'__none', label:d||'No domain', tasks: activeTasks.filter(t => (t.domain||'') === d) }))
+    // Show every known domain (not just ones with tasks) so a freshly-added or empty domain still gets a column
+    const extra = [...new Set(boardTasks.map(t => t.domain).filter(d => d && !domains.includes(d)))]
+    const dk = [...domains, ...extra].sort((a, b) => a.localeCompare(b))
+    groups = dk.map(d => ({ key:d, label:d, tasks: boardTasks.filter(t => (t.domain||'') === d) }))
+    const noDomainTasks = boardTasks.filter(t => !t.domain)
+    if (noDomainTasks.length) groups.push({ key:'__none', label:'No domain', tasks: noDomainTasks })
   } else if (groupBy === 'owner') {
     const ok = [...memberNames, '']
-    groups = ok.map(o => ({ key:o||'__un', label:o||'Unassigned', tasks: activeTasks.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0) }))
+    groups = ok.map(o => ({ key:o||'__un', label:o||'Unassigned', tasks: boardTasks.filter(t => o ? (t.owners||[]).includes(o) : (t.owners||[]).length === 0) }))
   } else { // project / bundle
     const byId = {}
-    activeTasks.forEach(t => { const pid = t.project_id || '__none'; (byId[pid] = byId[pid] || []).push(t) })
+    boardTasks.forEach(t => { const pid = t.project_id || '__none'; (byId[pid] = byId[pid] || []).push(t) })
     groups = Object.entries(byId).map(([id, ts]) => ({ key:id, label: id === '__none' ? 'No project / bundle' : (entityMap[id]?.name || 'Unknown'), tasks: ts }))
     groups.sort((a, b) => a.key === '__none' ? 1 : b.key === '__none' ? -1 : a.label.localeCompare(b.label))
   }
-  groups = groups.filter(g => g.tasks.length > 0)
+  // Domain columns stay visible even when empty, unless the user dismissed them while empty (auto-reappears once a task lands there)
+  groups = groupBy === 'domain'
+    ? groups.filter(g => !(hiddenDomains.has(g.key) && g.tasks.length === 0))
+    : groups.filter(g => g.tasks.length > 0)
   const groupMap = Object.fromEntries(groups.map(g => [g.key, g]))
   const keys = groups.map(g => g.key)
 
-  // Derive columns from stored order; append any not-yet-placed category to the shortest column
+  // Derive columns from stored order; append any not-yet-placed category to the shortest column.
+  // Columns beyond the current numCols are simply not read here, so shrinking never loses items —
+  // they fall through to the "not yet placed" pass below and get redistributed automatically.
   const buildColumns = () => {
-    const stored = colsByGroup[groupBy] || Array.from({ length: LINEAR_NCOL }, () => [])
+    const stored = colsByGroup[groupBy] || Array.from({ length: numCols }, () => [])
     const placed = new Set()
-    const cols = Array.from({ length: LINEAR_NCOL }, (_, i) => (stored[i] || []).filter(k => { if (keys.includes(k) && !placed.has(k)) { placed.add(k); return true } return false }))
+    const cols = Array.from({ length: numCols }, (_, i) => (stored[i] || []).filter(k => { if (keys.includes(k) && !placed.has(k)) { placed.add(k); return true } return false }))
     keys.forEach(k => { if (!placed.has(k)) { const mi = cols.reduce((m, c, i, a) => c.length < a[m].length ? i : m, 0); cols[mi].push(k); placed.add(k) } })
     return cols
   }
@@ -2413,11 +2539,33 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
     window.addEventListener('pointerup', onUp)
   }
 
+  // Click-and-drag on blank column space to pan horizontally when there are more columns than fit
+  const bgDragRef = useRef(null)
+  const isInteractiveTarget = el => !!(el && el.closest && el.closest('[data-lcard], button, input, textarea, select, a, [draggable="true"]'))
+  const onContainerPointerDown = e => {
+    if (drag || e.button !== 0 || isInteractiveTarget(e.target)) return
+    const cont = containerRef.current
+    if (!cont) return
+    bgDragRef.current = { startX: e.clientX, scrollLeft: cont.scrollLeft }
+    cont.style.cursor = 'grabbing'; cont.style.userSelect = 'none'
+    const onMove = ev => {
+      const d = bgDragRef.current; if (!d) return
+      cont.scrollLeft = d.scrollLeft - (ev.clientX - d.startX)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      bgDragRef.current = null
+      cont.style.cursor = numCols > 3 ? 'grab' : 'default'; cont.style.userSelect = ''
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 
   const todayTasks = activeTasks.filter(t => t.today)
 
   // Context handed to the module-scope building blocks (Row/EscRow/SectionCard/CategoryCard)
-  const v = { tss, entityMap, groupBy, openNotes, rowDrop, onEdit, dragTaskRef, setRowDrop, clearOutlines, reorderTo, onComplete, toggleNotes, tasks, showDone, ownerMatch, isMin, toggleMin, onOpenEscalation, orderList, isMobile, onOpenProject, handleSectionDrop }
+  const v = { tss, entityMap, groupBy, openNotes, rowDrop, onEdit, dragTaskRef, setRowDrop, clearOutlines, reorderTo, onComplete, toggleNotes, tasks, showDone, ownerMatch, isMin, toggleMin, onOpenEscalation, orderList, isMobile, onOpenProject, handleSectionDrop, onAddTask, addPrefill, dragEntRef, entDrop, setEntDrop, domainMeta, onUpdateDomainMeta, hideDomain, colorEditKey, setColorEditKey }
 
   // Within a category, cluster tasks that belong to a project/bundle into a titled container
   const renderTasks = (list, sectionKey) => {
@@ -2428,11 +2576,14 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
     const standalone = orderList(mainListId(sectionKey), list.filter(t => !t.project_id))
     const byProj = {}
     list.filter(t => t.project_id).forEach(t => { (byProj[t.project_id] = byProj[t.project_id] || []).push(t) })
-    const clusters = Object.entries(byProj).sort((a, b) => (entityMap[a[0]]?.name||'').localeCompare(entityMap[b[0]]?.name||''))
+    const clusterListKey = `clustord:${groupBy}:${sectionKey}`
+    const rawClusters = Object.entries(byProj).sort((a, b) => (entityMap[a[0]]?.name||'').localeCompare(entityMap[b[0]]?.name||''))
+    const clusterPseudo = orderList(clusterListKey, rawClusters.map(([pid, ts]) => ({ id: pid, ts })))
+    const clusterIdsHere = clusterPseudo.map(c => c.id)
     return (
       <>
         {standalone.map(t => <Row key={t.id} t={t} listTasks={standalone} listId={mainListId(sectionKey)} v={v} />)}
-        {clusters.map(([pid, tsRaw]) => {
+        {clusterPseudo.map(({ id: pid, ts: tsRaw }) => {
           const clusterListId = `${groupBy}:${sectionKey}:proj:${pid}`
           const ts = orderList(clusterListId, tsRaw)
           const ent = entityMap[pid]
@@ -2441,27 +2592,35 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
           const pnotes = Array.isArray(ent?.notes) ? ent.notes : []
           const id = clusterListId // section-specific collapse id
           const open = !isMin(id)
+          const cDrop = entDrop
+          const cInd = pos => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#7c3aed,#a855f7)', margin: pos === 'before' ? '0 0 4px' : '4px 0 0' }} />
           return (
-            <div key={pid} style={{ border:`1px solid ${cbd}`, borderRadius:8, padding: open ? '7px 7px 3px' : '7px', marginBottom:4, background:cbg }}>
-              <div draggable onDragStart={e => { e.stopPropagation(); e.dataTransfer.setData('text/tasks', ts.map(x => x.id).join(',')); e.dataTransfer.effectAllowed = 'move' }}
-                onDragEnd={clearOutlines}
-                onDoubleClick={() => onOpenProject && onOpenProject(pid)} title="Double-click to open"
-                style={{ display:'flex', alignItems:'center', gap:6, padding: open ? '0 3px 6px' : '0 3px', cursor:'grab' }}>
-                <span style={{ fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color:'#555', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ent?.name || 'Project'}</span>
-                <span style={{ fontSize:9, color:'#888', background:'white', border:`0.5px solid ${cbd}`, borderRadius:8, padding:'0 6px', flexShrink:0 }}>{ts.length}</span>
-                {pnotes.length > 0 && <span style={{ fontSize:9, color:'#999' }}>❏ {pnotes.length}</span>}
-                {chevronBtn(open, () => toggleMin(id))}
-              </div>
-              {open && ts.map(t => <Row key={t.id} t={t} hideLinked listTasks={ts} listId={clusterListId} v={v} />)}
-              {open && pnotes.length > 0 && (
-                <div style={{ background:'#fafafa', border:'0.5px solid #ececec', borderRadius:8, padding:'8px 10px', margin:'0 0 4px' }}>
-                  {pnotes.map(n => (
-                    <div key={n.id} style={{ fontSize:11, color:'#555', lineHeight:1.5, marginBottom:4 }}>
-                      <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
-                    </div>
-                  ))}
+            <div key={pid}
+              onDragOver={e => { const d = dragEntRef.current; if (d && d !== pid && clusterIdsHere.includes(d)) { e.preventDefault(); e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEntDrop({ overId: pid, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } }}
+              onDrop={e => { const d = dragEntRef.current; if (d && clusterIdsHere.includes(d)) { e.preventDefault(); e.stopPropagation(); reorderTo(clusterPseudo, d, pid, cDrop?.pos || 'before', clusterListKey) } dragEntRef.current = null; setEntDrop(null) }}>
+              {cDrop && cDrop.overId === pid && cDrop.pos === 'before' && cInd('before')}
+              <div style={{ border:`1px solid ${cbd}`, borderRadius:8, padding: open ? '7px 7px 3px' : '7px', marginBottom:4, background:cbg }}>
+                <div draggable onDragStart={e => { e.stopPropagation(); dragEntRef.current = pid; e.dataTransfer.setData('text/tasks', ts.map(x => x.id).join(',')); e.dataTransfer.effectAllowed = 'move' }}
+                  onDragEnd={() => { dragEntRef.current = null; setEntDrop(null); clearOutlines() }}
+                  onDoubleClick={() => onOpenProject && onOpenProject(pid)} title="Drag to reorder · double-click to open"
+                  style={{ display:'flex', alignItems:'center', gap:6, padding: open ? '0 3px 6px' : '0 3px', cursor:'grab' }}>
+                  <span style={{ flex:'1 1 auto', minWidth:0, fontSize:9, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color:'#555', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{ent?.name || 'Project'}</span>
+                  <span style={{ fontSize:9, color:'#888', background:'white', border:`0.5px solid ${cbd}`, borderRadius:8, padding:'0 6px', flexShrink:0 }}>{ts.length}</span>
+                  {pnotes.length > 0 && <span style={{ fontSize:9, color:'#999', display:'inline-flex', alignItems:'center', gap:2 }}><StickyNote size={10} strokeWidth={2} /> {pnotes.length}</span>}
+                  {linHeaderRight(onAddTask && linAddIconBtn(() => onAddTask({ project_id: pid, ...addPrefill(sectionKey) })), chevronBtn(open, () => toggleMin(id)))}
                 </div>
-              )}
+                {open && ts.map(t => <Row key={t.id} t={t} hideLinked listTasks={ts} listId={clusterListId} v={v} />)}
+                {open && pnotes.length > 0 && (
+                  <div style={{ background:'#fafafa', border:'0.5px solid #ececec', borderRadius:8, padding:'8px 10px', margin:'0 0 4px' }}>
+                    {pnotes.map(n => (
+                      <div key={n.id} style={{ fontSize:11, color:'#555', lineHeight:1.5, marginBottom:4 }}>
+                        <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {cDrop && cDrop.overId === pid && cDrop.pos === 'after' && cInd('after')}
             </div>
           )
         })}
@@ -2569,7 +2728,6 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
   return (
     <div style={{ userSelect: drag ? 'none' : undefined }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-        <span style={{ fontSize:10, color:'#a99fc0', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.07em', background:'#ede9fe', border:'0.5px solid #c4b5fd', borderRadius:20, padding:'2px 10px' }}>Linear · Mockup</span>
         <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
           {[{k:'domain',l:'Domain'},{k:'status',l:'Status'},{k:'owner',l:'Owner'},{k:'project',l:'Project'}].map(g => pill(groupBy, g.k, g.l, () => setGroupBy(g.k)))}
         </div>
@@ -2605,27 +2763,76 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
           style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #c4b5fd', background:'white', color:'#7c3aed', height:26 }}>
           {anyOpen ? '⊟ Collapse all' : '⊞ Expand all'}
         </button>}
-        {!listView && projEscIds.length > 0 && <button onClick={toggleProjEsc} title="Collapse/expand projects, bundles & escalations"
+        {!listView && projEscIds.length > 0 && <button onClick={toggleProjEsc} title="Collapse/expand bundles"
           style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #c4b5fd', background:'white', color:'#7c3aed', height:26 }}>
-          {anyProjOpen ? '⊟' : '⊞'} 📁 P/B/E
+          {anyProjOpen ? '⊟' : '⊞'} Collapse bundles
         </button>}
         {!isMobile && !listView && <button onClick={resetLayout} title="Reset column layout"
           style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #e0e0e0', background:'white', color:'#888', height:26 }}>
           ⟲ Reset layout
         </button>}
+        {!isMobile && !listView && (
+          <div style={{ display:'flex', alignItems:'center', gap:1, border:'0.5px solid #e0e0e0', borderRadius:10, height:26, overflow:'hidden' }}>
+            <button onClick={() => setNumCols(numCols - 1)} disabled={numCols <= 1} title="Remove column"
+              style={{ fontSize:12, padding:'0 8px', height:'100%', border:'none', background:'white', color: numCols <= 1 ? '#ddd' : '#888', cursor: numCols <= 1 ? 'default' : 'pointer' }}>−</button>
+            <span style={{ fontSize:11, color:'#888', padding:'0 2px', minWidth:12, textAlign:'center' }}>{numCols}</span>
+            <button onClick={() => setNumCols(numCols + 1)} disabled={numCols >= 8} title="Add column"
+              style={{ fontSize:12, padding:'0 8px', height:'100%', border:'none', background:'white', color: numCols >= 8 ? '#ddd' : '#888', cursor: numCols >= 8 ? 'default' : 'pointer' }}>+</button>
+          </div>
+        )}
+        {/* Trash toggle */}
+        <button onClick={() => setShowTrash(s => !s)} title="Trash"
+          style={{ position:'relative', fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:showTrash?'none':'0.5px solid #c4b5fd', background:showTrash?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:showTrash?'white':'#7c3aed', height:26 }}>
+          🗑
+          {trashTasks.length > 0 && <span style={{ position:'absolute', top:-5, right:-5, background:'#ef4444', color:'white', borderRadius:'50%', fontSize:9, minWidth:15, height:15, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, padding:'0 2px' }}>{trashTasks.length}</span>}
+        </button>
+        {/* Search */}
+        <div style={{ position:'relative', display:'flex', alignItems:'center', ...(isMobile ? { flex:'1 1 100%' } : {}) }}>
+          <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks…"
+            style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:26, outline:'none', width:isMobile?'100%':160, color:'#333', boxSizing:'border-box' }} />
+        </div>
+        {onOpenClassic && <button onClick={onOpenClassic} title="Open the classic kanban/list task board"
+          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #e0e0e0', background:'white', color:'#888', height:26, marginLeft:'auto' }}>
+          Classic view
+        </button>}
       </div>
 
-      {listView && renderListView()}
+      {showTrash && (
+        <div style={{ background:'#f7f7f5', borderRadius:12, padding:12, marginBottom:12 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>🗑 Trash</span>
+            <span style={{ fontSize:11, color:'#bbb' }}>Canceled tasks — restore to recover, or delete permanently.</span>
+          </div>
+          {trashTasks.length === 0 ? (
+            <div style={{ fontSize:13, color:'#ccc', textAlign:'center', padding:'1.5rem 0' }}>Trash is empty</div>
+          ) : (
+            <div style={{ display:'grid', gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(240px,1fr))', gap:8 }}>
+              {trashTasks.map(t => (
+                <div key={t.id} style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'8px 10px', opacity:0.85 }}>
+                  <div style={{ fontSize:13, color:'#888', textDecoration:'line-through', marginBottom:6 }}>{t.title}</div>
+                  <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
+                    {onRestoreTask && <button onClick={() => onRestoreTask(t)} style={{ ...BTN_PRIMARY, fontSize:11, padding:'3px 10px' }}>Restore</button>}
+                    {onDeleteTask && <ConfirmDeleteButton onConfirm={() => onDeleteTask(t.id)} style={{ fontSize:11, background:'none', color:'#A32D2D', border:'0.5px solid #F09595', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}>Delete</ConfirmDeleteButton>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!showTrash && listView && renderListView()}
 
       {/* Today (2 cols) + Escalations (1 col) — one row, linear formatting */}
-      {!listView && (todayTasks.length > 0 || escalations.length > 0) && (
+      {!listView && !showTrash && (
         <div style={{ display:'flex', flexDirection:isMobile?'column':'row', gap:12, marginBottom:12, alignItems:'flex-start' }}>
           {todayTasks.length > 0 && (() => {
             const td = orderList('today', todayTasks)
             const inToday = id => td.some(x => x.id === id)
             return (
             <div style={{ flex: isMobile ? '1 1 auto' : 2, minWidth:0, width:isMobile?'100%':undefined }}>
-              <SectionCard label="Today" count={todayTasks.length} accent="#E24B4A" bg="#fdf2f1" border="#f2d9d5" minId="sec:today" v={v}>
+              <SectionCard label="Today" count={todayTasks.length} accent="#E24B4A" bg="#fdf2f1" border="#f2d9d5" minId="sec:today" v={v} onAdd={onAddTask ? () => onAddTask({ today: true }) : undefined}>
                 <div
                   onDragOver={e => { const d = dragTaskRef.current || e.dataTransfer.getData('text/task'); if (inToday(d)) e.preventDefault() }}
                   onDrop={e => {
@@ -2649,24 +2856,59 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
             </div>
             )
           })()}
-          {escalations.length > 0 && (
-            <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
-              <SectionCard label="Escalations" count={escalations.length} accent="#7c3aed" bg="#ede9fe" border="#c4b5fd" minId="sec:esc" v={v}>
-                {escalations.map(e => <EscRow key={e.id} e={e} v={v} />)}
-              </SectionCard>
+          <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
+            <SectionCard label="Escalations" count={escalations.length} accent="#7c3aed" bg="#ede9fe" border="#c4b5fd" minId="sec:esc" v={v} onAdd={onAddEscalation ? () => setAddingEsc(true) : undefined}>
+              {(() => { const el = orderList('escalations', escalations); return el.map(e => <EscRow key={e.id} e={e} v={v} escList={el} />) })()}
+              {escalations.length === 0 && !addingEsc && <div style={{ fontSize:12, color:'#c9b8e8', textAlign:'center', padding:'8px 0' }}>No escalations</div>}
+              {addingEsc && (
+                <div style={{ marginTop: escalations.length ? 4 : 0 }}>
+                  <input autoFocus value={newEscTitle} onChange={e => setNewEscTitle(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddEsc(); if (e.key === 'Escape') { setAddingEsc(false); setNewEscTitle('') } }}
+                    placeholder="Escalation title…"
+                    style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'7px 9px', border:'1.5px solid #7c3aed', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
+                  <div style={{ display:'flex', gap:4, marginTop:4 }}>
+                    <button onClick={handleAddEsc} style={{ ...BTN_PRIMARY, flex:1, fontSize:11, padding:'5px 0' }}>Add</button>
+                    <button onClick={() => { setAddingEsc(false); setNewEscTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:8, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        </div>
+      )}
+
+      {!listView && !showTrash && (
+        <div style={{ borderTop:'0.5px solid #ececec', paddingTop:14, marginTop: (todayTasks.length > 0 || escalations.length > 0) ? 4 : 0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+            <span style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>
+              {{ domain:'Domains', status:'Statuses', owner:'Owners', project:'Projects & Bundles' }[groupBy]}
+            </span>
+            {groupBy === 'domain' && onAddDomain && linAddIconBtn(() => setAddingDomain(true))}
+          </div>
+          {addingDomain && (
+            <div style={{ maxWidth:260, marginBottom:12 }}>
+              <input autoFocus value={newDomainTitle} onChange={e => setNewDomainTitle(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddDomain(); if (e.key === 'Escape') { setAddingDomain(false); setNewDomainTitle('') } }}
+                placeholder="Domain title…"
+                style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'7px 9px', border:'1.5px solid #7c3aed', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
+              <div style={{ display:'flex', gap:4, marginTop:4 }}>
+                <button onClick={handleAddDomain} style={{ ...BTN_PRIMARY, flex:1, fontSize:11, padding:'5px 0' }}>Add</button>
+                <button onClick={() => { setAddingDomain(false); setNewDomainTitle('') }} style={{ flex:1, fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:8, padding:'5px 0', cursor:'pointer', color:'#888', fontFamily:'inherit' }}>Cancel</button>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {!listView && (groups.length === 0 ? (
+      {!listView && !showTrash && (groups.length === 0 ? (
         <div style={{ textAlign:'center', padding:'40px 0', color:'#bbb', fontSize:13 }}>No tasks</div>
       ) : isMobile ? (
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           {groups.map(g => <CategoryCard key={g.key} g={g} v={v} renderTasks={renderTasks} />)}
         </div>
       ) : (
-        <div ref={containerRef} style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
+        <div ref={containerRef} onPointerDown={onContainerPointerDown}
+          style={{ display:'flex', gap:12, alignItems:'flex-start', overflowX: numCols > 3 ? 'auto' : 'visible', WebkitOverflowScrolling:'touch', cursor: numCols > 3 ? 'grab' : 'default', paddingBottom: numCols > 3 ? 6 : 0 }}>
           {displayCols.map((colKeys, ci) => {
             const items = []
             const showInd = i => drag && dropTarget && dropTarget.col === ci && dropTarget.index === i
@@ -2677,7 +2919,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], memberNames = [
             })
             return (
               <div key={ci} data-lcol
-                style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:12, minHeight:80, borderRadius:12, padding:2, outline: (drag && dropTarget && dropTarget.col === ci) ? '2px dashed #c4b5fd' : '2px solid transparent', transition:'outline-color 0.12s' }}>
+                style={{ ...(numCols > 3 ? { flex:'0 0 280px', width:280 } : { flex:1, minWidth:0 }), display:'flex', flexDirection:'column', gap:12, minHeight:80, borderRadius:12, padding:2, outline: (drag && dropTarget && dropTarget.col === ci) ? '2px dashed #c4b5fd' : '2px solid transparent', transition:'outline-color 0.12s' }}>
                 {items.length ? items : <div style={{ minHeight:40 }} />}
               </div>
             )
@@ -4485,6 +4727,7 @@ export default function App() {
   // ── Data ──────────────────────────────────────────────────────────────────
   const [tasks, setTasks] = useState([])
   const [domains, setDomains] = useState([])
+  const [domainRows, setDomainRows] = useState([]) // full domain records (incl. color/text_color) for the Linear page
   const [projects, setProjects] = useState([])
   const [escalations, setEscalations] = useState([])
   const [notes, setNotes] = useState([])
@@ -4494,7 +4737,7 @@ export default function App() {
   const [calendarList, setCalendarList] = useState([])
   const [qualTemplates, setQualTemplates] = useState([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState(() => localStorage.getItem('taskr-tab') || 'tasks')
+  const [tab, setTab] = useState(() => { const saved = localStorage.getItem('taskr-tab'); return (saved && saved !== 'tasks') ? saved : 'linear' })
   const switchTab = t => { setTab(t); localStorage.setItem('taskr-tab', t) }
   const [activeEscalation, setActiveEscalation] = useState(null)
   const [activePopup, setActivePopup] = useState(null) // { entity, type: 'project' | 'escalation' }
@@ -4552,7 +4795,7 @@ export default function App() {
       supabase.from('calendars').select('*').order('sort_order', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
-    if (domainsData) setDomains(domainsData.map(d => d.name))
+    if (domainsData) { setDomains(domainsData.map(d => d.name)); setDomainRows(domainsData) }
     setProjects((projectsData || []).map(p => ({ ...p, notes: p.notes||[], attachments: p.attachments||[], owners: p.owners||[] })))
     if (calData) setCalEvents(calData)
     setEscalations((escalationsData || []).map(e => ({ ...e, notes: e.notes||[], attachments: e.attachments||[], owners: e.owners||[] })))
@@ -4695,6 +4938,22 @@ export default function App() {
 
   const addEscalation = async title => {
     await supabase.from('escalations').insert({ title })
+    await loadData(true)
+  }
+
+  const addDomain = async name => {
+    const title = name.trim()
+    if (!title || domains.includes(title)) return
+    const maxOrder = domainRows.length ? Math.max(...domainRows.map(d => d.sort_order||0)) : 0
+    await supabase.from('domains').insert({ name: title, sort_order: maxOrder+1 })
+    await loadData(true)
+  }
+
+  // patch: { color?, text_color? } — either may be null to reset to default
+  const updateDomainMeta = async (name, patch) => {
+    const row = domainRows.find(d => d.name === name)
+    if (!row) return
+    await supabase.from('domains').update(patch).eq('id', row.id)
     await loadData(true)
   }
 
@@ -5013,8 +5272,7 @@ export default function App() {
         <div style={{ display:'flex', gap:2, padding:5, flexShrink:0, ...(isMobile ? { width:'100%' } : {}) }}>
           {[
             { key:'briefing', label:'Briefing', Icon:Newspaper },
-            { key:'tasks', label:'Tasks', Icon:ClipboardList },
-            { key:'linear', label:'Linear', Icon:LayoutList },
+            { key:'linear', label:'Tasks', Icon:LayoutList },
             { key:'followups', label:'Follow Ups', Icon:RefreshCw },
             { key:'notes', label:'Notes', Icon:NotebookPen },
             { key:'calendar', label:'Calendar', Icon:CalendarDays },
@@ -5036,18 +5294,28 @@ export default function App() {
 
       {/* ── Linear task mockup ── */}
       {tab === 'linear' && (
-        <TaskLinearMockup tasks={tasks} entityMap={entityMap} domains={domains} memberNames={memberNames} isMobile={isMobile}
+        <TaskLinearMockup tasks={tasks} entityMap={entityMap} domains={domains}
+          domainMeta={Object.fromEntries(domainRows.map(d => [d.name, { color: d.color, text_color: d.text_color }]))}
+          memberNames={memberNames} isMobile={isMobile}
           escalations={visibleEscalations}
           onEdit={t => { setForm({...t}); setIsEdit(true) }} onComplete={quickComplete} onUpdateTasks={updateTasksFields}
+          onRestoreTask={restoreTask} onDeleteTask={deleteTaskSilent}
+          onAddTask={prefill => { setForm({ status:'active', substatus:'not_started', ...prefill }); setIsEdit(false) }}
           onOpenEscalation={e => setActivePopup({ entity:e, type:'escalation' })}
-          onOpenProject={id => { const p = projects.find(x => x.id === id); if (p) setActivePopup({ entity:p, type:'project' }) }} />
+          onOpenProject={id => { const p = projects.find(x => x.id === id); if (p) setActivePopup({ entity:p, type:'project' }) }}
+          onAddEscalation={addEscalation} onOpenClassic={() => switchTab('tasks')}
+          onAddDomain={addDomain} onUpdateDomainMeta={updateDomainMeta} />
       )}
 
-      {/* ── Task Board ── */}
+      {/* ── Task Board (classic — legacy view, kept behind a button on the Tasks page) ── */}
       {tab === 'tasks' && (
         <>
           {/* View controls */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:isMobile?'flex-start':'flex-end', marginBottom:12, gap:6, flexWrap:'wrap' }}>
+            <button onClick={() => switchTab('linear')} title="Back to the Tasks page"
+              style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #c4b5fd', background:'white', color:'#7c3aed', height:28, marginRight:'auto' }}>
+              ← Back to Tasks
+            </button>
             {/* View mode pills */}
             <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3, maxWidth:'100%', overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
               {[{ k:'kanban', l:'Kanban' }, { k:'domain', l:'Domain' }, { k:'owner', l:'Owner' }, { k:'priority', l:'Priority' }].map(v => (
