@@ -5299,7 +5299,7 @@ export default function App() {
       template_id: data.template_id||null, sort_order: maxOrder+1,
     }
     const { data: qual, error } = await supabase.from('qualifications').insert(payload).select().single()
-    if (error || !qual) { console.error('[TASKr] addQualification error', error); return }
+    if (error || !qual) { console.error('[TASKr] addQualification error', error); alert(`Could not save qualification: ${error?.message || 'unknown error'}`); return }
     if (tpl?.tasks?.length) {
       const inserts = tpl.tasks.map((t, i) => ({
         title: t.title, status: 'active', substatus: 'not_started', domain: 'Supplier Quality',
@@ -5307,14 +5307,16 @@ export default function App() {
         subtasks: (t.subtasks || []).map((s, j) => ({ id:`st${i}${j}`, title:s, done:false })),
         color: data.color||'', sort_order: i + 1, updated_at: new Date().toISOString(),
       }))
-      await supabase.from('tasks').insert(inserts)
+      const { error: taskErr } = await supabase.from('tasks').insert(inserts)
+      if (taskErr) { console.error('[TASKr] addQualification stage error', taskErr); alert(`Qualification saved, but its stages failed: ${taskErr.message}`) }
     }
     await loadData(true)
   }
 
   const saveQualification = async (data, id) => {
     const payload = { name:data.name, supplier:data.supplier||'', material:data.material||'', site:data.site||'', status:data.status||'not_started', priority:data.priority||'', color:data.color||'', owners:data.owners||['Levi'], due:data.due||'', notes:data.notes||[], attachments:data.attachments||[] }
-    await supabase.from('qualifications').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('qualifications').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) { console.error('[TASKr] saveQualification error', error); alert(`Could not save qualification: ${error.message}`); return }
     await supabase.from('tasks').update({ color: data.color||'' }).eq('qualification_id', id)
     await loadData(true)
   }
