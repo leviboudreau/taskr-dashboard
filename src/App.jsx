@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from './supabase'
 import DOMPurify from 'dompurify'
-import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote } from 'lucide-react'
+import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
@@ -40,7 +40,9 @@ const MEMBER_COLORS = {
 }
 const CITIES = [
   { name: 'Puebla, MX', tz: 'America/Mexico_City' },
+  { name: 'Cohasset', tz: 'America/Chicago' },
   { name: 'Greenwood, SC', tz: 'America/New_York' },
+  { name: 'Tampa', tz: 'America/New_York' },
   { name: 'Bornem/Colmar', tz: 'Europe/Paris' },
   { name: 'Rewari, India', tz: 'Asia/Kolkata' },
   { name: 'Jakarta', tz: 'Asia/Jakarta' },
@@ -58,6 +60,15 @@ const RECURRENCE_TYPES = [
   { key: 'monthly_biz_day', label: 'Monthly by Nth business day' },
 ]
 const DOW_NUM = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+
+// Supplier Qualification tracker — manufacturing sites + kanban statuses (keys reuse SUBSTATUS)
+const QUAL_SITES = ['Bornem', 'Cohasset', 'Colmar', 'Greenwood', 'Puebla', 'Sagamihara', 'Suzhou', 'Rewari', 'Tampa']
+const QUAL_COLS = [
+  { key: 'not_started', lbl: 'Not started' },
+  { key: 'in_progress', lbl: 'In progress' },
+  { key: 'on_hold',     lbl: 'On hold' },
+  { key: 'complete',    lbl: 'Complete' },
+]
 
 // US federal holiday rules — type:'fixed'|'nth'|'last', dow: JS day-of-week 0=Sun
 const US_HOLIDAY_DEFS = [
@@ -254,7 +265,7 @@ function WorldClock({ style: extraStyle = {} }) {
         const homeDay = now.toLocaleDateString('en-US', { timeZone:'America/New_York', weekday:'short' })
         const isNext = dayStr !== homeDay && i > 1
         return (
-          <div key={c.name} style={{ flex:'1 0 72px', padding:'9px 12px', borderLeft:'0.5px solid rgba(255,255,255,0.15)', textAlign:'center', display:'flex', flexDirection:'column', justifyContent:'center' }}>
+          <div key={c.name} style={{ flex:'1 0 72px', padding:'9px 12px', borderLeft:i===0?'none':'0.5px solid rgba(255,255,255,0.15)', textAlign:'center', display:'flex', flexDirection:'column', justifyContent:'center' }}>
             <div style={{ fontSize:9, color:'rgba(255,255,255,0.55)', marginBottom:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.07em' }}>{c.name.split(',')[0]}</div>
             <div style={{ fontSize:13, fontWeight:500, color:'rgba(255,255,255,0.95)', whiteSpace:'nowrap' }}>
               {timeStr}{isNext && <span style={{ fontSize:9, color:'rgba(255,255,255,0.4)', marginLeft:3 }}>+1</span>}
@@ -3579,7 +3590,7 @@ function SubtaskRow({ st, onChange, onDelete }) {
 
 function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 50, members = MEMBERS, defaultOwner }) {
   const defaultOwners = defaultOwner ? [defaultOwner] : ['Levi']
-  const EMPTY = { title:'', status:'active', domain:'', owners:defaultOwners, due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, attachments:[] }
+  const EMPTY = { title:'', status:'active', domain:'', owners:defaultOwners, due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, qualification_id:null, attachments:[] }
   const tempId = useRef(crypto.randomUUID())
   const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:defaultOwners, notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[], attachments:Array.isArray(task?.attachments)?task.attachments:[] })
   const [newNote, setNewNote] = useState('')
@@ -4769,6 +4780,273 @@ function ChangePassword({ onClose }) {
   )
 }
 
+// ─── Qualification Card ───────────────────────────────────────────────────────
+function QualificationCard({ qual, tasks, onOpen, onDragStart, onDragEnd, dragging }) {
+  const linked = tasks.filter(t => t.qualification_id === qual.id)
+  const stagesTotal = linked.length
+  const stagesDone = linked.filter(t => (t.substatus || 'not_started') === 'complete').length
+  const pct = stagesTotal ? Math.round((stagesDone / stagesTotal) * 100) : 0
+  const bg = flagBg(qual.color), border = flagBorder(qual.color)
+  const owners = qual.owners || []
+  const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
+  return (
+    <div
+      draggable
+      onDragStart={e => { e.dataTransfer.setData('text/plain', String(qual.id)); onDragStart && onDragStart(qual.id) }}
+      onDragEnd={onDragEnd}
+      onClick={() => onOpen(qual)}
+      style={{ background:bg||'white', border:`0.5px solid ${border||'#e5e5e5'}`, borderRadius:8, padding:'10px 12px', cursor:'grab', boxSizing:'border-box', userSelect:'none', opacity:dragging?0.4:1, marginBottom:8 }}
+      onMouseEnter={e => { if(!border) e.currentTarget.style.borderColor='#bbb' }}
+      onMouseLeave={e => { if(!border) e.currentTarget.style.borderColor='#e5e5e5' }}>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginBottom:4 }}>
+        {qual.site && <span style={{ fontSize:10, fontWeight:500, background:'#EAF3DE', color:'#27500A', padding:'2px 7px', borderRadius:20, border:'0.5px solid #97C459', whiteSpace:'nowrap' }}>{qual.site}</span>}
+        {qual.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', border:'0.5px solid #F09595' }}>High</span>}
+      </div>
+      <div style={{ fontSize:13, fontWeight:600, color:'#111', marginBottom:2, lineHeight:1.3 }}>{qual.name}</div>
+      {(qual.supplier || qual.material) && (
+        <div style={{ fontSize:11, color:'#888', marginBottom:6 }}>{qual.supplier}{qual.supplier && qual.material ? ' · ' : ''}{qual.material}</div>
+      )}
+      {stagesTotal > 0 && (
+        <div style={{ marginBottom:6 }}>
+          <div style={{ height:5, background:'#eee', borderRadius:3, overflow:'hidden' }}>
+            <div style={{ width:`${pct}%`, height:'100%', background:'linear-gradient(90deg,#4f46e5,#7c3aed)' }} />
+          </div>
+          <div style={{ fontSize:10, color:'#aaa', marginTop:3 }}>{stagesDone}/{stagesTotal} stage{stagesTotal!==1?'s':''} complete</div>
+        </div>
+      )}
+      <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap' }}>
+        {showOwners && owners.map(o => <OwnerPip key={o} name={o} />)}
+        {qual.due && <Badge type="due">{qual.due}</Badge>}
+      </div>
+    </div>
+  )
+}
+
+// ─── Qualification Form / Detail ──────────────────────────────────────────────
+function QualificationForm({ qual, isEdit, templates, domains, members, tasks, onSave, onDelete, onClose, onSaveTask, onDeleteTask, onToggleSubtask }) {
+  const [f, setF] = useState({
+    name: qual.name || '', supplier: qual.supplier || '', material: qual.material || '', site: qual.site || '',
+    status: qual.status || 'not_started', priority: qual.priority || '', color: qual.color || '',
+    owners: Array.isArray(qual.owners) ? qual.owners : ['Levi'], due: qual.due || '',
+    template_id: qual.template_id || '',
+    notes: Array.isArray(qual.notes) ? qual.notes : [],
+    attachments: Array.isArray(qual.attachments) ? qual.attachments : [],
+  })
+  const [newNote, setNewNote] = useState('')
+  const [expanded, setExpanded] = useState(() => new Set())
+  const [taskForm, setTaskForm] = useState(null)
+  const [isEditTask, setIsEditTask] = useState(false)
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+  const toggleOwner = m => { const cur = f.owners||[]; set('owners', cur.includes(m) ? cur.filter(o=>o!==m) : [...cur, m]) }
+  const addNote = () => { const text = newNote.trim(); if (!text) return; set('notes', [...f.notes, { id:'n'+Date.now(), text, ts:Date.now() }]); setNewNote('') }
+  const removeNote = id => setF(p => ({ ...p, notes: p.notes.filter(n => n.id !== id) }))
+  const toggleExpand = id => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const linkedTasks = isEdit ? tasks.filter(t => t.qualification_id === qual.id).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)) : []
+  const taskDomains = [...new Set([...(domains||[]), 'Supplier Quality'])]
+  const openAddStage = () => { setTaskForm({ title:'', status:'active', substatus:'not_started', domain:'Supplier Quality', owners:f.owners, qualification_id:qual.id, notes:[], subtasks:[], attachments:[], project_id:null, escalation_id:null }); setIsEditTask(false) }
+  const openEditStage = t => { setTaskForm({...t}); setIsEditTask(true) }
+
+  return (
+    <>
+      <div style={{ ...MODAL_OVERLAY, zIndex:50 }}>
+        <div style={{ ...MODAL_CARD, maxWidth:520 }}>
+          <input autoFocus value={f.name} onChange={e => set('name', e.target.value)} placeholder="Qualification name..."
+            style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:6, color:'#111', background:'transparent', padding:0 }} />
+          <TimestampMeta created={qual.created_at} updated={qual.updated_at} />
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+            <div><label style={FIELD_LABEL}>Supplier</label>
+              <input value={f.supplier} onChange={e => set('supplier', e.target.value)} style={FIELD_INPUT} placeholder="Supplier name" /></div>
+            <div><label style={FIELD_LABEL}>Material</label>
+              <input value={f.material} onChange={e => set('material', e.target.value)} style={FIELD_INPUT} placeholder="Material / component" /></div>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
+            <div><label style={FIELD_LABEL}>Status</label>
+              <select value={f.status} onChange={e => set('status', e.target.value)} style={FIELD_SELECT}>
+                {QUAL_COLS.map(c => <option key={c.key} value={c.key}>{c.lbl}</option>)}
+              </select></div>
+            <div><label style={FIELD_LABEL}>Priority</label>
+              <select value={f.priority} onChange={e => set('priority', e.target.value)} style={FIELD_SELECT}>
+                <option value="">Normal</option><option value="high">High</option>
+              </select></div>
+            <div><label style={FIELD_LABEL}>Due date</label>
+              <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12, alignItems:'end' }}>
+            <div><label style={FIELD_LABEL}>Site</label>
+              <select value={f.site} onChange={e => set('site', e.target.value)} style={FIELD_SELECT}>
+                <option value="">— none —</option>
+                {QUAL_SITES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select></div>
+            <div><label style={FIELD_LABEL}>Flag color</label>
+              <div style={{ display:'flex', gap:5, alignItems:'center', height:32, flexWrap:'wrap' }}>
+                {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?18:13, height:fc.key?18:13, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
+              </div></div>
+          </div>
+
+          {!isEdit && (
+            <div style={{ marginBottom:12 }}>
+              <label style={FIELD_LABEL}>Template</label>
+              <select value={f.template_id} onChange={e => set('template_id', e.target.value)} style={FIELD_SELECT}>
+                <option value="">No template (empty)</option>
+                {templates.map(t => <option key={t.id} value={t.id}>{t.name} · {t.tasks?.length||0} stages</option>)}
+              </select>
+              {templates.length === 0 && <div style={{ fontSize:11, color:'#bbb', marginTop:4 }}>No templates yet — add them in Settings › Qual Templates.</div>}
+            </div>
+          )}
+
+          <div style={{ marginBottom:12 }}>
+            <label style={FIELD_LABEL}>Assigned to</label>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {members.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+            </div>
+          </div>
+
+          <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
+            <label style={FIELD_LABEL}>Notes</label>
+            {f.notes.map(n => (
+              <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
+                <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
+                <span style={{ flex:1 }}>{n.text}</span>
+                <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+              </div>
+            ))}
+            <div style={{ display:'flex', gap:8, marginTop:4 }}>
+              <input value={newNote} onChange={e=>setNewNote(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addNote()}} placeholder="Add a note..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+              <button onClick={addNote} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
+            </div>
+          </div>
+
+          {isEdit && (
+            <AttachmentSection
+              attachments={f.attachments}
+              entityPath={`qualifications/${qual.id}`}
+              onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
+              onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
+            />
+          )}
+
+          {isEdit && (
+            <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:12 }}>
+              <div style={{ fontSize:11, fontWeight:500, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Stages · {linkedTasks.length}</div>
+              {linkedTasks.length === 0 && <div style={{ fontSize:12, color:'#ccc', padding:'4px 0 10px' }}>No stages yet</div>}
+              {linkedTasks.map(t => {
+                const subs = Array.isArray(t.subtasks) ? t.subtasks : []
+                const done = (t.substatus||'not_started') === 'complete'
+                const open = expanded.has(t.id)
+                const ss = subStyle(t.substatus || 'not_started')
+                return (
+                  <div key={t.id} style={{ background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0', marginBottom:6 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px' }}>
+                      {subs.length > 0
+                        ? <button onClick={() => toggleExpand(t.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#bbb', fontSize:11, padding:0, width:12, flexShrink:0 }}>{open ? '▾' : '▸'}</button>
+                        : <span style={{ width:12, flexShrink:0 }} />}
+                      <span style={{ width:7, height:7, borderRadius:'50%', background:ss.bg||'#e5e5e5', border:`1px solid ${ss.border||'#ccc'}`, flexShrink:0 }} />
+                      <span onClick={() => openEditStage(t)} style={{ flex:1, fontSize:13, color:done?'#aaa':'#111', textDecoration:done?'line-through':'none', cursor:'pointer' }}>{t.title}</span>
+                      {subs.length > 0 && <span style={{ fontSize:10, color:'#aaa', flexShrink:0 }}>☑ {subs.filter(s=>s.done).length}/{subs.length}</span>}
+                      <button onClick={() => openEditStage(t)} style={{ fontSize:12, color:'#ccc', flexShrink:0, background:'none', border:'none', cursor:'pointer', padding:0 }}>›</button>
+                    </div>
+                    {open && subs.length > 0 && (
+                      <div style={{ padding:'0 10px 8px 30px' }}>
+                        {subs.map(st => (
+                          <div key={st.id} onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                            <input type="checkbox" checked={!!st.done} disabled={!!st.na} onChange={e => onToggleSubtask(t.id, st.id, e.target.checked)} style={{ width:12, height:12, cursor:st.na?'default':'pointer' }} />
+                            <span style={{ fontSize:11, color:(st.done||st.na)?'#aaa':'#444', textDecoration:(st.done||st.na)?'line-through':'none' }}>{st.title}{st.na&&<span style={{ fontSize:9, marginLeft:4, color:'#bbb' }}>N/A</span>}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              <button onClick={openAddStage} style={{ width:'100%', marginTop:4, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer', fontFamily:'inherit' }}>+ New stage</button>
+            </div>
+          )}
+
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:12 }}>
+            <div>{isEdit && <ConfirmDeleteButton onConfirm={() => { onDelete(qual.id); onClose() }} style={{ fontSize:12, color:'#E24B4A', background:'none', border:'0.5px solid #fcc', borderRadius:8, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>Delete qualification</ConfirmDeleteButton>}</div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={onClose} style={{ fontSize:12, background:'none', color:'#888', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
+              <button onClick={() => { if (f.name.trim()) { onSave(f, isEdit ? qual.id : null); onClose() } }} disabled={!f.name.trim()} style={{ ...BTN_PRIMARY, fontSize:12, padding:'6px 16px', opacity:f.name.trim()?1:0.4, cursor:f.name.trim()?'pointer':'not-allowed' }}>Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {taskForm && (
+        <TaskForm task={taskForm} isEdit={isEditTask} members={members} domains={taskDomains} zIndex={60}
+          onSave={async data => { await onSaveTask(data, isEditTask ? taskForm.id : null); setTaskForm(null) }}
+          onDelete={async id => { await onDeleteTask(id); setTaskForm(null) }}
+          onClose={() => setTaskForm(null)} />
+      )}
+    </>
+  )
+}
+
+// ─── Qualifications Tab ───────────────────────────────────────────────────────
+function QualificationsTab({ qualifications, tasks, templates, domains, members, isMobile, onAdd, onSave, onDelete, onMove, onSaveTask, onDeleteTask, onToggleSubtask }) {
+  const [form, setForm] = useState(null) // { qual, isEdit } | null
+  const [draggingId, setDraggingId] = useState(null)
+  const [overCol, setOverCol] = useState(null)
+  const [search, setSearch] = useState('')
+
+  const q = search.trim().toLowerCase()
+  const match = ql => !q || [ql.name, ql.supplier, ql.material, ql.site].some(v => (v||'').toLowerCase().includes(q))
+  const visible = qualifications.filter(match)
+
+  const openNew = () => setForm({ qual: { owners:['Levi'], status:'not_started' }, isEdit:false })
+  const openEdit = ql => setForm({ qual: ql, isEdit:true })
+  const drop = (id, status) => { if (id) onMove(id, status); setDraggingId(null); setOverCol(null) }
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+        <div style={{ position:'relative', display:'flex', alignItems:'center', ...(isMobile ? { flex:'1 1 100%' } : {}) }}>
+          <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search qualifications…"
+            style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:28, outline:'none', width:isMobile?'100%':200, color:'#333', boxSizing:'border-box' }} />
+        </div>
+        <button onClick={openNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', marginLeft:'auto' }}>+ New Qualification</button>
+      </div>
+
+      {qualifications.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'48px 0', color:'#bbb', fontSize:13 }}>No qualifications yet — click <strong>+ New Qualification</strong> to start tracking a supplier.</div>
+      ) : (
+        <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto', paddingBottom:8 }}>
+          {QUAL_COLS.map(col => {
+            const ct = visible.filter(ql => (ql.status||'not_started') === col.key).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
+            return (
+              <div key={col.key}
+                onDragOver={e => { e.preventDefault(); setOverCol(col.key) }}
+                onDragLeave={() => setOverCol(null)}
+                onDrop={e => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain'), col.key) }}
+                style={{ flex:'1 1 200px', minWidth:200, background:overCol===col.key?'#EEF4FF':'#f7f7f5', border:overCol===col.key?'1.5px dashed #378ADD':'1.5px solid transparent', borderRadius:12, padding:12, minHeight:200 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                  <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>{col.lbl}</span>
+                  <span style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, padding:'1px 7px', fontSize:11, color:'#888' }}>{ct.length}</span>
+                </div>
+                {ct.map(ql => (
+                  <QualificationCard key={ql.id} qual={ql} tasks={tasks} onOpen={openEdit}
+                    onDragStart={id => setDraggingId(id)} onDragEnd={() => { setDraggingId(null); setOverCol(null) }} dragging={draggingId===ql.id} />
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {form && (
+        <QualificationForm qual={form.qual} isEdit={form.isEdit} templates={templates} domains={domains} members={members} tasks={tasks}
+          onSave={(data, id) => id ? onSave(data, id) : onAdd(data)}
+          onDelete={onDelete} onClose={() => setForm(null)}
+          onSaveTask={onSaveTask} onDeleteTask={onDeleteTask} onToggleSubtask={onToggleSubtask} />
+      )}
+    </div>
+  )
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -4802,6 +5080,8 @@ export default function App() {
   const [calEvents, setCalEvents] = useState([])
   const [calendarList, setCalendarList] = useState([])
   const [qualTemplates, setQualTemplates] = useState([])
+  const [qualifications, setQualifications] = useState([])
+  const [qualificationTemplates, setQualificationTemplates] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(() => { const saved = localStorage.getItem('taskr-tab'); return (saved && saved !== 'tasks') ? saved : 'linear' })
   const switchTab = t => { setTab(t); localStorage.setItem('taskr-tab', t) }
@@ -4847,7 +5127,7 @@ export default function App() {
   const loadData = useCallback(async (silent = false) => {
     if (!session) return
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }, { data: qualificationsData }, { data: qualificationTemplatesData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*').order('sort_order', { ascending: true }),
@@ -4859,6 +5139,8 @@ export default function App() {
       supabase.from('qual_templates').select('*').order('created_at', { ascending: true }),
       supabase.from('note_groups').select('*').order('sort_order', { ascending: true }),
       supabase.from('calendars').select('*').order('sort_order', { ascending: true }),
+      supabase.from('qualifications').select('*').order('sort_order', { ascending: true }),
+      supabase.from('qualification_templates').select('*').order('sort_order', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) { setDomains(domainsData.map(d => d.name)); setDomainRows(domainsData) }
@@ -4870,6 +5152,8 @@ export default function App() {
     setFollowUps(followUpsData || [])
     if (teamMembersData && teamMembersData.length > 0) setTeamData(teamMembersData)
     setQualTemplates(qualTemplatesData || [])
+    setQualifications((qualificationsData || []).map(q => ({ ...q, owners: q.owners||[], notes: q.notes||[], attachments: q.attachments||[] })))
+    setQualificationTemplates(qualificationTemplatesData || []) // empty until the qualification_templates table exists
     setNoteGroups(noteGroupsData || [])
     setLoading(false)
   }, [session])
@@ -4933,6 +5217,7 @@ export default function App() {
     }
     if (data.project_id !== undefined) payload.project_id = data.project_id || null
     if (data.escalation_id !== undefined) payload.escalation_id = data.escalation_id || null
+    if (data.qualification_id !== undefined) payload.qualification_id = data.qualification_id || null
     return payload
   }
 
@@ -5000,6 +5285,51 @@ export default function App() {
     await supabase.from('projects').delete().eq('id', id)
     if (activeProject === id) setActiveProject(null)
     await loadData()
+  }
+
+  // ── Supplier Qualifications ──────────────────────────────────────────────
+  const addQualification = async data => {
+    const tpl = data.template_id ? qualificationTemplates.find(t => t.id === data.template_id) : null
+    const maxOrder = qualifications.length ? Math.max(...qualifications.map(q => q.sort_order||0)) : 0
+    const owners = data.owners?.length ? data.owners : ['Levi']
+    const payload = {
+      name: data.name, supplier: data.supplier||'', material: data.material||'', site: data.site||'',
+      status: data.status||'not_started', priority: data.priority||'', color: data.color||'',
+      owners, due: data.due||'', notes: [], attachments: [],
+      template_id: data.template_id||null, sort_order: maxOrder+1,
+    }
+    const { data: qual, error } = await supabase.from('qualifications').insert(payload).select().single()
+    if (error || !qual) { console.error('[TASKr] addQualification error', error); return }
+    if (tpl?.tasks?.length) {
+      const inserts = tpl.tasks.map((t, i) => ({
+        title: t.title, status: 'active', substatus: 'not_started', domain: 'Supplier Quality',
+        qualification_id: qual.id, notes: [], attachments: [], owners,
+        subtasks: (t.subtasks || []).map((s, j) => ({ id:`st${i}${j}`, title:s, done:false })),
+        color: data.color||'', sort_order: i + 1, updated_at: new Date().toISOString(),
+      }))
+      await supabase.from('tasks').insert(inserts)
+    }
+    await loadData(true)
+  }
+
+  const saveQualification = async (data, id) => {
+    const payload = { name:data.name, supplier:data.supplier||'', material:data.material||'', site:data.site||'', status:data.status||'not_started', priority:data.priority||'', color:data.color||'', owners:data.owners||['Levi'], due:data.due||'', notes:data.notes||[], attachments:data.attachments||[] }
+    await supabase.from('qualifications').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
+    await supabase.from('tasks').update({ color: data.color||'' }).eq('qualification_id', id)
+    await loadData(true)
+  }
+
+  const deleteQualification = async id => {
+    // Track tasks are owned by the qualification — remove them first so the delete never trips an FK constraint
+    await supabase.from('tasks').delete().eq('qualification_id', id)
+    await supabase.from('qualifications').delete().eq('id', id)
+    await loadData(true)
+  }
+
+  const moveQualification = async (id, status) => {
+    const updated_at = new Date().toISOString()
+    setQualifications(prev => prev.map(q => q.id === id ? { ...q, status, updated_at } : q)) // optimistic
+    await supabase.from('qualifications').update({ status, updated_at }).eq('id', id)
   }
 
   const addEscalation = async title => {
@@ -5300,7 +5630,7 @@ export default function App() {
     <div style={{ fontFamily:'system-ui,sans-serif', padding:isMobile?'0.75rem':'1.25rem 1.5rem', maxWidth:1400, margin:'0 auto' }}>
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, marginBottom:isMobile?'0.9rem':'1.25rem', paddingBottom:isMobile?'0.75rem':'1rem', borderBottom:'0.5px solid #e5e5e5' }}>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, marginBottom:isMobile?'0.9rem':'1.25rem', paddingBottom:isMobile?'0.75rem':'1rem' }}>
         <h1 style={{ fontSize:isMobile?18:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', whiteSpace:'nowrap', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         <div style={{ display:'flex', alignItems:'center', gap:isMobile?6:10, minWidth:0 }}>
           <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:isMobile?1:4 }}>
@@ -5334,14 +5664,17 @@ export default function App() {
       </div>
 
       {/* Menu + World Clock — unified gradient strip */}
-      <div style={{ display:'flex', flexDirection:isMobile?'column':'row', alignItems:'stretch', background:'linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a855f7 100%)', borderRadius:14, marginBottom:'1.25rem', overflow:'hidden' }}>
-        <div style={{ display:'flex', gap:2, padding:5, flexShrink:0, ...(isMobile ? { width:'100%' } : {}) }}>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'stretch', background:'linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a855f7 100%)', borderRadius:14, marginBottom:'1.25rem', overflow:'hidden' }}>
+        <WorldClock style={{ width:'100%', background:'rgba(0,0,0,0.12)' }} />
+        <div style={{ height:'1px', margin:'0 8px', background:'rgba(255,255,255,0.2)', flexShrink:0 }} />
+        <div style={{ display:'flex', gap:2, padding:5, width:'100%' }}>
           {[
             { key:'briefing', label:'Briefing', Icon:Newspaper },
             { key:'linear', label:'Tasks', Icon:LayoutList },
             { key:'followups', label:'Follow Ups', Icon:RefreshCw },
             { key:'notes', label:'Notes', Icon:NotebookPen },
             { key:'calendar', label:'Calendar', Icon:CalendarDays },
+            { key:'qualifications', label:'Qualifications', Icon:Factory },
             { key:'settings', label:'Settings', Icon:Settings },
           ].map(({ key, label, Icon }) => (
             <button key={key} onClick={() => switchTab(key)}
@@ -5351,8 +5684,6 @@ export default function App() {
             </button>
           ))}
         </div>
-        <div style={{ ...(isMobile ? { height:'1px', margin:'0 8px' } : { width:'1px', margin:'8px 0' }), background:'rgba(255,255,255,0.2)', flexShrink:0 }} />
-        <WorldClock style={{ flex:1, minWidth:0, background:'rgba(0,0,0,0.12)' }} />
       </div>
 
       {/* ── Briefing ── */}
@@ -5757,6 +6088,25 @@ export default function App() {
         <CalendarTab events={calEvents} onSave={() => loadData(true)} onDelete={() => loadData(true)} members={memberNames} calendars={calendarList} onToggleCalendar={toggleCalendar} />
       )}
 
+      {/* ── Qualifications ── */}
+      {tab === 'qualifications' && (
+        <QualificationsTab
+          qualifications={qualifications}
+          tasks={tasks}
+          templates={qualificationTemplates}
+          domains={domains}
+          members={memberNames}
+          isMobile={isMobile}
+          onAdd={addQualification}
+          onSave={saveQualification}
+          onDelete={deleteQualification}
+          onMove={moveQualification}
+          onSaveTask={saveTaskSilent}
+          onDeleteTask={deleteTaskSilent}
+          onToggleSubtask={toggleSubtask}
+        />
+      )}
+
       {/* ── Notes ── */}
       {tab === 'notes' && (
         <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} members={memberNames} />
@@ -5805,16 +6155,16 @@ export default function App() {
 }
 
 // ─── Qualification Template Settings ─────────────────────────────────────────
-function QualTemplateSettings({ onUpdate }) {
+function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bundle Templates', subtitle = 'Pre-populate tasks when creating a bundle.' }) {
   const [templates, setTemplates] = useState([])
   const [editId, setEditId] = useState(null)
   const [draft, setDraft] = useState(null) // { name, tasks: [{title, subtasks:[string]}] }
   const [newTaskTitle, setNewTaskTitle] = useState('')
 
   useEffect(() => {
-    supabase.from('qual_templates').select('*').order('created_at', { ascending: true })
+    supabase.from(table).select('*').order('created_at', { ascending: true })
       .then(({ data }) => { if (data) setTemplates(data) })
-  }, [])
+  }, [table])
 
   const startNew = () => { setDraft({ name:'', tasks:[] }); setEditId('new') }
   const startEdit = t => { setDraft(JSON.parse(JSON.stringify(t))); setEditId(t.id) }
@@ -5824,18 +6174,18 @@ function QualTemplateSettings({ onUpdate }) {
     if (!draft.name.trim()) return
     const payload = { name: draft.name.trim(), tasks: draft.tasks }
     if (editId === 'new') {
-      await supabase.from('qual_templates').insert(payload)
+      await supabase.from(table).insert(payload)
     } else {
-      await supabase.from('qual_templates').update(payload).eq('id', editId)
+      await supabase.from(table).update(payload).eq('id', editId)
     }
-    const { data } = await supabase.from('qual_templates').select('*').order('created_at', { ascending: true })
+    const { data } = await supabase.from(table).select('*').order('created_at', { ascending: true })
     if (data) setTemplates(data)
     onUpdate?.()
     cancel()
   }
 
   const deleteTemplate = async id => {
-    await supabase.from('qual_templates').delete().eq('id', id)
+    await supabase.from(table).delete().eq('id', id)
     setTemplates(ts => ts.filter(t => t.id !== id))
     onUpdate?.()
   }
@@ -5854,8 +6204,8 @@ function QualTemplateSettings({ onUpdate }) {
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
         <div>
-          <div style={{ fontSize:14, fontWeight:500, color:'#111', marginBottom:2 }}>Bundle Templates</div>
-          <div style={{ fontSize:12, color:'#aaa' }}>Pre-populate tasks when creating a bundle.</div>
+          <div style={{ fontSize:14, fontWeight:500, color:'#111', marginBottom:2 }}>{title}</div>
+          <div style={{ fontSize:12, color:'#aaa' }}>{subtitle}</div>
         </div>
         {editId === null && <button onClick={startNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>+ New template</button>}
       </div>
@@ -6331,6 +6681,7 @@ function SettingsPage({ domains, teamData, calendarList, onUpdate, isMobile = fa
     { key: 'domains',   label: 'Domains',   icon: '🏷' },
     { key: 'calendars', label: 'Calendars', icon: '📅' },
     { key: 'templates', label: 'Templates', icon: '📋' },
+    { key: 'qualtemplates', label: 'Qual Templates', icon: '🏭' },
   ]
 
   return (
@@ -6358,6 +6709,7 @@ function SettingsPage({ domains, teamData, calendarList, onUpdate, isMobile = fa
         {section === 'domains'   && <DomainSettings domains={domains} onUpdate={onUpdate} />}
         {section === 'calendars' && <CalendarSettings calendars={calendarList} onUpdate={onUpdate} />}
         {section === 'templates' && <QualTemplateSettings onUpdate={onUpdate} />}
+        {section === 'qualtemplates' && <QualTemplateSettings onUpdate={onUpdate} table="qualification_templates" title="Qualification Templates" subtitle="Stages auto-created when you qualify a supplier." />}
       </div>
     </div>
   )
