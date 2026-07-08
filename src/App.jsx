@@ -1893,14 +1893,13 @@ Important rules:
 
 // ─── Follow Ups Tab ───────────────────────────────────────────────────────────
 const DEFAULT_FOLLOW_UP_PEOPLE = ['Margarita', 'Illya', 'Matthew', 'Kaat']
-function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, people = DEFAULT_FOLLOW_UP_PEOPLE, tasks = [] }) {
+function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, onOpenTask, people = DEFAULT_FOLLOW_UP_PEOPLE, tasks = [], entityMap = {} }) {
   const [activePerson, setActivePerson] = useState(null)
   const [showDone, setShowDone] = useState(false)
   const [addingFor, setAddingFor] = useState(null)
   const [newText, setNewText] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editText, setEditText] = useState('')
-  const [tasksOpenFor, setTasksOpenFor] = useState({})
 
   const startEdit = item => { setEditingId(item.id); setEditText(item.text) }
   const commitEdit = id => {
@@ -1911,7 +1910,8 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
   }
 
   const extraPeople = [...new Set(followUps.map(f => f.person))].filter(p => p && !people.includes(p))
-  const allPeople = [...people, ...extraPeople]
+  // 'Levi' is the current user — you don't follow up with yourself
+  const allPeople = [...people, ...extraPeople].filter(p => p !== 'Levi')
 
   const pendingFor = p => followUps.filter(f => f.person === p && !f.done).length
   const itemsFor = p => followUps.filter(f => f.person === p && (showDone || !f.done))
@@ -1923,6 +1923,48 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
     if (!newText.trim()) return
     onAdd(newText.trim(), person)
     setNewText(''); setAddingFor(null)
+  }
+
+  const taskRow = t => {
+    const ss = subStyle(tss(t))
+    return (
+      <div key={t.id} onDoubleClick={() => onOpenTask && onOpenTask(t)} title={onOpenTask ? 'Double-click to open' : undefined}
+        style={{ display:'flex', alignItems:'center', gap:7, padding:'5px 8px', background:'white', borderRadius:6, border:'0.5px solid #ebebeb', marginBottom:3, cursor: onOpenTask ? 'pointer' : 'default' }}>
+        <div style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background:ss.bg, border:`1px solid ${ss.border}` }} />
+        <span style={{ flex:1, fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</span>
+        <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:10, padding:'1px 6px', whiteSpace:'nowrap', flexShrink:0 }}>{ss.label}</span>
+      </div>
+    )
+  }
+  // Group a person's tasks: loose tasks stay flat; tasks tied to a project/bundle/escalation cluster inside a titled container (as on the task page)
+  const renderAssigned = pt => {
+    const standalone = []
+    const byLink = {}
+    pt.forEach(t => {
+      const lid = t.project_id || t.escalation_id
+      if (lid && entityMap[lid]) (byLink[lid] = byLink[lid] || []).push(t)
+      else standalone.push(t)
+    })
+    const linkIds = Object.keys(byLink).sort((a, b) => (entityMap[a]?.name || '').localeCompare(entityMap[b]?.name || ''))
+    return (
+      <>
+        {standalone.map(taskRow)}
+        {linkIds.map(lid => {
+          const ent = entityMap[lid]
+          const cbg = flagBg(ent?.color) || '#f4f2ec'
+          const cbd = flagBorder(ent?.color) || '#d8d4c8'
+          return (
+            <div key={lid} style={{ border:`1px solid ${cbd}`, borderRadius:8, padding:'6px 6px 3px', marginBottom:4, background:cbg }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6, padding:'0 3px 5px' }}>
+                <span style={{ flex:'1 1 auto', minWidth:0, fontSize:9, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color:'#555', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ent?.name || 'Linked'}</span>
+                <span style={{ fontSize:9, color:'#888', background:'white', border:`0.5px solid ${cbd}`, borderRadius:8, padding:'0 6px', flexShrink:0 }}>{byLink[lid].length}</span>
+              </div>
+              {byLink[lid].map(taskRow)}
+            </div>
+          )
+        })}
+      </>
+    )
   }
 
   return (
@@ -1957,8 +1999,10 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
         {visiblePeople.map(person => {
           const items = itemsFor(person)
           const pending = pendingFor(person)
-          if (!activePerson && items.length === 0) return null
+          const pt = tasksFor(person)
+          if (!activePerson && items.length === 0 && pt.length === 0) return null
           const mc = MEMBER_COLORS[person]
+          const colHeading = txt => <div style={{ fontSize:10, fontWeight:600, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:7 }}>{txt}</div>
           return (
             <div key={person} style={{ background:'#f7f7f5', borderRadius:12, padding:12 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
@@ -1973,86 +2017,73 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                 </button>
               </div>
 
-              {/* Assigned tasks */}
-              {(() => {
-                const pt = tasksFor(person)
-                if (pt.length === 0) return null
-                const isOpen = tasksOpenFor[person] !== false
-                return (
-                  <div style={{ marginBottom:8 }}>
-                    <button onClick={() => setTasksOpenFor(s => ({...s, [person]: !isOpen}))}
-                      style={{ display:'flex', alignItems:'center', gap:5, background:'none', border:'none', cursor:'pointer', padding:'2px 0 6px', color:'#888', fontSize:11, fontFamily:'inherit', width:'100%', textAlign:'left' }}>
-                      <span style={{ fontSize:8, display:'inline-block', transition:'transform 0.15s', transform: isOpen?'rotate(90deg)':'rotate(0deg)' }}>▶</span>
-                      {pt.length} assigned task{pt.length !== 1 ? 's' : ''}
-                    </button>
-                    {isOpen && pt.map(t => {
-                      const ss = subStyle(tss(t))
-                      return (
-                        <div key={t.id} style={{ display:'flex', alignItems:'center', gap:7, padding:'5px 8px', background:'white', borderRadius:6, border:'0.5px solid #ebebeb', marginBottom:3 }}>
-                          <div style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background:ss.bg, border:`1px solid ${ss.border}` }} />
-                          <span style={{ flex:1, fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</span>
-                          <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:10, padding:'1px 6px', whiteSpace:'nowrap', flexShrink:0 }}>{ss.label}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })()}
-
-              {addingFor === person && (
-                <div style={{ display:'flex', gap:6, marginBottom:8 }}>
-                  <input autoFocus value={newText} onChange={e => setNewText(e.target.value)}
-                    onKeyDown={e => { if (e.key==='Enter') handleAdd(person); if (e.key==='Escape') { setAddingFor(null); setNewText('') } }}
-                    placeholder="Follow-up item..."
-                    style={{ flex:1, fontSize:13, padding:'6px 10px', border:'0.5px solid #e0e0e0', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
-                  <button onClick={() => handleAdd(person)}
-                    style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'0 14px', cursor:'pointer', fontFamily:'inherit' }}>
-                    Add
-                  </button>
+              <div style={{ display:'flex', gap:14, flexWrap:'wrap', alignItems:'flex-start' }}>
+                {/* Column 1 — assigned tasks (double-click to open) */}
+                <div style={{ flex:'1 1 240px', minWidth:0 }}>
+                  {colHeading(`Assigned tasks${pt.length ? ` · ${pt.length}` : ''}`)}
+                  {pt.length === 0
+                    ? <div style={{ fontSize:12, color:'#bbb', padding:'2px 0' }}>No assigned tasks</div>
+                    : renderAssigned(pt)}
                 </div>
-              )}
 
-              {items.length === 0 && addingFor !== person && (
-                <div style={{ fontSize:12, color:'#bbb', padding:'4px 0 2px' }}>No pending follow-ups — click + Add to create one</div>
-              )}
-              {items.map(item => (
-                <div key={item.id}
-                  style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', background:item.done?'transparent':'white', borderRadius:6, border:item.done?'none':'0.5px solid #ebebeb', marginBottom:4 }}
-                  onMouseEnter={e => { e.currentTarget.querySelectorAll('.fu-action').forEach(el => el.style.opacity='1') }}
-                  onMouseLeave={e => { e.currentTarget.querySelectorAll('.fu-action').forEach(el => el.style.opacity='0') }}>
-                  <input type="checkbox" checked={!!item.done} onChange={e => onToggle(item.id, e.target.checked)} style={{ width:14, height:14, cursor:'pointer', flexShrink:0 }} />
-                  {editingId === item.id ? (
-                    <input autoFocus value={editText} onChange={e => setEditText(e.target.value)}
-                      onKeyDown={e => { if (e.key==='Enter') commitEdit(item.id); if (e.key==='Escape') { setEditingId(null); setEditText('') } }}
-                      onBlur={() => commitEdit(item.id)}
-                      style={{ flex:1, fontSize:13, padding:'2px 4px', border:'none', borderBottom:'1.5px solid #111', outline:'none', background:'transparent', fontFamily:'inherit', color:'#333' }} />
-                  ) : (
-                    <span onClick={() => !item.done && startEdit(item)} style={{ flex:1, fontSize:13, color:item.done?'#bbb':'#333', textDecoration:item.done?'line-through':'none', cursor:item.done?'default':'text' }}>{item.text}</span>
+                {/* Column 2 — follow-up items */}
+                <div style={{ flex:'1 1 240px', minWidth:0 }}>
+                  {colHeading('Follow-up items')}
+                  {addingFor === person && (
+                    <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+                      <input autoFocus value={newText} onChange={e => setNewText(e.target.value)}
+                        onKeyDown={e => { if (e.key==='Enter') handleAdd(person); if (e.key==='Escape') { setAddingFor(null); setNewText('') } }}
+                        placeholder="Follow-up item..."
+                        style={{ flex:1, fontSize:13, padding:'6px 10px', border:'0.5px solid #e0e0e0', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
+                      <button onClick={() => handleAdd(person)}
+                        style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'0 14px', cursor:'pointer', fontFamily:'inherit' }}>
+                        Add
+                      </button>
+                    </div>
                   )}
-                  {editingId !== item.id && (
-                    <>
-                      {!item.done && onCreateTask && (
-                        <button className="fu-action" onClick={() => onCreateTask(item)} title="Create task"
-                          style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
-                          onMouseEnter={e => e.currentTarget.style.color='#0C447C'}
-                          onMouseLeave={e => e.currentTarget.style.color='#ddd'}>+task</button>
+                  {items.length === 0 && addingFor !== person && (
+                    <div style={{ fontSize:12, color:'#bbb', padding:'2px 0' }}>No pending follow-ups — click + Add to create one</div>
+                  )}
+                  {items.map(item => (
+                    <div key={item.id}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', background:item.done?'transparent':'white', borderRadius:6, border:item.done?'none':'0.5px solid #ebebeb', marginBottom:4 }}
+                      onMouseEnter={e => { e.currentTarget.querySelectorAll('.fu-action').forEach(el => el.style.opacity='1') }}
+                      onMouseLeave={e => { e.currentTarget.querySelectorAll('.fu-action').forEach(el => el.style.opacity='0') }}>
+                      <input type="checkbox" checked={!!item.done} onChange={e => onToggle(item.id, e.target.checked)} style={{ width:14, height:14, cursor:'pointer', flexShrink:0 }} />
+                      {editingId === item.id ? (
+                        <input autoFocus value={editText} onChange={e => setEditText(e.target.value)}
+                          onKeyDown={e => { if (e.key==='Enter') commitEdit(item.id); if (e.key==='Escape') { setEditingId(null); setEditText('') } }}
+                          onBlur={() => commitEdit(item.id)}
+                          style={{ flex:1, fontSize:13, padding:'2px 4px', border:'none', borderBottom:'1.5px solid #111', outline:'none', background:'transparent', fontFamily:'inherit', color:'#333' }} />
+                      ) : (
+                        <span onClick={() => !item.done && startEdit(item)} style={{ flex:1, fontSize:13, color:item.done?'#bbb':'#333', textDecoration:item.done?'line-through':'none', cursor:item.done?'default':'text' }}>{item.text}</span>
                       )}
-                      <button className="fu-action" onClick={() => startEdit(item)}
-                        style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
-                        onMouseEnter={e => e.currentTarget.style.color='#555'}
-                        onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✎</button>
-                      <button className="fu-action" onClick={() => onDelete(item.id)}
-                        style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
-                        onMouseEnter={e => e.currentTarget.style.color='#E24B4A'}
-                        onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
-                    </>
-                  )}
+                      {editingId !== item.id && (
+                        <>
+                          {!item.done && onCreateTask && (
+                            <button className="fu-action" onClick={() => onCreateTask(item)} title="Create task"
+                              style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
+                              onMouseEnter={e => e.currentTarget.style.color='#0C447C'}
+                              onMouseLeave={e => e.currentTarget.style.color='#ddd'}>+task</button>
+                          )}
+                          <button className="fu-action" onClick={() => startEdit(item)}
+                            style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
+                            onMouseEnter={e => e.currentTarget.style.color='#555'}
+                            onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✎</button>
+                          <button className="fu-action" onClick={() => onDelete(item.id)}
+                            style={{ fontSize:10, color:'#ddd', background:'none', border:'none', cursor:'pointer', opacity:0, transition:'opacity 0.1s', padding:'0 2px', flexShrink:0 }}
+                            onMouseEnter={e => e.currentTarget.style.color='#E24B4A'}
+                            onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                        </>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           )
         })}
-        {visiblePeople.every(p => itemsFor(p).length === 0) && !activePerson && (
+        {visiblePeople.every(p => itemsFor(p).length === 0 && tasksFor(p).length === 0) && !activePerson && (
           <div style={{ textAlign:'center', padding:'40px 0', color:'#bbb', fontSize:13 }}>
             No follow-ups yet — select a person above and click + Add
           </div>
@@ -2147,7 +2178,7 @@ function DomainColorPopover({ name, meta, onUpdate, onClose }) {
   )
 }
 
-function Row({ t, hideLinked, listTasks, listId, v }) {
+function Row({ t, hideLinked, listTasks, listId, v, gridReorder }) {
   const ss = subStyle(v.tss(t))
   const done = v.tss(t) === 'complete'
   const owners = t.owners || []
@@ -2162,13 +2193,14 @@ function Row({ t, hideLinked, listTasks, listId, v }) {
   const siblingIds = siblings.map(x => x.id)
   const rowDrop = v.rowDrop
   const dropInd = pos => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#4f46e5,#7c3aed)', margin: pos === 'before' ? '0 0 3px' : '3px 0 0' }} />
+  // In a multi-column grid (e.g. Today), tasks sit side-by-side, so before/after must be judged left↔right, not top↕bottom
   return (
     <div data-tid={t.id} style={{ marginBottom:4 }}>
       {rowDrop && rowDrop.overId === t.id && rowDrop.pos === 'before' && dropInd('before')}
       <div draggable onClick={() => v.onEdit(t)}
         onDragStart={e => { e.stopPropagation(); v.dragTaskRef.current = t.id; e.dataTransfer.setData('text/task', t.id); if (listId) e.dataTransfer.setData('text/fromlist', listId); e.dataTransfer.effectAllowed = 'move' }}
         onDragEnd={() => { v.dragTaskRef.current = null; v.setRowDrop(null); v.clearOutlines() }}
-        onDragOver={e => { const d = v.dragTaskRef.current; if (d && d !== t.id && siblingIds.includes(d)) { e.preventDefault(); e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); v.setRowDrop({ overId: t.id, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } }}
+        onDragOver={e => { const d = v.dragTaskRef.current; if (d && d !== t.id && siblingIds.includes(d)) { e.preventDefault(); e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); const before = gridReorder ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2; v.setRowDrop({ overId: t.id, pos: before ? 'before' : 'after' }) } }}
         onDrop={e => { const d = v.dragTaskRef.current; if (d && siblingIds.includes(d) && listId) { e.preventDefault(); e.stopPropagation(); v.reorderTo(siblings, d, t.id, rowDrop?.pos || 'before', listId) } v.dragTaskRef.current = null; v.setRowDrop(null) }}
         style={{ display:'flex', alignItems:'center', gap:9, padding:'6px 10px', background:'white', borderRadius:8, border:'0.5px solid #ebebeb', borderLeft: fb ? `3px solid ${fb}` : '0.5px solid #ebebeb', cursor:'pointer' }}
         onMouseEnter={e => { e.currentTarget.style.borderColor = fb || '#d8d8d8'; if (fb) e.currentTarget.style.borderLeftColor = fb }}
@@ -2176,7 +2208,6 @@ function Row({ t, hideLinked, listTasks, listId, v }) {
         <div onClick={e => { e.stopPropagation(); v.onComplete(t.id, !done) }} title="Toggle complete"
           style={{ width:15, height:15, borderRadius:'50%', border:`1.5px solid ${ss.border||'#ccc'}`, background: done ? (ss.bg||'#eee') : 'white', flexShrink:0, boxSizing:'border-box', cursor:'pointer' }} />
         <span style={{ flex:1, minWidth:0, fontSize:12, color: done?'#aaa':'#222', textDecoration: done?'line-through':'none', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.35 }}>
-          {t.today && <span style={{ fontSize:9, color:'#E24B4A', marginRight:6, fontWeight:600 }}>TODAY</span>}
           {t.title}
         </span>
         <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
@@ -2227,12 +2258,12 @@ function EscRow({ e, v, escList }) {
       onDrop={ev => { const d = v.dragEntRef.current; if (d && listIds.includes(d)) { ev.preventDefault(); v.reorderTo(list, d, e.id, entDrop?.pos || 'before', 'escalations') } v.dragEntRef.current = null; v.setEntDrop(null) }}
       style={{ background:'transparent' }}>
       {entDrop && entDrop.overId === e.id && entDrop.pos === 'before' && entInd('before')}
-      <div style={{ background:'#fdf6f6', borderRadius:8, border:'0.5px solid #f2dede', borderLeft:`3px solid ${fb || '#F09595'}`, marginBottom:4, padding:'8px 10px' }}>
+      <div style={{ background:'white', borderRadius:8, border:'0.5px solid #ebebeb', borderLeft: fb ? `3px solid ${fb}` : '0.5px solid #ebebeb', marginBottom:4, padding:'8px 10px' }}>
       <div draggable onDragStart={ev => { v.dragEntRef.current = e.id; ev.dataTransfer.setData('text/ent', e.id); ev.dataTransfer.effectAllowed = 'move' }}
         onDragEnd={() => { v.dragEntRef.current = null; v.setEntDrop(null) }}
         onDoubleClick={() => v.onOpenEscalation && v.onOpenEscalation(e)} title="Drag to reorder · double-click to open"
         style={{ display:'flex', alignItems:'center', gap:10, cursor:'grab' }}>
-        <span style={{ flex:1, minWidth:0, fontSize:12, fontWeight:500, color:'#8a2b2b', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.3 }}>{e.title}</span>
+        <span style={{ flex:1, minWidth:0, fontSize:12, fontWeight:500, color:'#222', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.3 }}>{e.title}</span>
         <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
           {escTasks.length > 0 && <span style={{ fontSize:10, color:'#aaa' }}>{escTasks.length} task{escTasks.length!==1?'s':''}</span>}
           {notes.length > 0 && <button onClick={ev => { ev.stopPropagation(); v.toggleNotes(noteKey) }} title="Notes"
@@ -2344,6 +2375,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   }
   const [hiddenDomains, setHiddenDomains] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-linear-hidden-domains')) || []) } catch { return new Set() } })
   const hideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.add(key); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
+  const unhideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.delete(key); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
   const [colorEditKey, setColorEditKey] = useState(null)
   const [filterOwner, setFilterOwner] = useState('all')
   const [ownerMenuOpen, setOwnerMenuOpen] = useState(false)
@@ -2362,13 +2394,13 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const toggleMin = id => setMinimized(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); persistMin(n); return n })
   const [drag, setDrag] = useState(null)          // { key, x, y, offsetX, offsetY, w }
   const [dropTarget, setDropTarget] = useState(null) // { col, index }
-  const [rowDrop, setRowDrop] = useState(null)    // { overId, pos } — within-list reorder indicator
-  const [entDrop, setEntDrop] = useState(null)    // { overId, pos } — escalation/cluster reorder indicator
+  const [rowDrop, setRowDrop] = useState(null)    // { overId, pos } — within-list reorder indicator (tasks + project/bundle clusters share this)
+  const [entDrop, setEntDrop] = useState(null)    // { overId, pos } — escalation reorder indicator
   const containerRef = useRef(null)
   const dragRef = useRef(null)
   const dropRef = useRef(null)
-  const dragTaskRef = useRef(null)                // id of task being dragged (for reorder detection)
-  const dragEntRef = useRef(null)                 // id of escalation/project being dragged (for reorder)
+  const dragTaskRef = useRef(null)                // id of the block being dragged — a task id, or `proj:<pid>` for a cluster (for reorder detection)
+  const dragEntRef = useRef(null)                 // id of escalation being dragged (for reorder)
 
   const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
   const ownerMatch = t => filterOwner === 'all' || (t.owners || []).includes(filterOwner)
@@ -2432,21 +2464,43 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
     onUpdateTasks([taskId], { owners: next })
   }
   const mainListId = sectionKey => `${groupBy}:${sectionKey}:main`
+  const blockOrderId = sectionKey => `blocks:${groupBy}:${sectionKey}`
+  // Loose tasks and project/bundle clusters live in ONE reorderable list per section, so either can be dragged above the other.
+  // Each block is { id, type:'task'|'cluster', ... }; a task block's id is the task id, a cluster block's id is `proj:<pid>`.
+  const buildBlocks = (list, sectionKey) => {
+    const stdOrdered = orderList(mainListId(sectionKey), list.filter(t => !t.project_id))
+    const byProj = {}
+    list.filter(t => t.project_id).forEach(t => { (byProj[t.project_id] = byProj[t.project_id] || []).push(t) })
+    const rawClusters = Object.entries(byProj).sort((a, b) => (entityMap[a[0]]?.name || '').localeCompare(entityMap[b[0]]?.name || ''))
+    const clusterOrdered = orderList(`clustord:${groupBy}:${sectionKey}`, rawClusters.map(([pid, ts]) => ({ id: `proj:${pid}`, pid, ts })))
+    const defaultBlocks = [
+      ...stdOrdered.map(t => ({ id: t.id, type: 'task', task: t })),
+      ...clusterOrdered.map(c => ({ id: c.id, type: 'cluster', pid: c.pid, ts: c.ts })),
+    ]
+    return orderList(blockOrderId(sectionKey), defaultBlocks)
+  }
   const handleSectionDrop = (e, g) => {
     e.preventDefault()
     e.currentTarget.style.outline = 'none'
     const taskId = e.dataTransfer.getData('text/task')
     const taskIds = e.dataTransfer.getData('text/tasks')
+    const clusterId = e.dataTransfer.getData('text/cluster') // pid of a dragged cluster
     if (taskId) {
-      const listForReorder = orderList(mainListId(g.key), groupBy === 'project' ? (g.tasks || []) : (g.tasks || []).filter(t => !t.project_id))
-      if (listForReorder.some(t => t.id === taskId)) {
-        // dropped in this section's empty area but already belongs here → move to the end
-        reorderTo(listForReorder, taskId, null, 'after', mainListId(g.key))
+      if (groupBy === 'project') {
+        const listForReorder = orderList(mainListId(g.key), g.tasks || [])
+        if (listForReorder.some(t => t.id === taskId)) reorderTo(listForReorder, taskId, null, 'after', mainListId(g.key))
+        else applyMove([taskId], g.key)
+      } else if ((g.tasks || []).some(t => t.id === taskId && !t.project_id)) {
+        // a loose task already in this section, dropped in empty space → send it to the end of the unified block list
+        reorderTo(buildBlocks(g.tasks || [], g.key), taskId, null, 'after', blockOrderId(g.key))
       } else if (groupBy === 'owner') {
         moveTaskToOwner(taskId, g.key, e.dataTransfer.getData('text/fromlist'))
       } else {
         applyMove([taskId], g.key)
       }
+    } else if (clusterId && (g.tasks || []).some(t => t.project_id === clusterId)) {
+      // a cluster dropped in this section's empty space → send it to the end of the unified block list
+      reorderTo(buildBlocks(g.tasks || [], g.key), `proj:${clusterId}`, null, 'after', blockOrderId(g.key))
     } else if (taskIds) applyMove(taskIds.split(','), g.key)
   }
   const clearOutlines = () => { if (containerRef.current) containerRef.current.querySelectorAll('[data-lcard]').forEach(el => { el.style.outline = 'none' }) }
@@ -2479,6 +2533,8 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
     : groups.filter(g => g.tasks.length > 0)
   const groupMap = Object.fromEntries(groups.map(g => [g.key, g]))
   const keys = groups.map(g => g.key)
+  // Domains that exist but aren't currently on the board (dismissed while empty) — offered as quick "add back" options
+  const hiddenDomainOpts = groupBy === 'domain' ? domains.filter(d => !keys.includes(d)).sort((a, b) => a.localeCompare(b)) : []
 
   // Derive columns from stored order; append any not-yet-placed category to the shortest column.
   // Columns beyond the current numCols are simply not read here, so shrinking never loses items —
@@ -2573,35 +2629,31 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
       const ordered = orderList(mainListId(sectionKey), list)
       return ordered.map(t => <Row key={t.id} t={t} listTasks={ordered} listId={mainListId(sectionKey)} v={v} />)
     }
-    const standalone = orderList(mainListId(sectionKey), list.filter(t => !t.project_id))
-    const byProj = {}
-    list.filter(t => t.project_id).forEach(t => { (byProj[t.project_id] = byProj[t.project_id] || []).push(t) })
-    const clusterListKey = `clustord:${groupBy}:${sectionKey}`
-    const rawClusters = Object.entries(byProj).sort((a, b) => (entityMap[a[0]]?.name||'').localeCompare(entityMap[b[0]]?.name||''))
-    const clusterPseudo = orderList(clusterListKey, rawClusters.map(([pid, ts]) => ({ id: pid, ts })))
-    const clusterIdsHere = clusterPseudo.map(c => c.id)
+    const blockKey = blockOrderId(sectionKey)
+    const blocks = buildBlocks(list, sectionKey)
+    const blockIds = blocks.map(b => b.id)
+    const cInd = pos => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#7c3aed,#a855f7)', margin: pos === 'before' ? '0 0 4px' : '4px 0 0' }} />
     return (
       <>
-        {standalone.map(t => <Row key={t.id} t={t} listTasks={standalone} listId={mainListId(sectionKey)} v={v} />)}
-        {clusterPseudo.map(({ id: pid, ts: tsRaw }) => {
+        {blocks.map(b => {
+          if (b.type === 'task') return <Row key={b.id} t={b.task} listTasks={blocks} listId={blockKey} v={v} />
+          const pid = b.pid, blockId = b.id
           const clusterListId = `${groupBy}:${sectionKey}:proj:${pid}`
-          const ts = orderList(clusterListId, tsRaw)
+          const ts = orderList(clusterListId, b.ts)
           const ent = entityMap[pid]
           const cbg = flagBg(ent?.color) || '#f4f2ec'
           const cbd = flagBorder(ent?.color) || '#d8d4c8'
           const pnotes = Array.isArray(ent?.notes) ? ent.notes : []
           const id = clusterListId // section-specific collapse id
           const open = !isMin(id)
-          const cDrop = entDrop
-          const cInd = pos => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#7c3aed,#a855f7)', margin: pos === 'before' ? '0 0 4px' : '4px 0 0' }} />
           return (
-            <div key={pid}
-              onDragOver={e => { const d = dragEntRef.current; if (d && d !== pid && clusterIdsHere.includes(d)) { e.preventDefault(); e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEntDrop({ overId: pid, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } }}
-              onDrop={e => { const d = dragEntRef.current; if (d && clusterIdsHere.includes(d)) { e.preventDefault(); e.stopPropagation(); reorderTo(clusterPseudo, d, pid, cDrop?.pos || 'before', clusterListKey) } dragEntRef.current = null; setEntDrop(null) }}>
-              {cDrop && cDrop.overId === pid && cDrop.pos === 'before' && cInd('before')}
+            <div key={blockId}
+              onDragOver={e => { const d = dragTaskRef.current; if (d && d !== blockId && blockIds.includes(d)) { e.preventDefault(); e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setRowDrop({ overId: blockId, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } }}
+              onDrop={e => { const d = dragTaskRef.current; if (d && d !== blockId && blockIds.includes(d)) { e.preventDefault(); e.stopPropagation(); reorderTo(blocks, d, blockId, rowDrop?.pos || 'before', blockKey) } dragTaskRef.current = null; setRowDrop(null) }}>
+              {rowDrop && rowDrop.overId === blockId && rowDrop.pos === 'before' && cInd('before')}
               <div style={{ border:`1px solid ${cbd}`, borderRadius:8, padding: open ? '7px 7px 3px' : '7px', marginBottom:4, background:cbg }}>
-                <div draggable onDragStart={e => { e.stopPropagation(); dragEntRef.current = pid; e.dataTransfer.setData('text/tasks', ts.map(x => x.id).join(',')); e.dataTransfer.effectAllowed = 'move' }}
-                  onDragEnd={() => { dragEntRef.current = null; setEntDrop(null); clearOutlines() }}
+                <div draggable onDragStart={e => { e.stopPropagation(); dragTaskRef.current = blockId; e.dataTransfer.setData('text/tasks', ts.map(x => x.id).join(',')); e.dataTransfer.setData('text/cluster', pid); e.dataTransfer.effectAllowed = 'move' }}
+                  onDragEnd={() => { dragTaskRef.current = null; setRowDrop(null); clearOutlines() }}
                   onDoubleClick={() => onOpenProject && onOpenProject(pid)} title="Drag to reorder · double-click to open"
                   style={{ display:'flex', alignItems:'center', gap:6, padding: open ? '0 3px 6px' : '0 3px', cursor:'grab' }}>
                   <span style={{ flex:'1 1 auto', minWidth:0, fontSize:9, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color:'#555', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{ent?.name || 'Project'}</span>
@@ -2620,7 +2672,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
                   </div>
                 )}
               </div>
-              {cDrop && cDrop.overId === pid && cDrop.pos === 'after' && cInd('after')}
+              {rowDrop && rowDrop.overId === blockId && rowDrop.pos === 'after' && cInd('after')}
             </div>
           )
         })}
@@ -2850,7 +2902,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
                     dragTaskRef.current = null; setRowDrop(null)
                   }}
                   style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', columnGap:8, minHeight:40 }}>
-                  {td.map(t => <Row key={t.id} t={t} listTasks={td} listId="today" v={v} />)}
+                  {td.map(t => <Row key={t.id} t={t} listTasks={td} listId="today" v={v} gridReorder={!isMobile} />)}
                 </div>
               </SectionCard>
             </div>
@@ -2886,7 +2938,21 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
             {groupBy === 'domain' && onAddDomain && linAddIconBtn(() => setAddingDomain(true))}
           </div>
           {addingDomain && (
-            <div style={{ maxWidth:260, marginBottom:12 }}>
+            <div style={{ maxWidth:320, marginBottom:12 }}>
+              {hiddenDomainOpts.length > 0 && (
+                <div style={{ marginBottom:10 }}>
+                  <div style={{ fontSize:10, color:'#aaa', marginBottom:5, textTransform:'uppercase', letterSpacing:'0.04em' }}>Add back to board</div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                    {hiddenDomainOpts.map(d => (
+                      <button key={d} onClick={() => unhideDomain(d)} title="Show this domain on the board again"
+                        style={{ fontSize:12, padding:'3px 10px', borderRadius:14, border:'0.5px solid #c4b5fd', background:'#ede9fe', color:'#7c3aed', cursor:'pointer', fontFamily:'inherit' }}>
+                        + {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {hiddenDomainOpts.length > 0 && <div style={{ fontSize:10, color:'#aaa', marginBottom:5, textTransform:'uppercase', letterSpacing:'0.04em' }}>New domain</div>}
               <input autoFocus value={newDomainTitle} onChange={e => setNewDomainTitle(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleAddDomain(); if (e.key === 'Escape') { setAddingDomain(false); setNewDomainTitle('') } }}
                 placeholder="Domain title…"
@@ -5698,7 +5764,8 @@ export default function App() {
 
       {/* ── Follow Ups ── */}
       {tab === 'followups' && (
-        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={followUpPeople} tasks={tasks}
+        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={followUpPeople} tasks={tasks} entityMap={entityMap}
+          onOpenTask={t => { setForm({...t}); setIsEdit(true) }}
           onCreateTask={item => { setForm({ title:item.text, status:'active', owners:[item.person], substatus:'not_started' }); setIsEdit(false) }} />
       )}
 
