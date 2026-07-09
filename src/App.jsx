@@ -5465,7 +5465,6 @@ function QualificationGantt({ qual, tasks, onUpdateSubtask, onUpdateQual, isMobi
                 onMouseEnter={e => { if (selected?.subId !== r.st.id) e.currentTarget.style.background = '#fafafa' }}
                 onMouseLeave={e => { if (selected?.subId !== r.st.id) e.currentTarget.style.background = 'white' }}>
                 <span style={{ fontSize:11, color:'#333', textDecoration: r.st.na ? 'line-through' : 'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.st.title}</span>
-                {r.sched && <span style={{ fontSize:9, color:'#aaa', whiteSpace:'nowrap' }}>{r.sched.actualEnd ? `✓ ${fmtGD(r.sched.actualEnd)}` : `${fmtGD(r.sched.plannedStart)} → ${fmtGD(r.sched.plannedEnd)}`}</span>}
               </div>
             ))}
           </div>
@@ -5847,7 +5846,11 @@ export default function App() {
       const inserts = tpl.tasks.map((t, i) => ({
         title: t.title, status: 'active', substatus: 'not_started', domain: 'Supplier Qualification',
         qualification_id: qual.id, notes: [], attachments: [], owners,
-        subtasks: (t.subtasks || []).map((s, j) => ({ id:`st${i}${j}`, title:s, done:false })),
+        subtasks: (t.subtasks || []).map((s, j) => { const o = (s && typeof s === 'object'); return {
+          id: (o && s.id) || `st${i}${j}`, title: o ? (s.title || '') : s,
+          duration: o ? (s.duration ?? 1) : 1, depends_on: (o && Array.isArray(s.depends_on)) ? s.depends_on : [],
+          done: false, na: false, completed_date: null,
+        } }),
         color: data.color||'', sort_order: i + 1, updated_at: new Date().toISOString(),
       }))
       const { error: taskErr } = await supabase.from('tasks').insert(inserts)
@@ -6767,10 +6770,40 @@ export default function App() {
 }
 
 // ─── Qualification Template Settings ─────────────────────────────────────────
-function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bundle Templates', subtitle = 'Pre-populate tasks when creating a bundle.' }) {
+// Multi-select dependency picker (subtask ids) — shows each option as TRACK · title
+function DepPicker({ deps, options, onChange }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ position:'relative', flexShrink:0 }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ fontSize:10, padding:'2px 8px', borderRadius:10, border:'0.5px solid #e0e0e0', cursor:'pointer', background:'white', color: deps.length ? '#7c3aed' : '#888' }}>
+        ⇄ Deps{deps.length ? ` · ${deps.length}` : ''} <span style={{ fontSize:8, opacity:0.7 }}>▾</span>
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
+          <div style={{ position:'absolute', top:'calc(100% + 4px)', right:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:200, minWidth:230, maxHeight:240, overflowY:'auto', padding:6 }}>
+            {options.length === 0 && <div style={{ fontSize:11, color:'#bbb', padding:6 }}>No other subtasks</div>}
+            {options.map(o => { const on = deps.includes(o.id); return (
+              <button key={o.id} onClick={() => onChange(on ? deps.filter(d => d !== o.id) : [...deps, o.id])}
+                style={{ display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', padding:'5px 7px', background:'none', border:'none', borderRadius:6, cursor:'pointer', fontSize:11 }}
+                onMouseEnter={e => e.currentTarget.style.background='#f5f5f3'} onMouseLeave={e => e.currentTarget.style.background='none'}>
+                <span style={{ width:11, flexShrink:0, color:'#7c3aed', fontSize:10 }}>{on ? '✓' : ''}</span>
+                <span style={{ fontSize:8, color:'#aaa', textTransform:'uppercase', flexShrink:0, minWidth:52 }}>{o.trackShort}</span>
+                <span style={{ flex:1, color:'#333' }}>{o.title}</span>
+              </button>
+            )})}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bundle Templates', subtitle = 'Pre-populate tasks when creating a bundle.', scheduled = false }) {
   const [templates, setTemplates] = useState([])
   const [editId, setEditId] = useState(null)
-  const [draft, setDraft] = useState(null) // { name, tasks: [{title, subtasks:[string]}] }
+  const [draft, setDraft] = useState(null) // { name, tasks: [{title, subtasks:[string | {id,title,duration,depends_on}]}] }
   const [newTaskTitle, setNewTaskTitle] = useState('')
 
   useEffect(() => {
@@ -6778,8 +6811,16 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
       .then(({ data }) => { if (data) setTemplates(data) })
   }, [table])
 
+  // Scheduled templates store richer subtask objects (stable positional ids st<track><index>). Strings are upgraded on load.
+  const normSub = (s, ti, si) => (typeof s === 'string' || !s)
+    ? { id:`st${ti}${si}`, title: s || '', duration: 1, depends_on: [] }
+    : { id: s.id || `st${ti}${si}`, title: s.title || '', duration: s.duration ?? 1, depends_on: Array.isArray(s.depends_on) ? s.depends_on : [] }
+  const normTasks = tasks => (tasks || []).map((t, ti) => ({ ...t, subtasks: (t.subtasks || []).map((s, si) => scheduled ? normSub(s, ti, si) : s) }))
+  const nextSubId = (ti, subs) => { let n = subs.length; const used = new Set(subs.map(s => s.id)); while (used.has(`st${ti}${n}`)) n++; return `st${ti}${n}` }
+  const updateSub = (ti, si, patch) => setDraft(d => ({ ...d, tasks: d.tasks.map((t, idx) => idx===ti ? { ...t, subtasks: t.subtasks.map((su, j) => j===si ? { ...su, ...patch } : su) } : t) }))
+
   const startNew = () => { setDraft({ name:'', tasks:[] }); setEditId('new') }
-  const startEdit = t => { setDraft(JSON.parse(JSON.stringify(t))); setEditId(t.id) }
+  const startEdit = t => { const c = JSON.parse(JSON.stringify(t)); setDraft({ ...c, tasks: normTasks(c.tasks) }); setEditId(t.id) }
   const cancel = () => { setDraft(null); setEditId(null); setNewTaskTitle('') }
 
   const saveDraft = async () => {
@@ -6809,8 +6850,11 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
   }
   const removeTask = i => setDraft(d => ({ ...d, tasks: d.tasks.filter((_,idx) => idx !== i) }))
   const updateTaskTitle = (i, v) => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===i?{...t,title:v}:t) }))
-  const addSubtask = (i, v) => { const s = v.trim(); if (!s) return; setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===i?{...t,subtasks:[...t.subtasks,s]}:t) })) }
+  const addSubtask = (i, v) => { const s = v.trim(); if (!s) return; setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===i ? { ...t, subtasks:[...t.subtasks, scheduled ? { id: nextSubId(i, t.subtasks), title: s, duration: 1, depends_on: [] } : s] } : t) })) }
   const removeSubtask = (ti, si) => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===ti?{...t,subtasks:t.subtasks.filter((_,j)=>j!==si)}:t) }))
+
+  // Every subtask across the template (for the dependency picker)
+  const allTemplateSubs = (scheduled && draft) ? draft.tasks.flatMap(t => (t.subtasks || []).map(su => ({ id: su.id, title: su.title, trackShort: (t.title || '').split(' ')[0] }))) : []
 
   return (
     <div>
@@ -6837,7 +6881,18 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
                 <button onClick={() => removeTask(ti)} style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:13 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
               </div>
               <div style={{ paddingLeft:10 }}>
-                {task.subtasks.map((s, si) => (
+                {task.subtasks.map((s, si) => scheduled ? (
+                  <div key={si} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                    <input value={s.title} onChange={e => updateSub(ti, si, { title: e.target.value })}
+                      style={{ flex:1, minWidth:0, fontSize:11, border:'none', borderBottom:'0.5px solid #e5e5e5', outline:'none', background:'transparent', fontFamily:'inherit', color:'#555', padding:'1px 0' }} />
+                    <label style={{ display:'flex', alignItems:'center', gap:2, fontSize:9, color:'#999', flexShrink:0 }}>
+                      <input type="number" min={0} value={s.duration ?? 1} onChange={e => updateSub(ti, si, { duration: Math.max(0, parseInt(e.target.value) || 0) })}
+                        style={{ width:34, fontSize:10, padding:'1px 3px', border:'0.5px solid #e0e0e0', borderRadius:4, outline:'none' }} />bd
+                    </label>
+                    <DepPicker deps={s.depends_on || []} options={allTemplateSubs.filter(o => o.id !== s.id)} onChange={dep => updateSub(ti, si, { depends_on: dep })} />
+                    <button onClick={() => removeSubtask(ti, si)} style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:11, flexShrink:0 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                  </div>
+                ) : (
                   <div key={si} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
                     <input value={s} onChange={e => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===ti?{...t,subtasks:t.subtasks.map((sub,j)=>j===si?e.target.value:sub)}:t) }))}
                       style={{ flex:1, fontSize:11, border:'none', borderBottom:'0.5px solid #e5e5e5', outline:'none', background:'transparent', fontFamily:'inherit', color:'#555', padding:'1px 0' }} />
@@ -7334,7 +7389,7 @@ function SettingsPage({ domains, teamData, calendarList, onUpdate, isMobile = fa
         {section === 'domains'   && <DomainSettings domains={domains} onUpdate={onUpdate} />}
         {section === 'calendars' && <CalendarSettings calendars={calendarList} onUpdate={onUpdate} />}
         {section === 'templates' && <QualTemplateSettings onUpdate={onUpdate} />}
-        {section === 'qualtemplates' && <QualTemplateSettings onUpdate={onUpdate} table="qualification_templates" title="Qualification Templates" subtitle="Stages auto-created when you qualify a supplier." />}
+        {section === 'qualtemplates' && <QualTemplateSettings onUpdate={onUpdate} table="qualification_templates" title="Qualification Templates" subtitle="Stages, durations and dependencies auto-created when you qualify a supplier." scheduled />}
       </div>
     </div>
   )
