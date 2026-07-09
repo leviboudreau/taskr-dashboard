@@ -41,9 +41,8 @@ const MEMBER_COLORS = {
 const CITIES = [
   { name: 'Puebla, MX', tz: 'America/Mexico_City' },
   { name: 'Cohasset', tz: 'America/Chicago' },
-  { name: 'Greenwood, SC', tz: 'America/New_York' },
-  { name: 'Tampa', tz: 'America/New_York' },
-  { name: 'Bornem/Colmar', tz: 'Europe/Paris' },
+  { name: 'Greenwood/Tampa', tz: 'America/New_York' },
+  { name: 'Bornem/Colmar/Basel', tz: 'Europe/Paris' },
   { name: 'Rewari, India', tz: 'Asia/Kolkata' },
   { name: 'Jakarta', tz: 'Asia/Jakarta' },
   { name: 'Suzhou, China', tz: 'Asia/Shanghai' },
@@ -84,6 +83,77 @@ const US_HOLIDAY_DEFS = [
   { name: "Thanksgiving Day",  type:'nth',   month:11, dow:4, n:4 },
   { name: "Christmas Day",     type:'fixed', month:12, day:25 },
 ]
+
+// Additional country/region holiday sets — same handling as the US set.
+// type: 'fixed' | 'nth' | 'last' | 'easter' (offset days from Easter Sunday) | 'lookup' (per-year MM-DD, for lunisolar dates)
+const EU_HOLIDAY_DEFS = [
+  { name: "New Year's Day",      type:'fixed',  month:1,  day:1 },
+  { name: "Good Friday",         type:'easter', offset:-2 },
+  { name: "Easter Monday",       type:'easter', offset:1 },
+  { name: "Labour Day",          type:'fixed',  month:5,  day:1 },
+  { name: "Ascension Day",       type:'easter', offset:39 },
+  { name: "Whit Monday",         type:'easter', offset:50 },
+  { name: "Assumption of Mary",  type:'fixed',  month:8,  day:15 },
+  { name: "All Saints' Day",     type:'fixed',  month:11, day:1 },
+  { name: "Christmas Day",       type:'fixed',  month:12, day:25 },
+  { name: "St. Stephen's Day",   type:'fixed',  month:12, day:26 },
+]
+const CN_HOLIDAY_DEFS = [
+  { name: "New Year's Day",         type:'fixed',  month:1, day:1 },
+  { name: "Chinese New Year",       type:'lookup', dates:{ 2026:'02-17', 2027:'02-06' } },
+  { name: "Qingming Festival",      type:'lookup', dates:{ 2026:'04-05', 2027:'04-05' } },
+  { name: "Labour Day",             type:'fixed',  month:5, day:1 },
+  { name: "Dragon Boat Festival",   type:'lookup', dates:{ 2026:'06-19', 2027:'06-09' } },
+  { name: "Mid-Autumn Festival",    type:'lookup', dates:{ 2026:'09-25', 2027:'09-15' } },
+  { name: "National Day",           type:'fixed',  month:10, day:1 },
+]
+const JP_HOLIDAY_DEFS = [
+  { name: "New Year's Day",            type:'fixed',  month:1,  day:1 },
+  { name: "Coming of Age Day",         type:'nth',    month:1,  dow:1, n:2 },
+  { name: "National Foundation Day",   type:'fixed',  month:2,  day:11 },
+  { name: "Emperor's Birthday",        type:'fixed',  month:2,  day:23 },
+  { name: "Vernal Equinox Day",        type:'lookup', dates:{ 2026:'03-20', 2027:'03-21' } },
+  { name: "Shōwa Day",                 type:'fixed',  month:4,  day:29 },
+  { name: "Constitution Memorial Day", type:'fixed',  month:5,  day:3 },
+  { name: "Greenery Day",              type:'fixed',  month:5,  day:4 },
+  { name: "Children's Day",            type:'fixed',  month:5,  day:5 },
+  { name: "Marine Day",                type:'nth',    month:7,  dow:1, n:3 },
+  { name: "Mountain Day",              type:'fixed',  month:8,  day:11 },
+  { name: "Respect for the Aged Day",  type:'nth',    month:9,  dow:1, n:3 },
+  { name: "Autumnal Equinox Day",      type:'lookup', dates:{ 2026:'09-23', 2027:'09-23' } },
+  { name: "Sports Day",                type:'nth',    month:10, dow:1, n:2 },
+  { name: "Culture Day",               type:'fixed',  month:11, day:3 },
+  { name: "Labour Thanksgiving Day",   type:'fixed',  month:11, day:23 },
+]
+const IN_HOLIDAY_DEFS = [
+  { name: "Republic Day",     type:'fixed',  month:1,  day:26 },
+  { name: "Holi",             type:'lookup', dates:{ 2026:'03-04', 2027:'03-22' } },
+  { name: "Good Friday",      type:'easter', offset:-2 },
+  { name: "Independence Day", type:'fixed',  month:8,  day:15 },
+  { name: "Gandhi Jayanti",   type:'fixed',  month:10, day:2 },
+  { name: "Diwali",           type:'lookup', dates:{ 2026:'11-08', 2027:'10-29' } },
+  { name: "Christmas Day",    type:'fixed',  month:12, day:25 },
+]
+const MX_HOLIDAY_DEFS = [
+  { name: "New Year's Day",            type:'fixed', month:1,  day:1 },
+  { name: "Constitution Day",          type:'nth',   month:2,  dow:1, n:1 },
+  { name: "Benito Juárez's Birthday",  type:'nth',   month:3,  dow:1, n:3 },
+  { name: "Labour Day",                type:'fixed', month:5,  day:1 },
+  { name: "Independence Day",          type:'fixed', month:9,  day:16 },
+  { name: "Revolution Day",            type:'nth',   month:11, dow:1, n:3 },
+  { name: "Christmas Day",             type:'fixed', month:12, day:25 },
+]
+// Registry of holiday calendars, keyed by calendar type. US keeps type 'holidays' for back-compat.
+const HOLIDAY_CALS = [
+  { type:'holidays',    name:'US Holidays',     color:'#16a34a', defs:US_HOLIDAY_DEFS },
+  { type:'holidays_mx', name:'Mexico Holidays', color:'#0d9488', defs:MX_HOLIDAY_DEFS },
+  { type:'holidays_eu', name:'EU Holidays',     color:'#2563eb', defs:EU_HOLIDAY_DEFS },
+  { type:'holidays_cn', name:'China Holidays',  color:'#dc2626', defs:CN_HOLIDAY_DEFS },
+  { type:'holidays_jp', name:'Japan Holidays',  color:'#7c3aed', defs:JP_HOLIDAY_DEFS },
+  { type:'holidays_in', name:'India Holidays',  color:'#ea580c', defs:IN_HOLIDAY_DEFS },
+]
+const isHolidayCalType = t => !!t && t.startsWith('holidays')
+const defsForCalType = t => (HOLIDAY_CALS.find(h => h.type === t)?.defs) || US_HOLIDAY_DEFS
 
 const CAL_START_HOUR = 6
 const CAL_END_HOUR = 22
@@ -164,20 +234,28 @@ function getNthWeekday(year, month, dow, week) {
     return d
   }
 }
-function generateUSHolidays(year, calendarId) {
-  return US_HOLIDAY_DEFS.map(h => {
+// Easter Sunday (Gregorian) via the Meeus/Jones/Butcher algorithm — drives EU/India movable feasts
+function easterSunday(year) {
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100, d = Math.floor(b / 4), e = b % 4,
+    f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30,
+    i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451)
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1
+  return new Date(year, month - 1, day)
+}
+function generateHolidays(defs, year, calendarId) {
+  return defs.map(h => {
     let d
-    if (h.type === 'fixed') {
-      d = new Date(year, h.month - 1, h.day)
-    } else if (h.type === 'nth') {
-      d = getNthWeekday(year, h.month - 1, h.dow, h.n)
-    } else {
-      d = getNthWeekday(year, h.month - 1, h.dow, 0) // last
-    }
+    if (h.type === 'fixed') d = new Date(year, h.month - 1, h.day)
+    else if (h.type === 'nth') d = getNthWeekday(year, h.month - 1, h.dow, h.n)
+    else if (h.type === 'last') d = getNthWeekday(year, h.month - 1, h.dow, 0)
+    else if (h.type === 'easter') { d = easterSunday(year); d.setDate(d.getDate() + (h.offset || 0)) }
+    else if (h.type === 'lookup') { const s = h.dates?.[year]; if (!s) return null; const [mm, dd] = s.split('-').map(Number); d = new Date(year, mm - 1, dd) }
     if (!d) return null
     return { title: h.name, type: 'holiday', all_day: true, start_date: toISODate(d), end_date: null, calendar_id: calendarId, owners: [], color: '', emoji: '' }
   }).filter(Boolean)
 }
+// Back-compat wrapper for the US set
+function generateUSHolidays(year, calendarId) { return generateHolidays(US_HOLIDAY_DEFS, year, calendarId) }
 function expandRecurring(ev, rangeStart, rangeEnd) {
   const out = [], rd = ev.recurrence_data || {}
   const anchor = ev.recurrence_start ? fromISODate(ev.recurrence_start) : fromISODate(ev.start_date)
@@ -669,7 +747,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
           onSave={async data => { await onSaveTask(data, isEditTask ? taskForm.id : null); setTaskForm(null) }}
           onDelete={async id => { await onDeleteTask(id); setTaskForm(null) }}
           onClose={() => setTaskForm(null)}
-          domains={domains} zIndex={60}
+          domains={domains} zIndex={60} lockedDomain={isProject ? (entity.domain || null) : null}
         />
       )}
     </>
@@ -1904,13 +1982,15 @@ Important rules:
 
 // ─── Follow Ups Tab ───────────────────────────────────────────────────────────
 const DEFAULT_FOLLOW_UP_PEOPLE = ['Margarita', 'Illya', 'Matthew', 'Kaat']
-function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, onOpenTask, people = DEFAULT_FOLLOW_UP_PEOPLE, tasks = [], entityMap = {} }) {
+function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, onOpenTask, onReorderFollowUps, onReorderTasks, people = DEFAULT_FOLLOW_UP_PEOPLE, tasks = [], entityMap = {} }) {
   const [activePerson, setActivePerson] = useState(null)
   const [showDone, setShowDone] = useState(false)
   const [addingFor, setAddingFor] = useState(null)
   const [newText, setNewText] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editText, setEditText] = useState('')
+  const dragRef = useRef(null)            // { id, listKey, kind:'task'|'item' }
+  const [dropTarget, setDropTarget] = useState(null) // { listKey, overId, pos }
 
   const startEdit = item => { setEditingId(item.id); setEditText(item.text) }
   const commitEdit = id => {
@@ -1926,6 +2006,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
 
   const pendingFor = p => followUps.filter(f => f.person === p && !f.done).length
   const itemsFor = p => followUps.filter(f => f.person === p && (showDone || !f.done))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || (new Date(a.created_at) - new Date(b.created_at)))
   const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
   const tasksFor = p => tasks.filter(t => (t.owners||[]).includes(p) && tss(t) !== 'complete' && tss(t) !== 'canceled')
   const visiblePeople = activePerson ? [activePerson] : allPeople
@@ -1936,30 +2017,64 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
     setNewText(''); setAddingFor(null)
   }
 
-  const taskRow = t => {
+  // ── Drag-and-drop reordering within a single column/list ──
+  // Tasks: reuse the sub-list's own sort_order values, reassigned to the new sequence (only these tasks move relative to each other)
+  const reorderTasks = (list, draggedId, overId, pos) => {
+    if (!onReorderTasks) return
+    const orders = list.map(t => t.sort_order || 0).slice().sort((a, b) => a - b)
+    const ids = list.map(x => x.id).filter(id => id !== draggedId)
+    let idx = overId ? ids.indexOf(overId) : ids.length; if (idx < 0) idx = ids.length; if (pos === 'after') idx++
+    ids.splice(idx, 0, draggedId)
+    onReorderTasks(ids.map((id, k) => ({ id, sort_order: orders[k] })))
+  }
+  // Follow-up items: index-based order within the person's list
+  const reorderItems = (list, draggedId, overId, pos) => {
+    if (!onReorderFollowUps) return
+    const ids = list.map(x => x.id).filter(id => id !== draggedId)
+    let idx = overId ? ids.indexOf(overId) : ids.length; if (idx < 0) idx = ids.length; if (pos === 'after') idx++
+    ids.splice(idx, 0, draggedId)
+    onReorderFollowUps(ids.map((id, k) => ({ id, sort_order: k })))
+  }
+  const rowDrag = (id, listKey, kind, list) => ({
+    draggable: true,
+    onDragStart: e => { e.stopPropagation(); dragRef.current = { id, listKey, kind }; e.dataTransfer.effectAllowed = 'move' },
+    onDragEnd: () => { dragRef.current = null; setDropTarget(null) },
+    onDragOver: e => { const d = dragRef.current; if (d && d.kind === kind && d.listKey === listKey && d.id !== id) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setDropTarget({ listKey, overId: id, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } },
+    onDrop: e => { const d = dragRef.current; if (d && d.kind === kind && d.listKey === listKey) { e.preventDefault(); (kind === 'task' ? reorderTasks : reorderItems)(list, d.id, id, dropTarget?.pos || 'before') } dragRef.current = null; setDropTarget(null) },
+  })
+  const dropInd = <div style={{ height:2, borderRadius:1, background:'#7c3aed', margin:'0 0 3px' }} />
+  const mark = (listKey, id) => ({ before: dropTarget?.listKey === listKey && dropTarget?.overId === id && dropTarget?.pos === 'before', after: dropTarget?.listKey === listKey && dropTarget?.overId === id && dropTarget?.pos === 'after' })
+
+  const taskRow = (t, list, listKey) => {
     const ss = subStyle(tss(t))
+    const m = mark(listKey, t.id)
     return (
-      <div key={t.id} onDoubleClick={() => onOpenTask && onOpenTask(t)} title={onOpenTask ? 'Double-click to open' : undefined}
-        style={{ display:'flex', alignItems:'center', gap:7, padding:'5px 8px', background:'white', borderRadius:6, border:'0.5px solid #ebebeb', marginBottom:3, cursor: onOpenTask ? 'pointer' : 'default' }}>
-        <div style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background:ss.bg, border:`1px solid ${ss.border}` }} />
-        <span style={{ flex:1, fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</span>
-        <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:10, padding:'1px 6px', whiteSpace:'nowrap', flexShrink:0 }}>{ss.label}</span>
+      <div key={t.id}>
+        {m.before && dropInd}
+        <div {...rowDrag(t.id, listKey, 'task', list)}
+          onDoubleClick={() => onOpenTask && onOpenTask(t)} title={onOpenTask ? 'Drag to reorder · double-click to open' : 'Drag to reorder'}
+          style={{ display:'flex', alignItems:'center', gap:7, padding:'5px 8px', background:'white', borderRadius:6, border:'0.5px solid #ebebeb', marginBottom:3, cursor:'grab' }}>
+          <div style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background:ss.bg, border:`1px solid ${ss.border}` }} />
+          <span style={{ flex:1, fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</span>
+          <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:10, padding:'1px 6px', whiteSpace:'nowrap', flexShrink:0 }}>{ss.label}</span>
+        </div>
+        {m.after && dropInd}
       </div>
     )
   }
-  // Group a person's tasks: loose tasks stay flat; tasks tied to a project/bundle/escalation cluster inside a titled container (as on the task page)
-  const renderAssigned = pt => {
+  // Group a person's tasks: loose tasks stay flat; tasks tied to a project/bundle/escalation/qualification cluster inside a titled container (as on the task page)
+  const renderAssigned = (pt, person) => {
     const standalone = []
     const byLink = {}
     pt.forEach(t => {
-      const lid = t.project_id || t.escalation_id
+      const lid = t.project_id || t.escalation_id || t.qualification_id
       if (lid && entityMap[lid]) (byLink[lid] = byLink[lid] || []).push(t)
       else standalone.push(t)
     })
     const linkIds = Object.keys(byLink).sort((a, b) => (entityMap[a]?.name || '').localeCompare(entityMap[b]?.name || ''))
     return (
       <>
-        {standalone.map(taskRow)}
+        {standalone.map(t => taskRow(t, standalone, `${person}:std`))}
         {linkIds.map(lid => {
           const ent = entityMap[lid]
           const cbg = flagBg(ent?.color) || '#f4f2ec'
@@ -1970,7 +2085,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                 <span style={{ flex:'1 1 auto', minWidth:0, fontSize:9, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color:'#555', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ent?.name || 'Linked'}</span>
                 <span style={{ fontSize:9, color:'#888', background:'white', border:`0.5px solid ${cbd}`, borderRadius:8, padding:'0 6px', flexShrink:0 }}>{byLink[lid].length}</span>
               </div>
-              {byLink[lid].map(taskRow)}
+              {byLink[lid].map(t => taskRow(t, byLink[lid], `${person}:link:${lid}`))}
             </div>
           )
         })}
@@ -2034,7 +2149,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                   {colHeading(`Assigned tasks${pt.length ? ` · ${pt.length}` : ''}`)}
                   {pt.length === 0
                     ? <div style={{ fontSize:12, color:'#bbb', padding:'2px 0' }}>No assigned tasks</div>
-                    : renderAssigned(pt)}
+                    : renderAssigned(pt, person)}
                 </div>
 
                 {/* Column 2 — follow-up items */}
@@ -2055,9 +2170,14 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                   {items.length === 0 && addingFor !== person && (
                     <div style={{ fontSize:12, color:'#bbb', padding:'2px 0' }}>No pending follow-ups — click + Add to create one</div>
                   )}
-                  {items.map(item => (
-                    <div key={item.id}
-                      style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', background:item.done?'transparent':'white', borderRadius:6, border:item.done?'none':'0.5px solid #ebebeb', marginBottom:4 }}
+                  {items.map(item => {
+                    const m = mark(`${person}:items`, item.id)
+                    const dh = editingId === item.id ? {} : rowDrag(item.id, `${person}:items`, 'item', items)
+                    return (
+                    <div key={item.id}>
+                      {m.before && dropInd}
+                      <div {...dh}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', background:item.done?'transparent':'white', borderRadius:6, border:item.done?'none':'0.5px solid #ebebeb', marginBottom:4, cursor: editingId===item.id ? 'default' : 'grab' }}
                       onMouseEnter={e => { e.currentTarget.querySelectorAll('.fu-action').forEach(el => el.style.opacity='1') }}
                       onMouseLeave={e => { e.currentTarget.querySelectorAll('.fu-action').forEach(el => el.style.opacity='0') }}>
                       <input type="checkbox" checked={!!item.done} onChange={e => onToggle(item.id, e.target.checked)} style={{ width:14, height:14, cursor:'pointer', flexShrink:0 }} />
@@ -2087,8 +2207,11 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                             onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
                         </>
                       )}
+                      </div>
+                      {m.after && dropInd}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -2363,7 +2486,7 @@ function CategoryCard({ g, onGrab, ghost, v, renderTasks }) {
   )
 }
 
-function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}, memberNames = [], escalations = [], isMobile = false, onEdit, onComplete, onOpenEscalation, onOpenProject, onUpdateTasks, onRestoreTask, onDeleteTask, onAddTask, onAddEscalation, onAddDomain, onUpdateDomainMeta, onOpenClassic }) {
+function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}, memberNames = [], escalations = [], isMobile = false, onEdit, onComplete, onOpenEscalation, onOpenProject, onOpenQualification, onUpdateTasks, onRestoreTask, onDeleteTask, onAddTask, onAddEscalation, onAddDomain, onUpdateDomainMeta, onOpenClassic }) {
   const [groupBy, setGroupByState] = useState(() => localStorage.getItem('taskr-linear-group') || 'domain')
   const setGroupBy = k => { setGroupByState(k); try { localStorage.setItem('taskr-linear-group', k) } catch {} }
   const [showDone, setShowDone] = useState(false)
@@ -2388,7 +2511,9 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const hideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.add(key); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
   const unhideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.delete(key); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
   const [colorEditKey, setColorEditKey] = useState(null)
-  const [filterOwner, setFilterOwner] = useState('all')
+  const [hiddenOwners, setHiddenOwners] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-linear-hidden-owners')) || []) } catch { return new Set() } })
+  const persistHidden = n => { try { localStorage.setItem('taskr-linear-hidden-owners', JSON.stringify([...n])) } catch {} }
+  const toggleOwnerVis = name => setHiddenOwners(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); persistHidden(n); return n })
   const [ownerMenuOpen, setOwnerMenuOpen] = useState(false)
   const [sortCol, setSortCol] = useState('title')
   const [sortDir, setSortDir] = useState('asc')
@@ -2414,7 +2539,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const dragEntRef = useRef(null)                 // id of escalation being dragged (for reorder)
 
   const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
-  const ownerMatch = t => filterOwner === 'all' || (t.owners || []).includes(filterOwner)
+  const ownerMatch = t => { if (hiddenOwners.size === 0) return true; const o = t.owners || []; return o.some(n => !hiddenOwners.has(n)) }
   const q = search.trim().toLowerCase()
   const matchSearch = t => !q || (t.title || '').toLowerCase().includes(q) || (Array.isArray(t.notes) && t.notes.some(n => (n.text || '').toLowerCase().includes(q)))
   const activeTasks = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete') && ownerMatch(t) && matchSearch(t))
@@ -2476,17 +2601,20 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   }
   const mainListId = sectionKey => `${groupBy}:${sectionKey}:main`
   const blockOrderId = sectionKey => `blocks:${groupBy}:${sectionKey}`
-  // Loose tasks and project/bundle clusters live in ONE reorderable list per section, so either can be dragged above the other.
-  // Each block is { id, type:'task'|'cluster', ... }; a task block's id is the task id, a cluster block's id is `proj:<pid>`.
+  // A task clusters under its project/bundle OR its qualification (whichever it's linked to)
+  const linkOf = t => t.project_id ? { id: t.project_id, kind: 'project' } : t.qualification_id ? { id: t.qualification_id, kind: 'qualification' } : null
+  const clusterBlockId = (kind, lid) => (kind === 'project' ? 'proj:' : 'qual:') + lid
+  // Loose tasks and project/qualification clusters live in ONE reorderable list per section, so either can be dragged above the other.
+  // Each block is { id, type:'task'|'cluster', ... }; a task block's id is the task id, a cluster block's id is `proj:<id>` or `qual:<id>`.
   const buildBlocks = (list, sectionKey) => {
-    const stdOrdered = orderList(mainListId(sectionKey), list.filter(t => !t.project_id))
-    const byProj = {}
-    list.filter(t => t.project_id).forEach(t => { (byProj[t.project_id] = byProj[t.project_id] || []).push(t) })
-    const rawClusters = Object.entries(byProj).sort((a, b) => (entityMap[a[0]]?.name || '').localeCompare(entityMap[b[0]]?.name || ''))
-    const clusterOrdered = orderList(`clustord:${groupBy}:${sectionKey}`, rawClusters.map(([pid, ts]) => ({ id: `proj:${pid}`, pid, ts })))
+    const stdOrdered = orderList(mainListId(sectionKey), list.filter(t => !linkOf(t)))
+    const byLink = {}
+    list.forEach(t => { const l = linkOf(t); if (l) { (byLink[l.id] = byLink[l.id] || { kind: l.kind, ts: [] }).ts.push(t) } })
+    const rawClusters = Object.entries(byLink).sort((a, b) => (entityMap[a[0]]?.name || '').localeCompare(entityMap[b[0]]?.name || ''))
+    const clusterOrdered = orderList(`clustord:${groupBy}:${sectionKey}`, rawClusters.map(([lid, o]) => ({ id: clusterBlockId(o.kind, lid), lid, kind: o.kind, ts: o.ts })))
     const defaultBlocks = [
       ...stdOrdered.map(t => ({ id: t.id, type: 'task', task: t })),
-      ...clusterOrdered.map(c => ({ id: c.id, type: 'cluster', pid: c.pid, ts: c.ts })),
+      ...clusterOrdered.map(c => ({ id: c.id, type: 'cluster', lid: c.lid, kind: c.kind, ts: c.ts })),
     ]
     return orderList(blockOrderId(sectionKey), defaultBlocks)
   }
@@ -2509,9 +2637,10 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
       } else {
         applyMove([taskId], g.key)
       }
-    } else if (clusterId && (g.tasks || []).some(t => t.project_id === clusterId)) {
+    } else if (clusterId && (g.tasks || []).some(t => t.project_id === clusterId || t.qualification_id === clusterId)) {
       // a cluster dropped in this section's empty space → send it to the end of the unified block list
-      reorderTo(buildBlocks(g.tasks || [], g.key), `proj:${clusterId}`, null, 'after', blockOrderId(g.key))
+      const kind = (g.tasks || []).some(t => t.project_id === clusterId) ? 'project' : 'qualification'
+      reorderTo(buildBlocks(g.tasks || [], g.key), clusterBlockId(kind, clusterId), null, 'after', blockOrderId(g.key))
     } else if (taskIds) applyMove(taskIds.split(','), g.key)
   }
   const clearOutlines = () => { if (containerRef.current) containerRef.current.querySelectorAll('[data-lcard]').forEach(el => { el.style.outline = 'none' }) }
@@ -2634,9 +2763,10 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   // Context handed to the module-scope building blocks (Row/EscRow/SectionCard/CategoryCard)
   const v = { tss, entityMap, groupBy, openNotes, rowDrop, onEdit, dragTaskRef, setRowDrop, clearOutlines, reorderTo, onComplete, toggleNotes, tasks, showDone, ownerMatch, isMin, toggleMin, onOpenEscalation, orderList, isMobile, onOpenProject, handleSectionDrop, onAddTask, addPrefill, dragEntRef, entDrop, setEntDrop, domainMeta, onUpdateDomainMeta, hideDomain, colorEditKey, setColorEditKey }
 
-  // Within a category, cluster tasks that belong to a project/bundle into a titled container
+  // Within a category, cluster tasks that belong to a project/bundle/qualification into a titled container
   const renderTasks = (list, sectionKey) => {
-    if (groupBy === 'project') {
+    // In project grouping the section already IS the project, so render flat — except the "No project" bucket, which still clusters qualifications
+    if (groupBy === 'project' && sectionKey !== '__none') {
       const ordered = orderList(mainListId(sectionKey), list)
       return ordered.map(t => <Row key={t.id} t={t} listTasks={ordered} listId={mainListId(sectionKey)} v={v} />)
     }
@@ -2648,10 +2778,10 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
       <>
         {blocks.map(b => {
           if (b.type === 'task') return <Row key={b.id} t={b.task} listTasks={blocks} listId={blockKey} v={v} />
-          const pid = b.pid, blockId = b.id
-          const clusterListId = `${groupBy}:${sectionKey}:proj:${pid}`
+          const lid = b.lid, kind = b.kind, blockId = b.id
+          const clusterListId = `${groupBy}:${sectionKey}:${blockId}`
           const ts = orderList(clusterListId, b.ts)
-          const ent = entityMap[pid]
+          const ent = entityMap[lid]
           const cbg = flagBg(ent?.color) || '#f4f2ec'
           const cbd = flagBorder(ent?.color) || '#d8d4c8'
           const pnotes = Array.isArray(ent?.notes) ? ent.notes : []
@@ -2663,14 +2793,14 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
               onDrop={e => { const d = dragTaskRef.current; if (d && d !== blockId && blockIds.includes(d)) { e.preventDefault(); e.stopPropagation(); reorderTo(blocks, d, blockId, rowDrop?.pos || 'before', blockKey) } dragTaskRef.current = null; setRowDrop(null) }}>
               {rowDrop && rowDrop.overId === blockId && rowDrop.pos === 'before' && cInd('before')}
               <div style={{ border:`1px solid ${cbd}`, borderRadius:8, padding: open ? '7px 7px 3px' : '7px', marginBottom:4, background:cbg }}>
-                <div draggable onDragStart={e => { e.stopPropagation(); dragTaskRef.current = blockId; e.dataTransfer.setData('text/tasks', ts.map(x => x.id).join(',')); e.dataTransfer.setData('text/cluster', pid); e.dataTransfer.effectAllowed = 'move' }}
+                <div draggable onDragStart={e => { e.stopPropagation(); dragTaskRef.current = blockId; e.dataTransfer.setData('text/tasks', ts.map(x => x.id).join(',')); e.dataTransfer.setData('text/cluster', lid); e.dataTransfer.effectAllowed = 'move' }}
                   onDragEnd={() => { dragTaskRef.current = null; setRowDrop(null); clearOutlines() }}
-                  onDoubleClick={() => onOpenProject && onOpenProject(pid)} title="Drag to reorder · double-click to open"
+                  onDoubleClick={() => kind === 'project' ? (onOpenProject && onOpenProject(lid)) : (onOpenQualification && onOpenQualification(lid))} title="Drag to reorder · double-click to open"
                   style={{ display:'flex', alignItems:'center', gap:6, padding: open ? '0 3px 6px' : '0 3px', cursor:'grab' }}>
-                  <span style={{ flex:'1 1 auto', minWidth:0, fontSize:9, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color:'#555', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{ent?.name || 'Project'}</span>
+                  <span style={{ flex:'1 1 auto', minWidth:0, fontSize:9, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color:'#555', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{ent?.name || (kind === 'project' ? 'Project' : 'Qualification')}</span>
                   <span style={{ fontSize:9, color:'#888', background:'white', border:`0.5px solid ${cbd}`, borderRadius:8, padding:'0 6px', flexShrink:0 }}>{ts.length}</span>
                   {pnotes.length > 0 && <span style={{ fontSize:9, color:'#999', display:'inline-flex', alignItems:'center', gap:2 }}><StickyNote size={10} strokeWidth={2} /> {pnotes.length}</span>}
-                  {linHeaderRight(onAddTask && linAddIconBtn(() => onAddTask({ project_id: pid, ...addPrefill(sectionKey) })), chevronBtn(open, () => toggleMin(id)))}
+                  {linHeaderRight(onAddTask && linAddIconBtn(() => onAddTask(kind === 'project' ? { project_id: lid, ...addPrefill(sectionKey) } : { qualification_id: lid, domain: 'Supplier Qualification', ...addPrefill(sectionKey) })), chevronBtn(open, () => toggleMin(id)))}
                 </div>
                 {open && ts.map(t => <Row key={t.id} t={t} hideLinked listTasks={ts} listId={clusterListId} v={v} />)}
                 {open && pnotes.length > 0 && (
@@ -2794,22 +2924,34 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
         <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
           {[{k:'domain',l:'Domain'},{k:'status',l:'Status'},{k:'owner',l:'Owner'},{k:'project',l:'Project'}].map(g => pill(groupBy, g.k, g.l, () => setGroupBy(g.k)))}
         </div>
-        {/* Owner filter */}
+        {/* Member filter — multi-select show/hide (same pattern as the Holidays dropdown) */}
         <div style={{ position:'relative' }}>
-          <button onClick={() => setOwnerMenuOpen(o => !o)} title="Filter by owner"
-            style={{ fontSize:11, background: filterOwner!=='all' ? 'linear-gradient(135deg,#4f46e5,#7c3aed)' : 'white', border: filterOwner!=='all' ? 'none' : '0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:26, color: filterOwner!=='all' ? 'white' : '#7c3aed', display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap' }}>
-            <span>{filterOwner === 'all' ? '👥 All' : filterOwner}</span><span style={{ fontSize:9, opacity:0.7 }}>▾</span>
-          </button>
+          {(() => { const narrowed = hiddenOwners.size > 0; const visibleCount = memberNames.filter(m => !hiddenOwners.has(m)).length; return (
+            <button onClick={() => setOwnerMenuOpen(o => !o)} title="Show/hide members"
+              style={{ fontSize:11, background: narrowed ? 'linear-gradient(135deg,#4f46e5,#7c3aed)' : 'white', border: narrowed ? 'none' : '0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:26, color: narrowed ? 'white' : '#7c3aed', display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap' }}>
+              <span>👥 Members{narrowed ? ` · ${visibleCount}` : ''}</span><span style={{ fontSize:9, opacity:0.7 }}>▾</span>
+            </button>
+          )})()}
           {ownerMenuOpen && (
             <>
               <div onClick={() => setOwnerMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
-              <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, minWidth:150, maxHeight:280, overflowY:'auto', padding:4 }}>
-                {[{ v:'all', l:'👥 All' }, ...memberNames.map(n => ({ v:n, l:n }))].map(opt => (
-                  <button key={opt.v} onClick={() => { setFilterOwner(opt.v); setOwnerMenuOpen(false) }}
-                    style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'7px 10px', background: filterOwner===opt.v ? '#ede9fe' : 'none', border:'none', borderRadius:7, cursor:'pointer', fontSize:12, color: filterOwner===opt.v ? '#7c3aed' : '#444', fontWeight: filterOwner===opt.v ? 600 : 400, fontFamily:'inherit' }}>
-                    {opt.v !== 'all' && <OwnerPip name={opt.v} />}{opt.l}
+              <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, minWidth:170, maxHeight:300, overflowY:'auto', padding:6 }}>
+                <div style={{ display:'flex', gap:4, marginBottom:6, paddingBottom:6, borderBottom:'0.5px solid #f0f0f0' }}>
+                  <button onClick={() => { const n = new Set(); setHiddenOwners(n); persistHidden(n) }}
+                    style={{ flex:1, fontSize:11, padding:'4px 0', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', color:'#555' }}>All</button>
+                  <button onClick={() => { const n = new Set(memberNames); setHiddenOwners(n); persistHidden(n) }}
+                    style={{ flex:1, fontSize:11, padding:'4px 0', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', color:'#555' }}>None</button>
+                </div>
+                {memberNames.map(name => { const vis = !hiddenOwners.has(name); return (
+                  <button key={name} onClick={() => toggleOwnerVis(name)}
+                    style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'6px 8px', background:'none', border:'none', borderRadius:6, cursor:'pointer', fontSize:12 }}
+                    onMouseEnter={e => e.currentTarget.style.background='#f5f5f3'}
+                    onMouseLeave={e => e.currentTarget.style.background='none'}>
+                    <OwnerPip name={name} />
+                    <span style={{ flex:1, color: vis ? '#333' : '#aaa' }}>{name}</span>
+                    {vis && <span style={{ fontSize:11, color:'#7c3aed' }}>✓</span>}
                   </button>
-                ))}
+                )})}
               </div>
             </>
           )}
@@ -3015,12 +3157,12 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
 }
 
 // ─── Notes Section (wrapper with sub-tabs) ────────────────────────────────────
-function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup, members = [] }) {
-  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} members={members} />
+function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, members = [] }) {
+  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} onMoveNote={onMoveNote} members={members} />
 }
 
 // ─── Notes Tab ───────────────────────────────────────────────────────────────
-function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup, members = [] }) {
+function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, members = [] }) {
   const [selectedId, setSelectedId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [dirty, setDirty] = useState(false)
@@ -3038,7 +3180,48 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   const [deletingGroupId, setDeletingGroupId] = useState(null)
   const [addingGroup, setAddingGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
+  const [addingSubFor, setAddingSubFor] = useState(null) // parent group id we're adding a subgroup to
+  const [newSubName, setNewSubName] = useState('')
+  const [collapsedGroups, setCollapsedGroups] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-notes-collapsed')||'[]')) } catch { return new Set() } })
+  const toggleCollapse = id => setCollapsedGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); try { localStorage.setItem('taskr-notes-collapsed', JSON.stringify([...n])) } catch {} return n })
+  const [dragOverTarget, setDragOverTarget] = useState(null) // group id | 'ungrouped' | null
+  const dragNoteRef = useRef(null)
   const isMobileNotes = window.innerWidth < 640
+
+  // Group tree helpers (one level of nesting: groups → subgroups)
+  const topGroups = groups.filter(g => !g.parent_id)
+  const subsOf = pid => groups.filter(g => g.parent_id === pid)
+  const subtreeIds = gid => new Set([gid, ...subsOf(gid).map(s => s.id)])
+  const countFor = gid => { const ids = subtreeIds(gid); return notes.filter(n => ids.has(n.group_id)).length }
+  const dropHandlers = targetId => ({
+    onDragOver: e => { if (dragNoteRef.current != null) { e.preventDefault(); setDragOverTarget(targetId ?? 'ungrouped') } },
+    onDragLeave: e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverTarget(t => t === (targetId ?? 'ungrouped') ? null : t) },
+    onDrop: e => { e.preventDefault(); const nid = dragNoteRef.current || e.dataTransfer.getData('text/note'); if (nid && onMoveNote) onMoveNote(nid, targetId ?? null); dragNoteRef.current = null; setDragOverTarget(null) },
+  })
+  const renderRenameInput = (g, indent) => (
+    <div style={{ padding: indent ? '4px 8px 4px 28px' : '4px 8px' }}>
+      <input autoFocus value={renameText} onChange={e => setRenameText(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { onRenameGroup(g.id, renameText.trim() || g.name); setRenamingGroupId(null) } if (e.key === 'Escape') setRenamingGroupId(null) }}
+        onBlur={() => { onRenameGroup(g.id, renameText.trim() || g.name); setRenamingGroupId(null) }}
+        style={{ width:'100%', boxSizing:'border-box', fontSize:12, padding:'4px 8px', border:'0.5px solid #c4b5fd', borderRadius:6, outline:'none' }} />
+    </div>
+  )
+  const renderDelConfirm = g => {
+    const cnt = countFor(g.id), hasSubs = subsOf(g.id).length > 0
+    return (
+      <div style={{ margin:'0 8px 4px', padding:'8px 10px', background:'#fff5f5', border:'0.5px solid #fecaca', borderRadius:8, fontSize:11 }}>
+        <div style={{ color:'#991b1b', fontWeight:500, marginBottom:6 }}>Delete "{g.name}"{hasSubs ? ' and its subgroups' : ''}{cnt > 0 ? ` (${cnt} note${cnt > 1 ? 's' : ''})` : ''}?</div>
+        <div style={{ display:'flex', gap:4 }}>
+          <button onClick={() => { onDeleteGroup(g.id, true); setDeletingGroupId(null); if (activeGroupId === g.id) setActiveGroupId(undefined) }}
+            style={{ fontSize:11, padding:'4px 8px', background:'#991b1b', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Delete notes</button>
+          <button onClick={() => { onDeleteGroup(g.id, false); setDeletingGroupId(null); if (activeGroupId === g.id) setActiveGroupId(undefined) }}
+            style={{ fontSize:11, padding:'4px 8px', background:'#7c3aed', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Keep notes</button>
+          <button onClick={() => setDeletingGroupId(null)}
+            style={{ fontSize:11, padding:'4px 8px', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, cursor:'pointer', color:'#888' }}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
   const autoSaveTimerRef = useRef(null)
   const draftRef = useRef(draft)
   const selectedIdRef = useRef(selectedId)
@@ -3162,12 +3345,12 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   }
 
   const stripHtml = html => { const d = document.createElement('div'); d.innerHTML = html||''; return d.textContent||'' }
+  // A selected top-level group shows its own notes plus those in its subgroups; a subgroup shows just its own.
+  const activeMatch = (activeGroupId !== undefined && activeGroupId !== null) ? subtreeIds(activeGroupId) : null
   const visibleNotes = notes
     .filter(n => {
-      if (activeGroupId !== undefined) {
-        if (activeGroupId === null && n.group_id != null) return false
-        if (activeGroupId !== null && n.group_id !== activeGroupId) return false
-      }
+      if (activeGroupId === null && n.group_id != null) return false
+      if (activeMatch && !activeMatch.has(n.group_id)) return false
       if (!search.trim()) return true
       const q = search.toLowerCase()
       return (n.title||'').toLowerCase().includes(q) || stripHtml(n.body).toLowerCase().includes(q)
@@ -3209,64 +3392,82 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
               <span style={{ fontSize:12, color: activeGroupId === undefined ? '#7c3aed' : '#555', fontWeight: activeGroupId === undefined ? 600 : 400 }}>All Notes</span>
               <span style={{ fontSize:11, color:'#bbb' }}>{notes.length}</span>
             </div>
-            {/* Ungrouped row */}
-            <div onClick={() => setActiveGroupId(null)}
-              style={{ padding:'6px 12px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', background: activeGroupId === null ? '#ede9fe' : 'transparent' }}>
-              <span style={{ fontSize:12, color: activeGroupId === null ? '#7c3aed' : '#555', fontWeight: activeGroupId === null ? 600 : 400 }}>Ungrouped</span>
-              <span style={{ fontSize:11, color:'#bbb' }}>{notes.filter(n => !n.group_id).length}</span>
-            </div>
-            {/* Each group */}
-            {groups.map(g => (
-              <div key={g.id}>
-                {renamingGroupId === g.id ? (
-                  <div style={{ padding:'4px 8px' }}>
-                    <input autoFocus value={renameText} onChange={e => setRenameText(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') { onRenameGroup(g.id, renameText.trim() || g.name); setRenamingGroupId(null) }
-                        if (e.key === 'Escape') setRenamingGroupId(null)
-                      }}
-                      onBlur={() => { onRenameGroup(g.id, renameText.trim() || g.name); setRenamingGroupId(null) }}
-                      style={{ width:'100%', boxSizing:'border-box', fontSize:12, padding:'4px 8px', border:'0.5px solid #c4b5fd', borderRadius:6, outline:'none' }}
-                    />
-                  </div>
-                ) : (
-                  <div onClick={() => setActiveGroupId(g.id)}
-                    style={{ padding:'6px 12px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', background: activeGroupId === g.id ? '#ede9fe' : 'transparent' }}
-                    onMouseEnter={e => { if (activeGroupId !== g.id) e.currentTarget.style.background = '#fafafa' }}
-                    onMouseLeave={e => { if (activeGroupId !== g.id) e.currentTarget.style.background = 'transparent' }}>
-                    <span style={{ fontSize:12, color: activeGroupId === g.id ? '#7c3aed' : '#555', fontWeight: activeGroupId === g.id ? 600 : 400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                      {g.name}
-                    </span>
-                    <div style={{ display:'flex', gap:1, alignItems:'center', flexShrink:0 }}>
-                      <span style={{ fontSize:11, color:'#bbb', marginRight:3 }}>{notes.filter(n => n.group_id === g.id).length}</span>
-                      <button onClick={e => { e.stopPropagation(); setRenamingGroupId(g.id); setRenameText(g.name) }}
-                        style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Rename">✎</button>
-                      <button onClick={e => { e.stopPropagation(); setDeletingGroupId(g.id) }}
-                        style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Delete group">✕</button>
-                    </div>
-                  </div>
-                )}
-                {/* Inline delete confirmation */}
-                {deletingGroupId === g.id && (() => {
-                  const cnt = notes.filter(n => n.group_id === g.id).length
-                  return (
-                    <div style={{ margin:'0 8px 4px', padding:'8px 10px', background:'#fff5f5', border:'0.5px solid #fecaca', borderRadius:8, fontSize:11 }}>
-                      <div style={{ color:'#991b1b', fontWeight:500, marginBottom:6 }}>
-                        Delete "{g.name}"{cnt > 0 ? ` (${cnt} note${cnt > 1 ? 's' : ''})` : ''}?
-                      </div>
-                      <div style={{ display:'flex', gap:4 }}>
-                        <button onClick={() => { onDeleteGroup(g.id, true); setDeletingGroupId(null); if (activeGroupId === g.id) setActiveGroupId(undefined) }}
-                          style={{ fontSize:11, padding:'4px 8px', background:'#991b1b', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Delete notes</button>
-                        <button onClick={() => { onDeleteGroup(g.id, false); setDeletingGroupId(null); if (activeGroupId === g.id) setActiveGroupId(undefined) }}
-                          style={{ fontSize:11, padding:'4px 8px', background:'#7c3aed', color:'white', border:'none', borderRadius:6, cursor:'pointer' }}>Keep notes</button>
-                        <button onClick={() => setDeletingGroupId(null)}
-                          style={{ fontSize:11, padding:'4px 8px', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, cursor:'pointer', color:'#888' }}>Cancel</button>
-                      </div>
-                    </div>
-                  )
-                })()}
+            {/* Ungrouped row (drop target) */}
+            {(() => { const over = dragOverTarget === 'ungrouped'; return (
+              <div onClick={() => setActiveGroupId(null)} {...dropHandlers(null)}
+                style={{ padding:'6px 12px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', background: over ? '#ddd6fe' : activeGroupId === null ? '#ede9fe' : 'transparent', outline: over ? '1.5px dashed #7c3aed' : 'none', outlineOffset:-2 }}>
+                <span style={{ fontSize:12, color: activeGroupId === null ? '#7c3aed' : '#555', fontWeight: activeGroupId === null ? 600 : 400 }}>Ungrouped</span>
+                <span style={{ fontSize:11, color:'#bbb' }}>{notes.filter(n => !n.group_id).length}</span>
               </div>
-            ))}
+            )})()}
+            {/* Top-level groups → subgroups */}
+            {topGroups.map(g => {
+              const subs = subsOf(g.id)
+              const collapsed = collapsedGroups.has(g.id)
+              const over = dragOverTarget === g.id
+              const active = activeGroupId === g.id
+              return (
+                <div key={g.id}>
+                  {renamingGroupId === g.id ? renderRenameInput(g, false) : (
+                    <div onClick={() => setActiveGroupId(g.id)} {...dropHandlers(g.id)}
+                      style={{ padding:'6px 8px 6px 8px', cursor:'pointer', display:'flex', alignItems:'center', gap:2, background: over ? '#ddd6fe' : active ? '#ede9fe' : 'transparent', outline: over ? '1.5px dashed #7c3aed' : 'none', outlineOffset:-2 }}
+                      onMouseEnter={e => { if (!active && !over) e.currentTarget.style.background = '#fafafa' }}
+                      onMouseLeave={e => { if (!active && !over) e.currentTarget.style.background = 'transparent' }}>
+                      {subs.length > 0
+                        ? <button onClick={e => { e.stopPropagation(); toggleCollapse(g.id) }} title={collapsed ? 'Expand' : 'Collapse'} style={{ background:'none', border:'none', cursor:'pointer', color:'#bbb', fontSize:10, width:14, padding:0, flexShrink:0, lineHeight:1 }}>{collapsed ? '▸' : '▾'}</button>
+                        : <span style={{ width:14, flexShrink:0 }} />}
+                      <span style={{ fontSize:12, color: active ? '#7c3aed' : '#555', fontWeight: active ? 600 : 400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.name}</span>
+                      <div style={{ display:'flex', gap:1, alignItems:'center', flexShrink:0 }}>
+                        <span style={{ fontSize:11, color:'#bbb', marginRight:2 }}>{countFor(g.id)}</span>
+                        <button onClick={e => { e.stopPropagation(); setAddingSubFor(g.id); setNewSubName(''); setCollapsedGroups(prev => { const n = new Set(prev); n.delete(g.id); try { localStorage.setItem('taskr-notes-collapsed', JSON.stringify([...n])) } catch {} return n }) }}
+                          style={{ fontSize:13, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 3px', lineHeight:1 }} title="Add subgroup">+</button>
+                        <button onClick={e => { e.stopPropagation(); setRenamingGroupId(g.id); setRenameText(g.name) }}
+                          style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Rename">✎</button>
+                        <button onClick={e => { e.stopPropagation(); setDeletingGroupId(g.id) }}
+                          style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Delete group">✕</button>
+                      </div>
+                    </div>
+                  )}
+                  {deletingGroupId === g.id && renderDelConfirm(g)}
+                  {/* Subgroups */}
+                  {!collapsed && subs.map(sg => {
+                    const sOver = dragOverTarget === sg.id
+                    const sActive = activeGroupId === sg.id
+                    return (
+                      <div key={sg.id}>
+                        {renamingGroupId === sg.id ? renderRenameInput(sg, true) : (
+                          <div onClick={() => setActiveGroupId(sg.id)} {...dropHandlers(sg.id)}
+                            style={{ padding:'5px 8px 5px 28px', cursor:'pointer', display:'flex', alignItems:'center', gap:2, background: sOver ? '#ddd6fe' : sActive ? '#ede9fe' : 'transparent', outline: sOver ? '1.5px dashed #7c3aed' : 'none', outlineOffset:-2 }}
+                            onMouseEnter={e => { if (!sActive && !sOver) e.currentTarget.style.background = '#fafafa' }}
+                            onMouseLeave={e => { if (!sActive && !sOver) e.currentTarget.style.background = 'transparent' }}>
+                            <span style={{ color:'#ccc', fontSize:10, flexShrink:0 }}>↳</span>
+                            <span style={{ fontSize:12, color: sActive ? '#7c3aed' : '#666', fontWeight: sActive ? 600 : 400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sg.name}</span>
+                            <div style={{ display:'flex', gap:1, alignItems:'center', flexShrink:0 }}>
+                              <span style={{ fontSize:11, color:'#bbb', marginRight:2 }}>{countFor(sg.id)}</span>
+                              <button onClick={e => { e.stopPropagation(); setRenamingGroupId(sg.id); setRenameText(sg.name) }}
+                                style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Rename">✎</button>
+                              <button onClick={e => { e.stopPropagation(); setDeletingGroupId(sg.id) }}
+                                style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Delete subgroup">✕</button>
+                            </div>
+                          </div>
+                        )}
+                        {deletingGroupId === sg.id && renderDelConfirm(sg)}
+                      </div>
+                    )
+                  })}
+                  {/* Add subgroup input */}
+                  {addingSubFor === g.id && (
+                    <div style={{ padding:'4px 8px 4px 28px' }}>
+                      <input autoFocus value={newSubName} onChange={e => setNewSubName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { if (newSubName.trim()) onSaveGroup(newSubName.trim(), g.id); setAddingSubFor(null); setNewSubName('') } if (e.key === 'Escape') { setAddingSubFor(null); setNewSubName('') } }}
+                        onBlur={() => { if (newSubName.trim()) onSaveGroup(newSubName.trim(), g.id); setAddingSubFor(null); setNewSubName('') }}
+                        placeholder="Subgroup name…"
+                        style={{ width:'100%', boxSizing:'border-box', fontSize:12, padding:'4px 8px', border:'0.5px solid #c4b5fd', borderRadius:6, outline:'none' }} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
             {/* Add new group */}
             {addingGroup ? (
               <div style={{ padding:'4px 8px' }}>
@@ -3300,15 +3501,17 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                 <span style={{ color:'white', fontSize:12, fontWeight:500 }}>Delete</span>
               </div>
               <div
+                draggable={!isMobileNotes}
+                onDragStart={e => { dragNoteRef.current = n.id; e.dataTransfer.setData('text/note', n.id); e.dataTransfer.effectAllowed = 'move' }}
+                onDragEnd={() => { dragNoteRef.current = null; setDragOverTarget(null) }}
                 onTouchStart={e => onTouchStart(n.id, e)}
                 onTouchMove={e => onTouchMove(n.id, e)}
                 onTouchEnd={() => onTouchEnd(n.id)}
                 onClick={() => { if (sw.swiped) { setSwipeState(s => ({...s, [n.id]: {x:0,swiped:false}})); return } handleSelect(n) }}
-                style={{ position:'relative', padding:'14px 12px', cursor:'pointer', background:selectedId===n.id?'#f5f5f3':'white', transform:`translateX(${sw.x||0}px)`, transition: sw.startX ? 'none' : 'transform 0.2s ease', minHeight:60, boxSizing:'border-box' }}
+                style={{ position:'relative', padding:'11px 12px', cursor:'pointer', background:selectedId===n.id?'#f5f5f3':'white', transform:`translateX(${sw.x||0}px)`, transition: sw.startX ? 'none' : 'transform 0.2s ease', minHeight:40, display:'flex', alignItems:'center', boxSizing:'border-box' }}
                 onMouseEnter={e => { if (selectedId!==n.id && !isMobileNotes) e.currentTarget.style.background='#fafafa' }}
                 onMouseLeave={e => { if (selectedId!==n.id && !isMobileNotes) e.currentTarget.style.background='white' }}>
                 <div style={{ fontSize:13, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
-                <div style={{ fontSize:11, color:'#bbb', marginTop:3 }}>{new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
               </div>
             </div>
           )
@@ -3350,15 +3553,6 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                     ⛶
                   </button>
                 )}
-                {groups.length > 0 && (
-                  <select title="Move to group"
-                    value={(draft.group_id !== undefined ? draft.group_id : notes.find(n => n.id === selectedId)?.group_id) || ''}
-                    onChange={e => { const gid = e.target.value || null; setDraft(p => ({ ...p, group_id: gid })); onSave({ ...draft, group_id: gid }, selectedId); setDirty(false) }}
-                    style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 8px', cursor:'pointer', color:'#555', outline:'none', maxWidth:130 }}>
-                    <option value="">Ungrouped</option>
-                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                  </select>
-                )}
                 <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
                   {copied ? '✓' : '📋'}
                 </button>
@@ -3369,10 +3563,13 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
             {(() => {
               const noteRecord = notes.find(n => n.id === selectedId)
               const fmtDT = iso => iso ? new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : '—'
+              const g = noteRecord?.group_id ? groups.find(x => x.id === noteRecord.group_id) : null
+              const crumb = g ? (g.parent_id ? `${groups.find(x => x.id === g.parent_id)?.name || '—'} › ${g.name}` : g.name) : 'Ungrouped'
               return noteRecord ? (
-                <div style={{ display:'flex', gap:14, fontSize:10, color:'#bbb' }}>
+                <div style={{ display:'flex', gap:12, fontSize:10, color:'#bbb', alignItems:'center', flexWrap:'wrap' }}>
                   <span>Created {fmtDT(noteRecord.created_at)}</span>
                   {noteRecord.updated_at && noteRecord.updated_at !== noteRecord.created_at && <span>· Edited {fmtDT(noteRecord.updated_at)}</span>}
+                  <span title="Drag the note onto a group in the sidebar to move it" style={{ fontSize:10, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #ddd6fe', borderRadius:20, padding:'1px 9px', display:'inline-flex', alignItems:'center', gap:4 }}>🗂 {crumb}</span>
                 </div>
               ) : null
             })()}
@@ -3588,7 +3785,7 @@ function SubtaskRow({ st, onChange, onDelete }) {
   )
 }
 
-function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 50, members = MEMBERS, defaultOwner }) {
+function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 50, members = MEMBERS, defaultOwner, lockedDomain = null }) {
   const defaultOwners = defaultOwner ? [defaultOwner] : ['Levi']
   const EMPTY = { title:'', status:'active', domain:'', owners:defaultOwners, due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, qualification_id:null, attachments:[] }
   const tempId = useRef(crypto.randomUUID())
@@ -3619,10 +3816,17 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12, alignItems:'end' }}>
         <div><label style={FIELD_LABEL}>Domain</label>
-          <select value={f.domain} onChange={e => set('domain', e.target.value)} style={FIELD_SELECT}>
-            <option value="">— none —</option>
-            {(domains||[]).map(d => <option key={d} value={d}>{d}</option>)}
-          </select></div>
+          {lockedDomain ? (
+            <div title="Set by the project/bundle — edit it on the project" style={{ ...FIELD_SELECT, cursor:'not-allowed', background:'#f4f2ec', color:'#666', display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{lockedDomain}</span>
+              <span style={{ fontSize:9, color:'#aaa', flexShrink:0 }}>🔒 project</span>
+            </div>
+          ) : (
+            <select value={f.domain} onChange={e => set('domain', e.target.value)} style={FIELD_SELECT}>
+              <option value="">— none —</option>
+              {(domains||[]).map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}</div>
         <div><label style={FIELD_LABEL}>Flag color</label>
           <div style={{ display:'flex', gap:6, alignItems:'center', height:32 }}>
             {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?20:14, height:fc.key?20:14, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
@@ -3789,11 +3993,11 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
         </div>
 
         {/* Calendar */}
-        {calendars.filter(c => c.type !== 'holidays').length > 0 && (
+        {calendars.filter(c => !isHolidayCalType(c.type)).length > 0 && (
           <div style={{ marginBottom:12 }}>
             <label style={FIELD_LABEL}>Calendar</label>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-              {calendars.filter(c => c.type !== 'holidays').map(c => (
+              {calendars.filter(c => !isHolidayCalType(c.type)).map(c => (
                 <button key={c.id} onClick={() => set('calendar_id', c.id)}
                   style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:f.calendar_id===c.id?`1.5px solid ${c.color}`:'0.5px solid #e5e5e5', background:f.calendar_id===c.id?c.color+'18':'white', color:f.calendar_id===c.id?c.color:'#888', fontWeight:f.calendar_id===c.id?500:400 }}>
                   <span style={{ width:8, height:8, borderRadius:'50%', background:c.color, flexShrink:0 }} />{c.name}
@@ -4419,6 +4623,7 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS, calendars = 
   const [eventForm, setEventForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
   const [daySchedule, setDaySchedule] = useState(null) // Date | null
+  const [holidayMenuOpen, setHolidayMenuOpen] = useState(false)
 
   const visibleCalIds = new Set(calendars.filter(c => c.visible).map(c => c.id))
   const defaultCalId = calendars.find(c => c.type === 'default')?.id
@@ -4495,18 +4700,54 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS, calendars = 
 
   return (
     <div>
-      {/* Calendar toggles */}
-      {calendars.length > 0 && (
-        <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:12 }}>
-          <span style={{ fontSize:11, color:'#aaa', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.05em', marginRight:2 }}>Calendars</span>
-          {calendars.map(cal => (
-            <button key={cal.id} onClick={() => onToggleCalendar && onToggleCalendar(cal.id, !cal.visible)}
-              style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, padding:'3px 10px', borderRadius:20, cursor:'pointer', border:`0.5px solid ${cal.visible ? cal.color : '#e0e0e0'}`, background: cal.visible ? cal.color+'18' : '#f7f7f5', color: cal.visible ? cal.color : '#bbb', fontWeight: cal.visible ? 500 : 400, transition:'all 0.1s' }}>
-              <span style={{ width:8, height:8, borderRadius:'50%', background: cal.visible ? cal.color : '#ccc', flexShrink:0 }} />{cal.name}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Calendar toggles — non-holiday calendars as pills; holiday calendars collapsed into one dropdown */}
+      {calendars.length > 0 && (() => {
+        const otherCals = calendars.filter(c => !isHolidayCalType(c.type))
+        const holidayList = calendars.filter(c => isHolidayCalType(c.type))
+        const visHoliday = holidayList.filter(c => c.visible).length
+        return (
+          <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:12 }}>
+            <span style={{ fontSize:11, color:'#aaa', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.05em', marginRight:2 }}>Calendars</span>
+            {otherCals.map(cal => (
+              <button key={cal.id} onClick={() => onToggleCalendar && onToggleCalendar(cal.id, !cal.visible)}
+                style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, padding:'3px 10px', borderRadius:20, cursor:'pointer', border:`0.5px solid ${cal.visible ? cal.color : '#e0e0e0'}`, background: cal.visible ? cal.color+'18' : '#f7f7f5', color: cal.visible ? cal.color : '#bbb', fontWeight: cal.visible ? 500 : 400, transition:'all 0.1s' }}>
+                <span style={{ width:8, height:8, borderRadius:'50%', background: cal.visible ? cal.color : '#ccc', flexShrink:0 }} />{cal.name}
+              </button>
+            ))}
+            {holidayList.length > 0 && (
+              <div style={{ position:'relative' }}>
+                <button onClick={() => setHolidayMenuOpen(o => !o)}
+                  style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, padding:'3px 10px', borderRadius:20, cursor:'pointer', border:`0.5px solid ${visHoliday ? '#c4b5fd' : '#e0e0e0'}`, background: visHoliday ? '#ede9fe' : '#f7f7f5', color: visHoliday ? '#7c3aed' : '#999', fontWeight: visHoliday ? 500 : 400 }}>
+                  🗓 Holidays{visHoliday ? ` · ${visHoliday}` : ''}<span style={{ fontSize:9, opacity:0.7 }}>▾</span>
+                </button>
+                {holidayMenuOpen && (
+                  <>
+                    <div onClick={() => setHolidayMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
+                    <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, minWidth:190, padding:6 }}>
+                      <div style={{ display:'flex', gap:4, marginBottom:6, paddingBottom:6, borderBottom:'0.5px solid #f0f0f0' }}>
+                        <button onClick={() => holidayList.forEach(c => { if (!c.visible) onToggleCalendar(c.id, true) })}
+                          style={{ flex:1, fontSize:11, padding:'4px 0', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', color:'#555' }}>All</button>
+                        <button onClick={() => holidayList.forEach(c => { if (c.visible) onToggleCalendar(c.id, false) })}
+                          style={{ flex:1, fontSize:11, padding:'4px 0', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', color:'#555' }}>None</button>
+                      </div>
+                      {holidayList.map(cal => (
+                        <button key={cal.id} onClick={() => onToggleCalendar(cal.id, !cal.visible)}
+                          style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'6px 8px', background:'none', border:'none', borderRadius:6, cursor:'pointer', fontSize:12 }}
+                          onMouseEnter={e => e.currentTarget.style.background='#f5f5f3'}
+                          onMouseLeave={e => e.currentTarget.style.background='none'}>
+                          <span style={{ width:10, height:10, borderRadius:'50%', background: cal.visible ? cal.color : 'white', border:`1.5px solid ${cal.color}`, flexShrink:0 }} />
+                          <span style={{ flex:1, color: cal.visible ? '#333' : '#999' }}>{cal.name}</span>
+                          {cal.visible && <span style={{ fontSize:11, color:cal.color }}>✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
       {/* Nav */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -4544,7 +4785,7 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS, calendars = 
         : <CalendarYearView events={travelFilter ? filteredEvents.filter(e => e.type === 'travel') : filteredEvents} year={year} onDayClick={handleDayClick} onShowDay={handleShowDay} onEventClick={handleEventClick} />}
 
       {eventForm !== null && (
-        <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} members={members} calendars={calendars.filter(c => c.type !== 'holidays')} />
+        <CalendarEventForm event={eventForm} isEdit={isEdit} onSave={handleSave} onDelete={handleDelete} onClose={() => { setEventForm(null); setIsEdit(false) }} members={members} calendars={calendars.filter(c => !isHolidayCalType(c.type))} />
       )}
       {daySchedule !== null && (
         <DayScheduleModal
@@ -4780,6 +5021,123 @@ function ChangePassword({ onClose }) {
   )
 }
 
+// ─── Qualification scheduling engine ──────────────────────────────────────────
+// Pure. Returns { [subtaskId]: { plannedStart, plannedEnd, actualEnd } } — all ISO dates, business-day based.
+function computeSchedule(qualification, trackTasks, todayISO) {
+  const bizForward = d => { const x = new Date(d); while (!isWeekday(x)) x.setDate(x.getDate() + 1); return x } // next business day (incl. same)
+  const addBiz = (d, n) => { const x = new Date(d); if (n <= 0) return x; let c = 0; while (c < n) { x.setDate(x.getDate() + 1); if (isWeekday(x)) c++ } return x }
+  const anchor = bizForward(fromISODate(qualification?.start_date || todayISO))
+  const todayD = fromISODate(todayISO)
+
+  const subs = []
+  for (const t of (trackTasks || [])) for (const s of (Array.isArray(t.subtasks) ? t.subtasks : [])) subs.push(s)
+  const byId = Object.fromEntries(subs.map(s => [s.id, s]))
+
+  // Topological order (DFS post-order); cycle edges are simply skipped so we never loop
+  const order = [], state = {}
+  const visit = id => {
+    if (state[id] === 2 || state[id] === 1) return
+    state[id] = 1
+    for (const dep of (byId[id]?.depends_on || [])) if (byId[dep]) visit(dep)
+    state[id] = 2
+    order.push(id)
+  }
+  for (const s of subs) visit(s.id)
+
+  const eff = {} // subtaskId -> effective end Date used by dependents
+  const result = {}
+  for (const id of order) {
+    const s = byId[id]; if (!s) continue
+    const preds = (s.depends_on || []).filter(d => eff[d])
+    let start = preds.length ? new Date(Math.max(...preds.map(d => eff[d].getTime()))) : new Date(anchor)
+    start = bizForward(start)
+    let end, actualEnd = null, effEnd
+    if (s.na) {
+      // N/A: collapses to zero duration and passes its predecessors' end straight through
+      end = new Date(start); effEnd = new Date(start)
+    } else if (s.done) {
+      end = addBiz(start, Number(s.duration) || 0)
+      if (s.completed_date) { actualEnd = fromISODate(s.completed_date); effEnd = fromISODate(s.completed_date) }
+      else effEnd = new Date(end)
+    } else {
+      if (toISODate(start) < todayISO) start = bizForward(todayD)          // snap: can't start in the past
+      end = addBiz(start, Number(s.duration) || 0)
+      if (toISODate(end) < todayISO) end = bizForward(todayD)              // overdue stretch: dependents flow from today
+      effEnd = new Date(end)
+    }
+    eff[id] = effEnd
+    result[id] = { plannedStart: toISODate(start), plannedEnd: toISODate(end), actualEnd: actualEnd ? toISODate(actualEnd) : null }
+  }
+  return result
+}
+
+// One editable subtask row (done · duration · N/A · dependencies · completed date)
+function QualSubtaskRow({ st, allSubs, sched, onUpdate }) {
+  const [depOpen, setDepOpen] = useState(false)
+  const deps = Array.isArray(st.depends_on) ? st.depends_on : []
+  const faded = !!st.na
+  const fmtD = iso => iso ? fromISODate(iso).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : '—'
+  const others = allSubs.filter(o => o.id !== st.id)
+  return (
+    <div onClick={e => e.stopPropagation()} style={{ border:'0.5px solid #eee', borderRadius:6, padding:'6px 8px', marginBottom:4, background: faded ? '#f7f7f5' : 'white' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, opacity: faded ? 0.65 : 1 }}>
+        <input type="checkbox" checked={!!st.done} disabled={faded}
+          onChange={e => onUpdate(e.target.checked ? { done:true, completed_date: st.completed_date || today() } : { done:false, completed_date:null })}
+          style={{ width:13, height:13, cursor: faded ? 'default' : 'pointer', flexShrink:0 }} />
+        <span style={{ flex:1, fontSize:12, color:(st.done||faded)?'#999':'#333', textDecoration:(st.done||faded)?'line-through':'none' }}>
+          {st.title}{faded && <span style={{ fontSize:9, marginLeft:5, color:'#aaa', fontWeight:600 }}>N/A</span>}
+        </span>
+        {sched && <span style={{ fontSize:9, color:'#aaa', flexShrink:0, whiteSpace:'nowrap' }} title="Planned start → end (business days)">
+          {sched.actualEnd ? `✓ ${fmtD(sched.actualEnd)}` : `${fmtD(sched.plannedStart)} → ${fmtD(sched.plannedEnd)}`}
+        </span>}
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:5, flexWrap:'wrap', paddingLeft:19 }}>
+        <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:10, color:'#888' }}>
+          Dur
+          <input type="number" min={0} value={faded ? 0 : (st.duration ?? 0)} disabled={faded}
+            onChange={e => onUpdate({ duration: Math.max(0, parseInt(e.target.value) || 0) })}
+            style={{ width:40, fontSize:11, padding:'2px 4px', border:'0.5px solid #e0e0e0', borderRadius:4, outline:'none' }} />
+          bd
+        </label>
+        <button onClick={() => onUpdate({ na: !st.na })}
+          style={{ fontSize:10, padding:'2px 8px', borderRadius:10, border:'none', cursor:'pointer', background: st.na ? '#ede9fe' : '#f0f0f0', color: st.na ? '#7c3aed' : '#888', fontWeight:500 }}>
+          {st.na ? 'N/A ✓' : 'N/A'}
+        </button>
+        <div style={{ position:'relative' }}>
+          <button onClick={() => setDepOpen(o => !o)}
+            style={{ fontSize:10, padding:'2px 8px', borderRadius:10, border:'0.5px solid #e0e0e0', cursor:'pointer', background:'white', color: deps.length ? '#7c3aed' : '#888' }}>
+            ⇄ Deps{deps.length ? ` · ${deps.length}` : ''} <span style={{ fontSize:8, opacity:0.7 }}>▾</span>
+          </button>
+          {depOpen && (
+            <>
+              <div onClick={() => setDepOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
+              <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:200, minWidth:230, maxHeight:240, overflowY:'auto', padding:6 }}>
+                {others.length === 0 && <div style={{ fontSize:11, color:'#bbb', padding:6 }}>No other subtasks</div>}
+                {others.map(o => { const on = deps.includes(o.id); return (
+                  <button key={o.id} onClick={() => onUpdate({ depends_on: on ? deps.filter(d => d !== o.id) : [...deps, o.id] })}
+                    style={{ display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', padding:'5px 7px', background:'none', border:'none', borderRadius:6, cursor:'pointer', fontSize:11 }}
+                    onMouseEnter={e => e.currentTarget.style.background='#f5f5f3'} onMouseLeave={e => e.currentTarget.style.background='none'}>
+                    <span style={{ width:11, flexShrink:0, color:'#7c3aed', fontSize:10 }}>{on ? '✓' : ''}</span>
+                    <span style={{ fontSize:8, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.03em', flexShrink:0, minWidth:52 }}>{o.trackShort}</span>
+                    <span style={{ flex:1, color:'#333' }}>{o.title}</span>
+                  </button>
+                )})}
+              </div>
+            </>
+          )}
+        </div>
+        {st.done && !faded && (
+          <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:10, color:'#888' }}>
+            Done
+            <input type="date" value={st.completed_date || today()} onChange={e => onUpdate({ completed_date: e.target.value || null })}
+              style={{ fontSize:10, padding:'2px 4px', border:'0.5px solid #e0e0e0', borderRadius:4, outline:'none', fontFamily:'inherit' }} />
+          </label>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Qualification Card ───────────────────────────────────────────────────────
 function QualificationCard({ qual, tasks, onOpen, onDragStart, onDragEnd, dragging }) {
   const linked = tasks.filter(t => t.qualification_id === qual.id)
@@ -4823,11 +5181,11 @@ function QualificationCard({ qual, tasks, onOpen, onDragStart, onDragEnd, draggi
 }
 
 // ─── Qualification Form / Detail ──────────────────────────────────────────────
-function QualificationForm({ qual, isEdit, templates, domains, members, tasks, onSave, onDelete, onClose, onSaveTask, onDeleteTask, onToggleSubtask }) {
+function QualificationForm({ qual, isEdit, templates, domains, members, tasks, onSave, onDelete, onClose, onSaveTask, onDeleteTask, onUpdateSubtask }) {
   const [f, setF] = useState({
     name: qual.name || '', supplier: qual.supplier || '', material: qual.material || '', site: qual.site || '',
     status: qual.status || 'not_started', priority: qual.priority || '', color: qual.color || '',
-    owners: Array.isArray(qual.owners) ? qual.owners : ['Levi'], due: qual.due || '',
+    owners: Array.isArray(qual.owners) ? qual.owners : ['Levi'], due: qual.due || '', start_date: qual.start_date || '',
     template_id: qual.template_id || '',
     notes: Array.isArray(qual.notes) ? qual.notes : [],
     attachments: Array.isArray(qual.attachments) ? qual.attachments : [],
@@ -4843,8 +5201,11 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
   const toggleExpand = id => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const linkedTasks = isEdit ? tasks.filter(t => t.qualification_id === qual.id).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)) : []
-  const taskDomains = [...new Set([...(domains||[]), 'Supplier Quality'])]
-  const openAddStage = () => { setTaskForm({ title:'', status:'active', substatus:'not_started', domain:'Supplier Quality', owners:f.owners, qualification_id:qual.id, notes:[], subtasks:[], attachments:[], project_id:null, escalation_id:null }); setIsEditTask(false) }
+  const taskDomains = [...new Set([...(domains||[]), 'Supplier Qualification'])]
+  // Live schedule + cross-track subtask list for the dependency picker (recomputed as durations/deps/start change)
+  const sched = computeSchedule({ start_date: f.start_date }, linkedTasks, today())
+  const allSubs = linkedTasks.flatMap(t => (Array.isArray(t.subtasks) ? t.subtasks : []).map(s => ({ id: s.id, title: s.title, taskId: t.id, trackShort: (t.title || '').split(' ')[0] })))
+  const openAddStage = () => { setTaskForm({ title:'', status:'active', substatus:'not_started', domain:'Supplier Qualification', owners:f.owners, qualification_id:qual.id, notes:[], subtasks:[], attachments:[], project_id:null, escalation_id:null }); setIsEditTask(false) }
   const openEditStage = t => { setTaskForm({...t}); setIsEditTask(true) }
 
   return (
@@ -4873,6 +5234,11 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
               </select></div>
             <div><label style={FIELD_LABEL}>Due date</label>
               <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
+          </div>
+
+          <div style={{ marginBottom:12, maxWidth:200 }}>
+            <label style={FIELD_LABEL}>Start date · schedule anchor</label>
+            <DatePickerISO value={f.start_date} onChange={v => set('start_date', v)} />
           </div>
 
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12, alignItems:'end' }}>
@@ -4950,12 +5316,10 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
                       <button onClick={() => openEditStage(t)} style={{ fontSize:12, color:'#ccc', flexShrink:0, background:'none', border:'none', cursor:'pointer', padding:0 }}>›</button>
                     </div>
                     {open && subs.length > 0 && (
-                      <div style={{ padding:'0 10px 8px 30px' }}>
+                      <div style={{ padding:'0 10px 8px 20px' }}>
                         {subs.map(st => (
-                          <div key={st.id} onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
-                            <input type="checkbox" checked={!!st.done} disabled={!!st.na} onChange={e => onToggleSubtask(t.id, st.id, e.target.checked)} style={{ width:12, height:12, cursor:st.na?'default':'pointer' }} />
-                            <span style={{ fontSize:11, color:(st.done||st.na)?'#aaa':'#444', textDecoration:(st.done||st.na)?'line-through':'none' }}>{st.title}{st.na&&<span style={{ fontSize:9, marginLeft:4, color:'#bbb' }}>N/A</span>}</span>
-                          </div>
+                          <QualSubtaskRow key={st.id} st={st} allSubs={allSubs} sched={sched[st.id]}
+                            onUpdate={patch => onUpdateSubtask(t.id, st.id, patch)} />
                         ))}
                       </div>
                     )}
@@ -4986,7 +5350,7 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
 }
 
 // ─── Qualifications Tab ───────────────────────────────────────────────────────
-function QualificationsTab({ qualifications, tasks, templates, domains, members, isMobile, onAdd, onSave, onDelete, onMove, onSaveTask, onDeleteTask, onToggleSubtask }) {
+function QualificationsTab({ qualifications, tasks, templates, domains, members, isMobile, onAdd, onSave, onDelete, onMove, onSaveTask, onDeleteTask, onUpdateSubtask }) {
   const [form, setForm] = useState(null) // { qual, isEdit } | null
   const [draggingId, setDraggingId] = useState(null)
   const [overCol, setOverCol] = useState(null)
@@ -5041,7 +5405,7 @@ function QualificationsTab({ qualifications, tasks, templates, domains, members,
         <QualificationForm qual={form.qual} isEdit={form.isEdit} templates={templates} domains={domains} members={members} tasks={tasks}
           onSave={(data, id) => id ? onSave(data, id) : onAdd(data)}
           onDelete={onDelete} onClose={() => setForm(null)}
-          onSaveTask={onSaveTask} onDeleteTask={onDeleteTask} onToggleSubtask={onToggleSubtask} />
+          onSaveTask={onSaveTask} onDeleteTask={onDeleteTask} onUpdateSubtask={onUpdateSubtask} />
       )}
     </div>
   )
@@ -5087,6 +5451,7 @@ export default function App() {
   const switchTab = t => { setTab(t); localStorage.setItem('taskr-tab', t) }
   const [activeEscalation, setActiveEscalation] = useState(null)
   const [activePopup, setActivePopup] = useState(null) // { entity, type: 'project' | 'escalation' }
+  const [activeQualification, setActiveQualification] = useState(null) // qualification opened from the task board
   const [form, setForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
   const [draggingId, setDraggingId] = useState(null)
@@ -5168,36 +5533,39 @@ export default function App() {
     return () => supabase.removeChannel(ch)
   }, [loadData])
 
+  const calInitRef = useRef(false)
   const initCalendars = useCallback(async () => {
+    if (calInitRef.current) return // guard against the init effect firing twice (e.g. StrictMode) → duplicate calendars
+    calInitRef.current = true
     const { data: existing, error } = await supabase.from('calendars').select('id,type')
-    if (error) return
-    const hasDefault = existing?.some(c => c.type === 'default')
-    const hasHolidays = existing?.some(c => c.type === 'holidays')
+    if (error) { calInitRef.current = false; return }
     const inserts = []
-    if (!hasDefault) inserts.push({ name: 'My Events', color: '#4f46e5', visible: true, type: 'default', sort_order: 0 })
-    if (!hasHolidays) inserts.push({ name: 'US Holidays', color: '#16a34a', visible: true, type: 'holidays', sort_order: 1 })
-    let holidayCalId = existing?.find(c => c.type === 'holidays')?.id
+    if (!existing?.some(c => c.type === 'default')) inserts.push({ name: 'My Events', color: '#4f46e5', visible: true, type: 'default', sort_order: 0 })
+    HOLIDAY_CALS.forEach((h, i) => {
+      if (!existing?.some(c => c.type === h.type)) inserts.push({ name: h.name, color: h.color, visible: true, type: h.type, sort_order: i + 1 })
+    })
+    let all = existing || []
     if (inserts.length > 0) {
       const { data: created } = await supabase.from('calendars').insert(inserts).select()
-      const newHolidayCal = created?.find(c => c.type === 'holidays')
-      if (newHolidayCal) holidayCalId = newHolidayCal.id
+      all = [...all, ...(created || [])]
       await loadData(true)
     }
-    if (holidayCalId) {
-      const thisYear = new Date().getFullYear()
+    const thisYear = new Date().getFullYear()
+    let seeded = false
+    for (const h of HOLIDAY_CALS) {
+      const cal = all.find(c => c.type === h.type)
+      if (!cal) continue
       const { data: existingHols } = await supabase.from('calendar_events')
-        .select('start_date').eq('calendar_id', holidayCalId)
+        .select('start_date').eq('calendar_id', cal.id)
         .gte('start_date', `${thisYear}-01-01`).lte('start_date', `${thisYear + 1}-12-31`)
-      const existingDates = new Set((existingHols || []).map(h => h.start_date))
+      const existingDates = new Set((existingHols || []).map(x => x.start_date))
       const toAdd = [
-        ...generateUSHolidays(thisYear, holidayCalId),
-        ...generateUSHolidays(thisYear + 1, holidayCalId),
-      ].filter(h => !existingDates.has(h.start_date))
-      if (toAdd.length > 0) {
-        await supabase.from('calendar_events').insert(toAdd)
-        await loadData(true)
-      }
+        ...generateHolidays(h.defs, thisYear, cal.id),
+        ...generateHolidays(h.defs, thisYear + 1, cal.id),
+      ].filter(e => !existingDates.has(e.start_date))
+      if (toAdd.length > 0) { await supabase.from('calendar_events').insert(toAdd); seeded = true }
     }
+    if (seeded) await loadData(true)
   }, [loadData])
 
   useEffect(() => { if (session) initCalendars() }, [session, initCalendars])
@@ -5218,6 +5586,8 @@ export default function App() {
     if (data.project_id !== undefined) payload.project_id = data.project_id || null
     if (data.escalation_id !== undefined) payload.escalation_id = data.escalation_id || null
     if (data.qualification_id !== undefined) payload.qualification_id = data.qualification_id || null
+    // A task under a project/bundle that has a domain inherits it (domain is locked on the task)
+    if (payload.project_id) { const proj = projects.find(p => p.id === payload.project_id); if (proj?.domain) payload.domain = proj.domain }
     return payload
   }
 
@@ -5277,7 +5647,10 @@ export default function App() {
     const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[], attachments:data.attachments||[] }
     let { error } = await supabase.from('projects').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) await supabase.from('projects').update(payload).eq('id', id) // fallback if updated_at column not yet added
-    await supabase.from('tasks').update({ color: data.color||'' }).eq('project_id', id)
+    // Propagate color to tasks, and — when the project has a domain — force all its tasks to that domain
+    const taskPatch = { color: data.color||'' }
+    if (data.domain) taskPatch.domain = data.domain
+    await supabase.from('tasks').update(taskPatch).eq('project_id', id)
     await loadData(true)
   }
 
@@ -5296,13 +5669,13 @@ export default function App() {
       name: data.name, supplier: data.supplier||'', material: data.material||'', site: data.site||'',
       status: data.status||'not_started', priority: data.priority||'', color: data.color||'',
       owners, due: data.due||'', notes: [], attachments: [],
-      template_id: data.template_id||null, sort_order: maxOrder+1,
+      template_id: data.template_id||null, start_date: data.start_date||null, sort_order: maxOrder+1,
     }
     const { data: qual, error } = await supabase.from('qualifications').insert(payload).select().single()
     if (error || !qual) { console.error('[TASKr] addQualification error', error); alert(`Could not save qualification: ${error?.message || 'unknown error'}`); return }
     if (tpl?.tasks?.length) {
       const inserts = tpl.tasks.map((t, i) => ({
-        title: t.title, status: 'active', substatus: 'not_started', domain: 'Supplier Quality',
+        title: t.title, status: 'active', substatus: 'not_started', domain: 'Supplier Qualification',
         qualification_id: qual.id, notes: [], attachments: [], owners,
         subtasks: (t.subtasks || []).map((s, j) => ({ id:`st${i}${j}`, title:s, done:false })),
         color: data.color||'', sort_order: i + 1, updated_at: new Date().toISOString(),
@@ -5314,7 +5687,7 @@ export default function App() {
   }
 
   const saveQualification = async (data, id) => {
-    const payload = { name:data.name, supplier:data.supplier||'', material:data.material||'', site:data.site||'', status:data.status||'not_started', priority:data.priority||'', color:data.color||'', owners:data.owners||['Levi'], due:data.due||'', notes:data.notes||[], attachments:data.attachments||[] }
+    const payload = { name:data.name, supplier:data.supplier||'', material:data.material||'', site:data.site||'', status:data.status||'not_started', priority:data.priority||'', color:data.color||'', owners:data.owners||['Levi'], due:data.due||'', start_date:data.start_date||null, notes:data.notes||[], attachments:data.attachments||[] }
     const { error } = await supabase.from('qualifications').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) { console.error('[TASKr] saveQualification error', error); alert(`Could not save qualification: ${error.message}`); return }
     await supabase.from('tasks').update({ color: data.color||'' }).eq('qualification_id', id)
@@ -5392,10 +5765,12 @@ export default function App() {
     await loadData(true)
   }
 
-  const saveNoteGroup = async name => {
+  const saveNoteGroup = async (name, parentId = null) => {
     const maxOrder = noteGroups.length ? Math.max(...noteGroups.map(g => g.sort_order||0)) : 0
-    const { data: grp, error } = await supabase.from('note_groups').insert({ name, sort_order: maxOrder+1 }).select().single()
-    if (error) { console.error('[TASKr] saveNoteGroup error', error); return null }
+    const payload = { name, sort_order: maxOrder+1 }
+    if (parentId) payload.parent_id = parentId // omitted for top-level groups so it works pre-migration
+    const { data: grp, error } = await supabase.from('note_groups').insert(payload).select().single()
+    if (error) { console.error('[TASKr] saveNoteGroup error', error); alert(`Could not create ${parentId ? 'subgroup' : 'group'}: ${error.message}`); return null }
     await loadData(true)
     return grp?.id
   }
@@ -5406,19 +5781,40 @@ export default function App() {
   }
 
   const deleteNoteGroup = async (id, deleteNotes) => {
+    // Include the group and any of its subgroups so nothing is orphaned
+    const allIds = [id, ...noteGroups.filter(g => g.parent_id === id).map(g => g.id)]
     if (deleteNotes) {
-      await supabase.from('notes').delete().eq('group_id', id)
+      await supabase.from('notes').delete().in('group_id', allIds)
     } else {
-      await supabase.from('notes').update({ group_id: null }).eq('group_id', id)
+      await supabase.from('notes').update({ group_id: null }).in('group_id', allIds)
     }
-    await supabase.from('note_groups').delete().eq('id', id)
+    await supabase.from('note_groups').delete().in('id', allIds)
     await loadData(true)
   }
 
+  // Reassign a note's group (used by drag-and-drop on the Notes page). groupId may be null (Ungrouped).
+  const moveNote = async (id, groupId) => {
+    setNotes(prev => prev.map(n => n.id === id ? { ...n, group_id: groupId ?? null } : n)) // optimistic
+    const { error } = await supabase.from('notes').update({ group_id: groupId ?? null }).eq('id', id)
+    if (error) { console.error('[TASKr] moveNote error', error); loadData(true) }
+  }
+
   const addFollowUp = async (text, person) => {
-    const { error } = await supabase.from('follow_ups').insert({ text, person, done: false })
+    const maxOrder = followUps.length ? Math.max(...followUps.map(f => f.sort_order||0)) : 0
+    let { error } = await supabase.from('follow_ups').insert({ text, person, done: false, sort_order: maxOrder+1 })
+    if (error) { const r = await supabase.from('follow_ups').insert({ text, person, done: false }); error = r.error } // fallback pre-migration
     if (error) { console.error('[TASKr] addFollowUp error', error); return }
     await loadData(true)
+  }
+  // Persist a reordered set of follow-up items (per-person ordering; sort_order is index-based)
+  const reorderFollowUps = async updates => {
+    setFollowUps(prev => prev.map(f => { const u = updates.find(x => x.id === f.id); return u ? { ...f, sort_order: u.sort_order } : f })) // optimistic
+    await Promise.all(updates.map(u => supabase.from('follow_ups').update({ sort_order: u.sort_order }).eq('id', u.id)))
+  }
+  // Persist reordered task sort_orders (used by follow-up assigned-task up/down)
+  const reorderTaskOrders = async updates => {
+    setTasks(prev => prev.map(t => { const u = updates.find(x => x.id === t.id); return u ? { ...t, sort_order: u.sort_order } : t })) // optimistic
+    await Promise.all(updates.map(u => supabase.from('tasks').update({ sort_order: u.sort_order }).eq('id', u.id)))
   }
   const toggleFollowUp = async (id, done) => {
     const { error } = await supabase.from('follow_ups').update({ done }).eq('id', id)
@@ -5459,8 +5855,13 @@ export default function App() {
   const updateTasksFields = async (ids, patch) => {
     if (!ids?.length || !patch) return
     const updated_at = new Date().toISOString()
-    setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, ...patch, updated_at } : t)) // optimistic
-    await Promise.all(ids.map(id => supabase.from('tasks').update({ ...patch, updated_at }).eq('id', id)))
+    // Domain is locked for tasks under a domained project/bundle — keep the project's domain on a domain patch
+    const effPatch = t => {
+      if ('domain' in patch && t?.project_id) { const d = projects.find(p => p.id === t.project_id)?.domain; if (d) return { ...patch, domain: d } }
+      return patch
+    }
+    setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, ...effPatch(t), updated_at } : t)) // optimistic
+    await Promise.all(ids.map(id => { const t = tasks.find(x => x.id === id); return supabase.from('tasks').update({ ...effPatch(t), updated_at }).eq('id', id) }))
   }
 
 
@@ -5476,6 +5877,16 @@ export default function App() {
     const subtasks = (task.subtasks||[]).map(s => s.id===subtaskId?{...s,done}:s)
     const updated_at = new Date().toISOString()
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, subtasks, updated_at } : t)) // optimistic — no full reload
+    await supabase.from('tasks').update({ subtasks, updated_at }).eq('id', taskId)
+  }
+
+  // Patch a single subtask's fields (duration, na, depends_on, done, completed_date) in the task's subtasks jsonb
+  const updateSubtask = async (taskId, subtaskId, patch) => {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    const subtasks = (task.subtasks||[]).map(s => s.id===subtaskId ? { ...s, ...patch } : s)
+    const updated_at = new Date().toISOString()
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, subtasks, updated_at } : t)) // optimistic
     await supabase.from('tasks').update({ subtasks, updated_at }).eq('id', taskId)
   }
 
@@ -5602,6 +6013,7 @@ export default function App() {
   const entityMap = Object.fromEntries([
     ...projects.map(p => [p.id, { name: p.title, type: 'project', color: p.color, notes: p.notes }]),
     ...escalations.map(e => [e.id, { name: e.title, type: 'escalation', color: e.color, notes: e.notes }]),
+    ...qualifications.map(q => [q.id, { name: q.name, type: 'qualification', color: q.color, notes: q.notes }]),
   ])
 
   const searchQ = taskSearch.trim().toLowerCase()
@@ -5702,6 +6114,7 @@ export default function App() {
           onAddTask={prefill => { setForm({ status:'active', substatus:'not_started', ...prefill }); setIsEdit(false) }}
           onOpenEscalation={e => setActivePopup({ entity:e, type:'escalation' })}
           onOpenProject={id => { const p = projects.find(x => x.id === id); if (p) setActivePopup({ entity:p, type:'project' }) }}
+          onOpenQualification={id => { const q = qualifications.find(x => x.id === id); if (q) setActiveQualification(q) }}
           onAddEscalation={addEscalation} onOpenClassic={() => switchTab('tasks')}
           onAddDomain={addDomain} onUpdateDomainMeta={updateDomainMeta} />
       )}
@@ -6105,18 +6518,19 @@ export default function App() {
           onMove={moveQualification}
           onSaveTask={saveTaskSilent}
           onDeleteTask={deleteTaskSilent}
-          onToggleSubtask={toggleSubtask}
+          onUpdateSubtask={updateSubtask}
         />
       )}
 
       {/* ── Notes ── */}
       {tab === 'notes' && (
-        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} members={memberNames} />
+        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} onMoveNote={moveNote} members={memberNames} />
       )}
 
       {/* ── Follow Ups ── */}
       {tab === 'followups' && (
         <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={followUpPeople} tasks={tasks} entityMap={entityMap}
+          onReorderFollowUps={reorderFollowUps} onReorderTasks={reorderTaskOrders}
           onOpenTask={t => { setForm({...t}); setIsEdit(true) }}
           onCreateTask={item => { setForm({ title:item.text, status:'active', owners:[item.person], substatus:'not_started' }); setIsEdit(false) }} />
       )}
@@ -6134,7 +6548,8 @@ export default function App() {
 
       {/* Task form modal */}
       {form !== null && (
-        <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} escalations={escalations} members={memberNames} defaultOwner={currentUserName} />
+        <TaskForm task={form} isEdit={isEdit} onSave={saveTask} onDelete={deleteTask} onClose={() => setForm(null)} domains={domains} projects={projects} escalations={escalations} members={memberNames} defaultOwner={currentUserName}
+          lockedDomain={(projects.find(p => p.id === form?.project_id)?.domain) || null} />
       )}
 
       {/* Project / Escalation detail popup */}
@@ -6150,6 +6565,24 @@ export default function App() {
           onSaveTask={saveTaskSilent}
           onDeleteTask={deleteTaskSilent}
           members={memberNames}
+        />
+      )}
+
+      {/* Qualification detail — opened by double-clicking a qualification container on the task board */}
+      {activeQualification && (
+        <QualificationForm
+          qual={activeQualification}
+          isEdit
+          templates={qualificationTemplates}
+          domains={domains}
+          members={memberNames}
+          tasks={tasks}
+          onSave={(data, id) => saveQualification(data, id)}
+          onDelete={deleteQualification}
+          onClose={() => setActiveQualification(null)}
+          onSaveTask={saveTaskSilent}
+          onDeleteTask={deleteTaskSilent}
+          onUpdateSubtask={updateSubtask}
         />
       )}
     </div>
@@ -6507,8 +6940,10 @@ function CalendarSettings({ calendars, onUpdate }) {
   const [addingHoliday, setAddingHoliday] = useState(false)
   const [newHolidayName, setNewHolidayName] = useState('')
   const [newHolidayDate, setNewHolidayDate] = useState('')
+  const [holidayCalId, setHolidayCalId] = useState(null)
 
-  const holidayCal = calendars.find(c => c.type === 'holidays')
+  const holidayCals = calendars.filter(c => isHolidayCalType(c.type))
+  const holidayCal = holidayCals.find(c => c.id === holidayCalId) || holidayCals[0]
 
   useEffect(() => {
     if (!holidayCal) return
@@ -6563,7 +6998,7 @@ function CalendarSettings({ calendars, onUpdate }) {
   const seedHolidayYear = async (year) => {
     if (!holidayCal) return
     const existing = holidayEvents.map(h => h.start_date)
-    const toAdd = generateUSHolidays(year, holidayCal.id).filter(h => !existing.includes(h.start_date))
+    const toAdd = generateHolidays(defsForCalType(holidayCal.type), year, holidayCal.id).filter(h => !existing.includes(h.start_date))
     if (toAdd.length === 0) return
     await supabase.from('calendar_events').insert(toAdd)
     const { data } = await supabase.from('calendar_events').select('*').eq('calendar_id', holidayCal.id).gte('start_date', `${year}-01-01`).lte('start_date', `${year}-12-31`).order('start_date')
@@ -6593,7 +7028,7 @@ function CalendarSettings({ calendars, onUpdate }) {
               <>
                 <span style={{ flex:1, fontSize:13, color:'#111' }}>{cal.name}</span>
                 {cal.type === 'default' && <span style={{ fontSize:10, color:'#aaa', background:'#f0f0f0', borderRadius:10, padding:'1px 6px' }}>default</span>}
-                {cal.type === 'holidays' && <span style={{ fontSize:10, color:'#aaa', background:'#f0f0f0', borderRadius:10, padding:'1px 6px' }}>system</span>}
+                {isHolidayCalType(cal.type) && <span style={{ fontSize:10, color:'#aaa', background:'#f0f0f0', borderRadius:10, padding:'1px 6px' }}>system</span>}
                 <button onClick={() => toggleVisible(cal)} style={{ fontSize:11, color: cal.visible ? '#4f46e5' : '#bbb', background:'none', border:`0.5px solid ${cal.visible?'#c4b5fd':'#e0e0e0'}`, borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>{cal.visible ? 'Visible' : 'Hidden'}</button>
                 {cal.type === 'user' && (
                   <>
@@ -6622,11 +7057,22 @@ function CalendarSettings({ calendars, onUpdate }) {
         <button onClick={() => setAdding(true)} style={{ fontSize:12, background:'none', border:'0.5px dashed #ccc', borderRadius:8, padding:'6px 14px', cursor:'pointer', color:'#888', marginBottom:24 }}>+ Add calendar</button>
       )}
 
-      {/* US Holidays editor */}
+      {/* Holidays editor (per country/region) */}
       {holidayCal && (
         <div>
+          <div style={{ fontSize:13, fontWeight:600, color:'#111', marginBottom:8 }}>Holidays</div>
+          <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginBottom:10 }}>
+            {holidayCals.map(c => {
+              const sel = holidayCal?.id === c.id
+              return (
+                <button key={c.id} onClick={() => setHolidayCalId(c.id)}
+                  style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, padding:'3px 10px', borderRadius:20, cursor:'pointer', border:`0.5px solid ${sel ? c.color : '#e0e0e0'}`, background: sel ? c.color+'18' : 'white', color: sel ? c.color : '#888', fontWeight: sel ? 600 : 400 }}>
+                  <span style={{ width:8, height:8, borderRadius:'50%', background:c.color, flexShrink:0 }} />{c.name}
+                </button>
+              )
+            })}
+          </div>
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-            <span style={{ fontSize:13, fontWeight:600, color:'#111' }}>US Holidays</span>
             <button onClick={() => setHolidayYear(y => y - 1)} style={{ background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, width:24, height:24, cursor:'pointer', fontSize:13, color:'#555' }}>‹</button>
             <span style={{ fontSize:13, color:'#555', minWidth:36, textAlign:'center' }}>{holidayYear}</span>
             <button onClick={() => setHolidayYear(y => y + 1)} style={{ background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, width:24, height:24, cursor:'pointer', fontSize:13, color:'#555' }}>›</button>
