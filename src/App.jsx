@@ -5350,11 +5350,165 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
 }
 
 // ─── Qualifications Tab ───────────────────────────────────────────────────────
-function QualificationsTab({ qualifications, tasks, templates, domains, members, isMobile, onAdd, onSave, onDelete, onMove, onSaveTask, onDeleteTask, onUpdateSubtask }) {
+// ─── Qualification Gantt ──────────────────────────────────────────────────────
+function QualificationGantt({ qual, tasks, onUpdateSubtask, onUpdateQual, isMobile }) {
+  const [selected, setSelected] = useState(null) // { taskId, subId }
+  const linkedTasks = tasks.filter(t => t.qualification_id === qual.id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+  const todayISO = today()
+  const sched = computeSchedule({ start_date: qual.start_date }, linkedTasks, todayISO)
+  const allSubs = linkedTasks.flatMap(t => (Array.isArray(t.subtasks) ? t.subtasks : []).map(s => ({ id: s.id, title: s.title, taskId: t.id, trackShort: (t.title || '').split(' ')[0] })))
+
+  const TRACK_COLORS = ['#4f46e5', '#0891b2', '#db2777']
+  const DONE_C = '#2f9e44', OVERDUE_C = '#f59e0b'
+  const DAY_W = 5, ROW_H = 30, TH_H = 28, BAR_H = 15, HEADER_H = 34, LEFT_W = isMobile ? 128 : 210, MIN_BAR = 4
+  const fmtGD = iso => iso ? fromISODate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
+
+  // Flat row list: track header + its subtasks, in track order
+  const rows = []
+  linkedTasks.forEach((t, ti) => {
+    const color = TRACK_COLORS[ti % TRACK_COLORS.length]
+    rows.push({ type: 'track', title: t.title, color })
+    ;(Array.isArray(t.subtasks) ? t.subtasks : []).forEach(st => rows.push({ type: 'sub', st, taskId: t.id, color, sched: sched[st.id] }))
+  })
+  if (rows.length === 0) return <div style={{ padding:'40px 0', textAlign:'center', color:'#bbb', fontSize:13 }}>No stages to chart — add stages to this qualification first.</div>
+
+  const tops = []; let acc = 0
+  rows.forEach(r => { tops.push(acc); acc += (r.type === 'track' ? TH_H : ROW_H) })
+  const bodyH = acc
+
+  // Time range → whole months
+  const allISO = [qual.start_date || todayISO, todayISO]
+  rows.forEach(r => { if (r.type === 'sub' && r.sched) { allISO.push(r.sched.plannedStart, r.sched.plannedEnd); if (r.sched.actualEnd) allISO.push(r.sched.actualEnd) } })
+  const valid = allISO.filter(Boolean).sort()
+  const rangeStartD = (d => new Date(d.getFullYear(), d.getMonth(), 1))(fromISODate(valid[0]))
+  const rangeEndD = (d => new Date(d.getFullYear(), d.getMonth() + 1, 0))(fromISODate(valid[valid.length - 1]))
+  const daysBetween = (a, b) => Math.round((b - a) / 86400000)
+  const timelineW = (daysBetween(rangeStartD, rangeEndD) + 1) * DAY_W
+  const xOf = iso => daysBetween(rangeStartD, fromISODate(iso)) * DAY_W
+
+  const months = []
+  for (let m = new Date(rangeStartD); m <= rangeEndD; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
+    const first = new Date(m.getFullYear(), m.getMonth(), 1), last = new Date(m.getFullYear(), m.getMonth() + 1, 0)
+    const cl = last > rangeEndD ? rangeEndD : last
+    months.push({ label: `${MONTH_NAMES[m.getMonth()].slice(0, 3)} '${String(m.getFullYear()).slice(-2)}`, x: daysBetween(rangeStartD, first) * DAY_W, w: (daysBetween(first, cl) + 1) * DAY_W })
+  }
+  const weekLines = []
+  for (const d = new Date(rangeStartD); d <= rangeEndD; d.setDate(d.getDate() + 1)) if (d.getDay() === 1) weekLines.push(daysBetween(rangeStartD, new Date(d)) * DAY_W)
+  const todayX = xOf(todayISO)
+
+  // Bar geometry per subtask (for bars + dependency connectors)
+  const subBiz = (d, n) => { const x = new Date(d); let c = 0; while (c < n) { x.setDate(x.getDate() - 1); if (isWeekday(x)) c++ } return x }
+  const geo = {}
+  rows.forEach((r, i) => {
+    if (r.type !== 'sub' || !r.sched) return
+    const s = r.sched, na = !!r.st.na, done = r.st.done && s.actualEnd
+    let startISO, endISO
+    if (na) { startISO = s.plannedStart; endISO = s.plannedStart }
+    else if (done) { endISO = s.actualEnd; startISO = toISODate(subBiz(fromISODate(s.actualEnd), Number(r.st.duration) || 0)) } // green bar of its duration, ending at completion
+    else { startISO = s.plannedStart; endISO = s.plannedEnd }
+    let l = xOf(startISO), rr = xOf(endISO)
+    if (rr < l) { const t = l; l = rr; rr = t }
+    const w = na ? 0 : Math.max(MIN_BAR, rr - l)
+    const overdue = !done && !na && s.plannedEnd <= todayISO
+    geo[r.st.id] = { l, r: l + w, w, na, done, overdue, color: done ? DONE_C : (overdue ? OVERDUE_C : r.color), y: tops[i] + ROW_H / 2 }
+  })
+  const depLines = []
+  rows.forEach(r => {
+    if (r.type !== 'sub') return
+    const g = geo[r.st.id]; if (!g) return
+    ;(r.st.depends_on || []).forEach(pid => {
+      const pg = geo[pid]; if (!pg) return
+      const x1 = pg.r, y1 = pg.y, x2 = g.l, y2 = g.y, dx = Math.max(10, Math.min(36, Math.abs(x2 - x1) / 2))
+      depLines.push(`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`)
+    })
+  })
+
+  const selSub = selected ? (linkedTasks.find(t => t.id === selected.taskId)?.subtasks || []).find(s => s.id === selected.subId) : null
+  const legend = (c, l) => <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }}><span style={{ width:11, height:8, borderRadius:2, background:c, flexShrink:0 }} />{l}</span>
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap', marginBottom:10 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <span style={{ fontSize:10, fontWeight:600, color:'#a99fc0', textTransform:'uppercase', letterSpacing:'0.06em' }}>Start</span>
+          <div style={{ width:150 }}><DatePickerISO value={qual.start_date || ''} onChange={v => onUpdateQual(qual.id, { start_date: v || null })} /></div>
+        </div>
+        <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+          {legend(TRACK_COLORS[0], 'On track')}{legend(DONE_C, 'Done')}{legend(OVERDUE_C, 'Overdue')}
+          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }}><span style={{ width:2, height:11, background:'#E24B4A' }} />Today</span>
+        </div>
+      </div>
+
+      {selSub && (
+        <div style={{ border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 10px', marginBottom:10, background:'#faf9ff' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
+            <span style={{ fontSize:11, color:'#7c3aed', fontWeight:600 }}>{(linkedTasks.find(t => t.id === selected.taskId)?.title || '').split(' ')[0]} · {selSub.title}</span>
+            <button onClick={() => setSelected(null)} style={{ background:'none', border:'none', cursor:'pointer', color:'#aaa', fontSize:14, lineHeight:1, padding:0 }}>✕</button>
+          </div>
+          <QualSubtaskRow st={selSub} allSubs={allSubs} sched={sched[selSub.id]} onUpdate={patch => onUpdateSubtask(selected.taskId, selected.subId, patch)} />
+        </div>
+      )}
+
+      <div style={{ overflowX:'auto', border:'0.5px solid #e5e5e5', borderRadius:10, WebkitOverflowScrolling:'touch' }}>
+        <div style={{ display:'flex', minWidth: LEFT_W + timelineW }}>
+          {/* Left label column (sticky) */}
+          <div style={{ position:'sticky', left:0, zIndex:4, width:LEFT_W, flexShrink:0, background:'white', borderRight:'0.5px solid #e5e5e5' }}>
+            <div style={{ height:HEADER_H, borderBottom:'0.5px solid #e5e5e5' }} />
+            {rows.map((r, i) => r.type === 'track' ? (
+              <div key={i} style={{ height:TH_H, display:'flex', alignItems:'center', gap:6, padding:'0 10px', background:'#faf9f7', borderBottom:'0.5px solid #f0f0f0', boxSizing:'border-box' }}>
+                <span style={{ width:8, height:8, borderRadius:2, background:r.color, flexShrink:0 }} />
+                <span style={{ fontSize:10, fontWeight:600, color:'#555', textTransform:'uppercase', letterSpacing:'0.04em', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
+              </div>
+            ) : (
+              <div key={i} onClick={() => setSelected({ taskId:r.taskId, subId:r.st.id })}
+                style={{ height:ROW_H, display:'flex', flexDirection:'column', justifyContent:'center', padding:'0 8px 0 20px', borderBottom:'0.5px solid #f7f7f5', cursor:'pointer', boxSizing:'border-box', opacity: r.st.na ? 0.5 : 1, background: selected?.subId === r.st.id ? '#f5f3ff' : 'white' }}
+                onMouseEnter={e => { if (selected?.subId !== r.st.id) e.currentTarget.style.background = '#fafafa' }}
+                onMouseLeave={e => { if (selected?.subId !== r.st.id) e.currentTarget.style.background = 'white' }}>
+                <span style={{ fontSize:11, color:'#333', textDecoration: r.st.na ? 'line-through' : 'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.st.title}</span>
+                {r.sched && <span style={{ fontSize:9, color:'#aaa', whiteSpace:'nowrap' }}>{r.sched.actualEnd ? `✓ ${fmtGD(r.sched.actualEnd)}` : `${fmtGD(r.sched.plannedStart)} → ${fmtGD(r.sched.plannedEnd)}`}</span>}
+              </div>
+            ))}
+          </div>
+          {/* Timeline */}
+          <div style={{ width:timelineW, flexShrink:0 }}>
+            <div style={{ height:HEADER_H, position:'relative', borderBottom:'0.5px solid #e5e5e5' }}>
+              {months.map((mo, mi) => (
+                <div key={mi} style={{ position:'absolute', left:mo.x, top:0, width:mo.w, height:'100%', borderLeft:'0.5px solid #e5e5e5', boxSizing:'border-box', display:'flex', alignItems:'center', paddingLeft:6 }}>
+                  <span style={{ fontSize:10, color:'#888', fontWeight:500, whiteSpace:'nowrap' }}>{mo.label}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ position:'relative', height:bodyH }}>
+              {weekLines.map((x, wi) => <div key={'w'+wi} style={{ position:'absolute', left:x, top:0, width:1, height:bodyH, background:'#f5f5f5' }} />)}
+              {months.map((mo, mi) => <div key={'m'+mi} style={{ position:'absolute', left:mo.x, top:0, width:1, height:bodyH, background:'#ececec' }} />)}
+              {rows.map((r, i) => r.type === 'track' ? <div key={'tb'+i} style={{ position:'absolute', left:0, top:tops[i], width:timelineW, height:TH_H, background:'#faf9f7', borderBottom:'0.5px solid #f0f0f0' }} /> : null)}
+              {todayX >= 0 && todayX <= timelineW && <div style={{ position:'absolute', left:todayX, top:0, width:1.5, height:bodyH, background:'#E24B4A', zIndex:2 }} />}
+              <svg width={timelineW} height={bodyH} style={{ position:'absolute', left:0, top:0, pointerEvents:'none', zIndex:1 }}>
+                {depLines.map((d, di) => <path key={di} d={d} stroke="#b7a6e8" strokeWidth="1" fill="none" opacity="0.55" />)}
+              </svg>
+              {rows.map((r, i) => {
+                if (r.type !== 'sub') return null
+                const g = geo[r.st.id]; if (!g) return null
+                if (g.na) return <div key={'na'+i} title="N/A" style={{ position:'absolute', left:g.l - 3, top:tops[i] + ROW_H/2 - 1, width:6, height:2, background:'#ccc', zIndex:3 }} />
+                return <div key={'b'+i} onClick={() => setSelected({ taskId:r.taskId, subId:r.st.id })} title={`${r.st.title}  ·  ${r.sched ? (r.sched.actualEnd ? 'done '+fmtGD(r.sched.actualEnd) : fmtGD(r.sched.plannedStart)+' → '+fmtGD(r.sched.plannedEnd)) : ''}`}
+                  style={{ position:'absolute', left:g.l, top:tops[i] + (ROW_H - BAR_H)/2, width:g.w, height:BAR_H, background:g.color, borderRadius:4, cursor:'pointer', zIndex:3, boxShadow:'0 1px 2px rgba(0,0,0,0.12)', outline: selected?.subId === r.st.id ? '2px solid #7c3aed' : 'none', outlineOffset:1 }} />
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function QualificationsTab({ qualifications, tasks, templates, domains, members, isMobile, onAdd, onSave, onDelete, onMove, onSaveTask, onDeleteTask, onUpdateSubtask, onUpdateQual }) {
   const [form, setForm] = useState(null) // { qual, isEdit } | null
   const [draggingId, setDraggingId] = useState(null)
   const [overCol, setOverCol] = useState(null)
   const [search, setSearch] = useState('')
+  const [view, setView] = useState('kanban') // 'kanban' | 'gantt'
+  const [ganttQualId, setGanttQualId] = useState(null)
+  const ganttQual = qualifications.find(ql => ql.id === ganttQualId) || qualifications[0]
 
   const q = search.trim().toLowerCase()
   const match = ql => !q || [ql.name, ql.supplier, ql.material, ql.site].some(v => (v||'').toLowerCase().includes(q))
@@ -5367,16 +5521,32 @@ function QualificationsTab({ qualifications, tasks, templates, domains, members,
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-        <div style={{ position:'relative', display:'flex', alignItems:'center', ...(isMobile ? { flex:'1 1 100%' } : {}) }}>
-          <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search qualifications…"
-            style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:28, outline:'none', width:isMobile?'100%':200, color:'#333', boxSizing:'border-box' }} />
+        <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
+          {[{ k:'kanban', l:'Kanban' }, { k:'gantt', l:'Gantt' }].map(v => (
+            <button key={v.k} onClick={() => setView(v.k)}
+              style={{ fontSize:11, padding:'4px 14px', border:'none', background:view===v.k?'linear-gradient(135deg,#4f46e5,#7c3aed)':'transparent', color:view===v.k?'white':'#7c3aed', fontWeight:view===v.k?600:400, cursor:'pointer', borderRadius:8, whiteSpace:'nowrap' }}>{v.l}</button>
+          ))}
         </div>
+        {view === 'gantt' && qualifications.length > 0 && (
+          <select value={ganttQual?.id || ''} onChange={e => setGanttQualId(e.target.value)}
+            style={{ fontSize:12, padding:'5px 9px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:28, outline:'none', color:'#333', cursor:'pointer', maxWidth:isMobile?'55%':280 }}>
+            {qualifications.map(ql => <option key={ql.id} value={ql.id}>{ql.name}</option>)}
+          </select>
+        )}
+        {view === 'kanban' && (
+          <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+            <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search qualifications…"
+              style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:28, outline:'none', width:isMobile?140:200, color:'#333', boxSizing:'border-box' }} />
+          </div>
+        )}
         <button onClick={openNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', marginLeft:'auto' }}>+ New Qualification</button>
       </div>
 
       {qualifications.length === 0 ? (
         <div style={{ textAlign:'center', padding:'48px 0', color:'#bbb', fontSize:13 }}>No qualifications yet — click <strong>+ New Qualification</strong> to start tracking a supplier.</div>
+      ) : view === 'gantt' ? (
+        <QualificationGantt qual={ganttQual} tasks={tasks} onUpdateSubtask={onUpdateSubtask} onUpdateQual={onUpdateQual} isMobile={isMobile} />
       ) : (
         <div style={{ display:'flex', gap:10, alignItems:'flex-start', overflowX:'auto', paddingBottom:8 }}>
           {QUAL_COLS.map(col => {
@@ -5705,6 +5875,12 @@ export default function App() {
     const updated_at = new Date().toISOString()
     setQualifications(prev => prev.map(q => q.id === id ? { ...q, status, updated_at } : q)) // optimistic
     await supabase.from('qualifications').update({ status, updated_at }).eq('id', id)
+  }
+  // Partial qualification update (e.g. the Gantt's start-date anchor) — optimistic so the chart reflows live
+  const updateQualificationFields = async (id, patch) => {
+    const updated_at = new Date().toISOString()
+    setQualifications(prev => prev.map(q => q.id === id ? { ...q, ...patch, updated_at } : q))
+    await supabase.from('qualifications').update({ ...patch, updated_at }).eq('id', id)
   }
 
   const addEscalation = async title => {
@@ -6519,6 +6695,7 @@ export default function App() {
           onSaveTask={saveTaskSilent}
           onDeleteTask={deleteTaskSilent}
           onUpdateSubtask={updateSubtask}
+          onUpdateQual={updateQualificationFields}
         />
       )}
 
