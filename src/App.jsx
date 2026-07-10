@@ -2514,9 +2514,9 @@ function CategoryCard({ g, onGrab, ghost, v, renderTasks }) {
   )
 }
 
-function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}, memberNames = [], escalations = [], isMobile = false, onEdit, onComplete, onOpenEscalation, onOpenProject, onOpenQualification, onUpdateTasks, onRestoreTask, onDeleteTask, onAddTask, onAddEscalation, onAddDomain, onUpdateDomainMeta, onOpenClassic }) {
-  const [groupBy, setGroupByState] = useState(() => localStorage.getItem('taskr-linear-group') || 'domain')
-  const setGroupBy = k => { setGroupByState(k); try { localStorage.setItem('taskr-linear-group', k) } catch {} }
+function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}, memberNames = [], escalations = [], isMobile = false, prefs = {}, savePref = () => {}, onEdit, onComplete, onOpenEscalation, onOpenProject, onOpenQualification, onUpdateTasks, onRestoreTask, onDeleteTask, onAddTask, onAddEscalation, onAddDomain, onUpdateDomainMeta, onOpenClassic }) {
+  const [groupBy, setGroupByState] = useState(() => prefs.group ?? localStorage.getItem('taskr-linear-group') ?? 'domain')
+  const setGroupBy = k => { setGroupByState(k); savePref('group', k); try { localStorage.setItem('taskr-linear-group', k) } catch {} }
   const [showDone, setShowDone] = useState(false)
   const [listView, setListView] = useState(false)
   const [search, setSearch] = useState('')
@@ -2535,25 +2535,25 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
     if (title && onAddDomain) onAddDomain(title)
     setNewDomainTitle(''); setAddingDomain(false)
   }
-  const [hiddenDomains, setHiddenDomains] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-linear-hidden-domains')) || []) } catch { return new Set() } })
-  const hideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.add(key); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
-  const unhideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.delete(key); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
+  const [hiddenDomains, setHiddenDomains] = useState(() => { try { return new Set(prefs.hiddenDomains ?? JSON.parse(localStorage.getItem('taskr-linear-hidden-domains') || 'null') ?? []) } catch { return new Set(prefs.hiddenDomains || []) } })
+  const hideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.add(key); savePref('hiddenDomains', [...n]); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
+  const unhideDomain = key => setHiddenDomains(prev => { const n = new Set(prev); n.delete(key); savePref('hiddenDomains', [...n]); try { localStorage.setItem('taskr-linear-hidden-domains', JSON.stringify([...n])) } catch {} return n })
   const [colorEditKey, setColorEditKey] = useState(null)
-  const [hiddenOwners, setHiddenOwners] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-linear-hidden-owners')) || []) } catch { return new Set() } })
-  const persistHidden = n => { try { localStorage.setItem('taskr-linear-hidden-owners', JSON.stringify([...n])) } catch {} }
+  const [hiddenOwners, setHiddenOwners] = useState(() => { try { return new Set(prefs.hiddenOwners ?? JSON.parse(localStorage.getItem('taskr-linear-hidden-owners') || 'null') ?? []) } catch { return new Set(prefs.hiddenOwners || []) } })
+  const persistHidden = n => { savePref('hiddenOwners', [...n]); try { localStorage.setItem('taskr-linear-hidden-owners', JSON.stringify([...n])) } catch {} }
   const toggleOwnerVis = name => setHiddenOwners(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); persistHidden(n); return n })
   const [ownerMenuOpen, setOwnerMenuOpen] = useState(false)
   const [sortCol, setSortCol] = useState('title')
   const [sortDir, setSortDir] = useState('asc')
   const [colFilters, setColFilters] = useState({ status:'', domain:'', owner:'' })
-  const [colsByGroup, setColsByGroup] = useState(() => { try { return JSON.parse(localStorage.getItem('taskr-linear-cols')) || {} } catch { return {} } })
-  const [numCols, setNumColsState] = useState(() => { const n = parseInt(localStorage.getItem('taskr-linear-numcols'), 10); return n >= 1 && n <= 8 ? n : LINEAR_NCOL })
-  const setNumCols = n => { const clamped = Math.max(1, Math.min(8, n)); setNumColsState(clamped); try { localStorage.setItem('taskr-linear-numcols', String(clamped)) } catch {} }
-  const [orders, setOrders] = useState(() => { try { return JSON.parse(localStorage.getItem('taskr-linear-order')) || {} } catch { return {} } })
-  const [minimized, setMinimized] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('taskr-linear-min')) || []) } catch { return new Set() } })
+  const [colsByGroup, setColsByGroup] = useState(() => { try { return prefs.cols ?? JSON.parse(localStorage.getItem('taskr-linear-cols') || 'null') ?? {} } catch { return prefs.cols || {} } })
+  const [numCols, setNumColsState] = useState(() => { if (prefs.numcols >= 1 && prefs.numcols <= 8) return prefs.numcols; const n = parseInt(localStorage.getItem('taskr-linear-numcols'), 10); return n >= 1 && n <= 8 ? n : LINEAR_NCOL })
+  const setNumCols = n => { const clamped = Math.max(1, Math.min(8, n)); setNumColsState(clamped); savePref('numcols', clamped); try { localStorage.setItem('taskr-linear-numcols', String(clamped)) } catch {} }
+  const [orders, setOrders] = useState(() => { try { return prefs.order ?? JSON.parse(localStorage.getItem('taskr-linear-order') || 'null') ?? {} } catch { return prefs.order || {} } })
+  const [minimized, setMinimized] = useState(() => { try { return new Set(prefs.min ?? JSON.parse(localStorage.getItem('taskr-linear-min') || 'null') ?? []) } catch { return new Set(prefs.min || []) } })
   const [openNotes, setOpenNotes] = useState(() => new Set())
   const toggleNotes = id => setOpenNotes(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const persistMin = n => { try { localStorage.setItem('taskr-linear-min', JSON.stringify([...n])) } catch {} }
+  const persistMin = n => { savePref('min', [...n]); try { localStorage.setItem('taskr-linear-min', JSON.stringify([...n])) } catch {} }
   const isMin = id => minimized.has(id)
   const toggleMin = id => setMinimized(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); persistMin(n); return n })
   const [drag, setDrag] = useState(null)          // { key, x, y, offsetX, offsetY, w }
@@ -2587,6 +2587,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const saveOrder = (listId, orderedIds) => {
     const next = { ...orders, [listId]: orderedIds }
     setOrders(next)
+    savePref('order', next)
     try { localStorage.setItem('taskr-linear-order', JSON.stringify(next)) } catch {}
   }
   const reorderTo = (listTasks, draggedId, overId, pos, listId) => {
@@ -2716,7 +2717,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   }
   const columns = buildColumns()
 
-  const persist = next => { setColsByGroup(next); try { localStorage.setItem('taskr-linear-cols', JSON.stringify(next)) } catch {} }
+  const persist = next => { setColsByGroup(next); savePref('cols', next); try { localStorage.setItem('taskr-linear-cols', JSON.stringify(next)) } catch {} }
   const moveByIndex = (key, col, index) => {
     const cols = columns.map(c => c.filter(k => k !== key))
     const target = cols[col] || cols[0]
@@ -5674,6 +5675,8 @@ export default function App() {
   const [qualTemplates, setQualTemplates] = useState([])
   const [qualifications, setQualifications] = useState([])
   const [qualificationTemplates, setQualificationTemplates] = useState([])
+  const [userPrefs, setUserPrefs] = useState({}) // per-user UI prefs (e.g. Tasks-page layout), synced across devices
+  const prefsTimerRef = useRef(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(() => { const saved = localStorage.getItem('taskr-tab'); return (saved && saved !== 'tasks') ? saved : 'linear' })
   const switchTab = t => { setTab(t); localStorage.setItem('taskr-tab', t) }
@@ -5748,10 +5751,28 @@ export default function App() {
     setQualifications((qualificationsData || []).map(q => ({ ...q, owners: q.owners||[], notes: q.notes||[], attachments: q.attachments||[] })))
     setQualificationTemplates(qualificationTemplatesData || []) // empty until the qualification_templates table exists
     setNoteGroups(noteGroupsData || [])
+    // Load per-user prefs once on the full (non-silent) load, so silent refreshes never clobber in-flight layout edits
+    if (!silent) {
+      const { data: prefRow } = await supabase.from('user_prefs').select('prefs').eq('user_id', session.user.id).maybeSingle()
+      setUserPrefs(prefRow?.prefs || {})
+    }
     setLoading(false)
   }, [session])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Merge a preference change into the user's prefs blob and upsert it (debounced)
+  const savePref = useCallback((section, key, value) => {
+    if (!session) return
+    setUserPrefs(prev => {
+      const next = { ...prev, [section]: { ...(prev[section] || {}), [key]: value } }
+      clearTimeout(prefsTimerRef.current)
+      prefsTimerRef.current = setTimeout(() => {
+        supabase.from('user_prefs').upsert({ user_id: session.user.id, prefs: next, updated_at: new Date().toISOString() })
+      }, 600)
+      return next
+    })
+  }, [session])
 
   useEffect(() => {
     const ch = supabase.channel('app-changes')
@@ -6348,6 +6369,7 @@ export default function App() {
         <TaskLinearMockup tasks={tasks} entityMap={entityMap} domains={domains}
           domainMeta={Object.fromEntries(domainRows.map(d => [d.name, { color: d.color, text_color: d.text_color }]))}
           memberNames={memberNames} isMobile={isMobile}
+          prefs={userPrefs.linear || {}} savePref={(key, value) => savePref('linear', key, value)}
           escalations={visibleEscalations}
           onEdit={t => { setForm({...t}); setIsEdit(true) }} onComplete={quickComplete} onUpdateTasks={updateTasksFields}
           onRestoreTask={restoreTask} onDeleteTask={deleteTaskSilent}
