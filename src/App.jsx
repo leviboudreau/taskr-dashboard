@@ -1466,28 +1466,36 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
   ]
   const HIGHLIGHTS = ['#fef08a','#bbf7d0','#bae6fd','#fecdd3','#fed7aa','#e9d5ff']
   const CELL_FILLS  = ['','#fef9c3','#dbeafe','#dcfce7','#fce7f3','#ffedd5','#f3f4f6','#1e293b']
-  const sep = { width:'0.5px', height:14, background:'#e0e0e0', margin:'0 2px', flexShrink:0 }
-  const tbtn = (label, cmd, val = null, extra = {}) => (
-    <button onMouseDown={e => { e.preventDefault(); exec(cmd, val) }}
-      style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4, ...extra }}>
-      {label}
-    </button>
-  )
+  const sep = { width:'1px', height:16, background:'#ece9f5', margin:'0 5px', flexShrink:0 }
+  // Ghost toolbar button — transparent, purple hover, matches the app's icon-button language
+  const ghost = { fontSize:12.5, height:26, minWidth:26, padding:'0 7px', border:'none', borderRadius:7, background:'transparent', cursor:'pointer', fontFamily:'inherit', color:'#555', lineHeight:1, display:'inline-flex', alignItems:'center', justifyContent:'center' }
+  const hoverIn = e => e.currentTarget.style.background = '#f0edff'
+  const hoverOut = e => e.currentTarget.style.background = 'transparent'
+  const tbtn = (label, cmd, val = null, extra = {}) => {
+    const { title, ...st } = extra
+    return (
+      <button onMouseDown={e => { e.preventDefault(); exec(cmd, val) }} title={title}
+        style={{ ...ghost, ...st }} onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
+        {label}
+      </button>
+    )
+  }
   const xbtn = (label, action, title) => (
     <button onMouseDown={e => { e.preventDefault(); action() }} title={title}
-      style={{ fontSize:11, padding:'2px 7px', border:'0.5px solid #c4b5fd', borderRadius:6, background:'white', cursor:'pointer', lineHeight:1.4, color:'#7c3aed' }}>
+      style={{ ...ghost, fontSize:11, height:24, color:'#7c3aed' }}
+      onMouseEnter={e => e.currentTarget.style.background='#ede9fe'} onMouseLeave={hoverOut}>
       {label}
     </button>
   )
-  const rowStyle = { display:'flex', gap:3, padding:'5px 10px', background:'#f7f7f5', borderLeft:'0.5px solid #e5e5e5', borderRight:'0.5px solid #e5e5e5', flexWrap:'wrap', alignItems:'center' }
+  const rowStyle = { display:'flex', gap:2, padding:'5px 8px', background:'white', flexWrap:'wrap', alignItems:'center' }
 
   return (
     <div ref={wrapperRef} style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0, position:'relative' }}>
-      <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}.note-editor ul,.note-editor ol{padding-left:18px;margin:2px 0}.note-editor ol{list-style:none;counter-reset:item}.note-editor ol>li{counter-increment:item}.note-editor ol>li::before{content:counters(item,".")". ";margin-right:3px}`}</style>
+      <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}.note-editor ul,.note-editor ol{padding-left:18px;margin:2px 0}.note-editor ol{list-style:none;counter-reset:item}.note-editor ol>li{counter-increment:item}.note-editor ol>li::before{content:counters(item,".")". ";margin-right:3px}.note-editor font[size="1"]{font-size:0.72em}.note-editor font[size="2"]{font-size:0.86em}.note-editor font[size="3"]{font-size:1em}.note-editor font[size="4"]{font-size:1.3em}.note-editor font[size="5"]{font-size:1.7em}`}</style>
       {/* Toolbar — sticky so it stays above keyboard on mobile */}
-      <div style={{ position:'sticky', top:0, zIndex:5, background:'white' }}>
+      <div style={{ position:'sticky', top:0, zIndex:5, background:'white', border:'0.5px solid #e5e5e5', borderBottom:'none', borderRadius:'10px 10px 0 0', overflow:'visible' }}>
       {/* Row 1: text formatting + lists + table + size */}
-      <div style={{ ...rowStyle, borderTop:'0.5px solid #e5e5e5', borderRadius:'10px 10px 0 0' }}>
+      <div style={{ ...rowStyle, borderBottom:'0.5px solid #f2eff9', borderRadius:'10px 10px 0 0' }}>
         {tbtn('B', 'bold', null, { fontWeight:700 })}
         {tbtn('I', 'italic', null, { fontStyle:'italic' })}
         {tbtn('U', 'underline', null, { textDecoration:'underline' })}
@@ -1499,14 +1507,15 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
         {tbtn('←', 'outdent', null, { title:'Outdent' })}
         <div style={sep} />
         <button onMouseDown={e => { e.preventDefault(); convertToChecklist() }}
-          style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}
+          style={{ ...ghost, padding:'0 8px' }} onMouseEnter={hoverIn} onMouseLeave={hoverOut}
           title="Convert current line or selected text to checklist item">
           ☑ Check
         </button>
         <div style={sep} />
         <div style={{ position:'relative' }}>
           <button onMouseDown={e => { e.preventDefault(); setShowTablePicker(v => !v) }}
-            style={{ fontSize:12, padding:'3px 7px', border:'0.5px solid #e0e0e0', borderRadius:6, background:showTablePicker?'#ede9fe':'white', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}>
+            style={{ ...ghost, padding:'0 8px', background:showTablePicker?'#ede9fe':'transparent', color:showTablePicker?'#7c3aed':'#555' }}
+            onMouseEnter={e => { if (!showTablePicker) e.currentTarget.style.background='#f0edff' }} onMouseLeave={e => { if (!showTablePicker) e.currentTarget.style.background='transparent' }}>
             ⊞ Table
           </button>
           {showTablePicker && (
@@ -1532,7 +1541,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
         <div style={sep} />
         <select defaultValue="3" onMouseDown={e => e.stopPropagation()}
           onChange={e => { exec('fontSize', e.target.value); e.target.value='3' }}
-          style={{ fontSize:11, border:'0.5px solid #e0e0e0', borderRadius:6, padding:'2px 4px', background:'white', cursor:'pointer', height:24 }}>
+          style={{ fontSize:11, border:'0.5px solid #e5e2ee', borderRadius:7, padding:'0 6px', background:'#faf9ff', cursor:'pointer', height:26, color:'#555', outline:'none' }}>
           <option value="1">X-Small</option>
           <option value="2">Small</option>
           <option value="3">Normal</option>
@@ -1554,8 +1563,8 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
         )}
       </div>
       {/* Row 2: colors — scrollable on mobile */}
-      <div style={{ ...rowStyle, borderTop:'0.5px solid #f0f0f0', gap:5, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling:'touch' }}>
-        <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Text</span>
+      <div style={{ ...rowStyle, gap:5, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling:'touch' }}>
+        <span style={{ fontSize:10, color:'#aaa', flexShrink:0, textTransform:'uppercase', letterSpacing:'0.05em' }}>Text</span>
         <div style={sep} />
         {COLORS.map(c => (
           <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
@@ -1564,7 +1573,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
             onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
         ))}
         <div style={{ ...sep, margin:'0 5px' }} />
-        <span style={{ fontSize:10, color:'#999', flexShrink:0 }}>Highlight</span>
+        <span style={{ fontSize:10, color:'#aaa', flexShrink:0, textTransform:'uppercase', letterSpacing:'0.05em' }}>Highlight</span>
         <div style={sep} />
         {HIGHLIGHTS.map(c => (
           <button key={c} onMouseDown={e => { e.preventDefault(); exec('hiliteColor', c) }}
@@ -1573,7 +1582,8 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
             onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
         ))}
         <button onMouseDown={e => { e.preventDefault(); exec('hiliteColor', 'transparent') }}
-          style={{ fontSize:10, padding: isMobile ? '4px 8px' : '1px 5px', border:'0.5px solid #e0e0e0', borderRadius:3, background:'white', cursor:'pointer', color:'#aaa', lineHeight:1.4, flexShrink:0 }}
+          style={{ fontSize:10, padding: isMobile ? '4px 8px' : '2px 6px', border:'none', borderRadius:6, background:'transparent', cursor:'pointer', color:'#bbb', lineHeight:1.4, flexShrink:0 }}
+          onMouseEnter={e => e.currentTarget.style.background='#f0edff'} onMouseLeave={e => e.currentTarget.style.background='transparent'}
           title="Remove highlight">✕</button>
       </div>
       {/* Row 3: table context controls (hidden on mobile) */}
@@ -1619,7 +1629,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
         }}
         onMouseLeave={() => setTableHover([0,0])}
         className="note-editor"
-        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 10px 10px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 13, lineHeight:1.4, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200 }} />
+        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 10px 10px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 15, lineHeight:1.55, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200 }} />
       {imgSel && imgBar && (<>
         <div onMouseDown={e => e.preventDefault()} style={{
           position:'absolute', top: Math.max(2, imgBar.top - 34), left: imgBar.left,
@@ -3593,7 +3603,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                 <div style={{ display:'flex', gap:12, fontSize:10, color:'#bbb', alignItems:'center', flexWrap:'wrap' }}>
                   <span>Created {fmtDT(noteRecord.created_at)}</span>
                   {noteRecord.updated_at && noteRecord.updated_at !== noteRecord.created_at && <span>· Edited {fmtDT(noteRecord.updated_at)}</span>}
-                  <span title="Drag the note onto a group in the sidebar to move it" style={{ fontSize:10, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #ddd6fe', borderRadius:20, padding:'1px 9px', display:'inline-flex', alignItems:'center', gap:4 }}>🗂 {crumb}</span>
+                  <span title="Drag the note onto a group in the sidebar to move it" style={{ fontSize:10, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #ddd6fe', borderRadius:20, padding:'1px 9px', display:'inline-flex', alignItems:'center', gap:4 }}>{crumb}</span>
                 </div>
               ) : null
             })()}
@@ -3601,6 +3611,16 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
           <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
             onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }}
             members={members} />
+          {selectedId && (() => {
+            const atts = (() => { const n = notes.find(x => x.id === selectedId); return Array.isArray(n?.attachments) ? n.attachments : [] })()
+            return (
+              <div style={{ flexShrink:0, padding:'0 14px 10px', maxHeight:170, overflowY:'auto' }}>
+                <AttachmentSection attachments={atts} entityPath={`notes/${selectedId}`}
+                  onAdd={att => onSave({ ...draft, attachments: [...atts, att] }, selectedId)}
+                  onRemove={id => onSave({ ...draft, attachments: atts.filter(a => a.id !== id) }, selectedId)} />
+              </div>
+            )
+          })()}
         </>
       )}
     </div>
@@ -3773,7 +3793,8 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
     <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:4 }}>
       <label style={FIELD_LABEL}>Attachments</label>
       {attachments.map(att => (
-        <div key={att.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0' }}>
+        <div key={att.id} onDoubleClick={() => window.open(att.url, '_blank', 'noopener,noreferrer')} title="Double-click to open in a new tab"
+          style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0', cursor:'pointer' }}>
           <span style={{ fontSize:11, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{att.name}</span>
           {att.size && <span style={{ fontSize:10, color:'#bbb', flexShrink:0 }}>{(att.size/1024).toFixed(0)}KB</span>}
           <a href={att.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize:10, color:'#378ADD', flexShrink:0, textDecoration:'none' }}>Open</a>
@@ -5957,9 +5978,11 @@ export default function App() {
     const body = data.body || ''
     const payload = { title: data.title, body, updated_at: new Date().toISOString() }
     if ('group_id' in data) payload.group_id = data.group_id ?? null
+    if ('attachments' in data) payload.attachments = Array.isArray(data.attachments) ? data.attachments : []
     let newId = null
     if (id) {
-      const { error } = await supabase.from('notes').update(payload).eq('id', id)
+      let { error } = await supabase.from('notes').update(payload).eq('id', id)
+      if (error && 'attachments' in payload) { const { attachments, ...rest } = payload; error = (await supabase.from('notes').update(rest).eq('id', id)).error } // fallback if attachments column not yet added
       if (error) { console.error('[TASKr] saveNote error', error); return null }
     } else {
       const { data: ins, error } = await supabase.from('notes').insert(payload).select('id').single()
