@@ -5804,7 +5804,7 @@ export default function App() {
         const inserts = tpl.tasks.map((t, i) => ({
           title: t.title, status: 'active', substatus: 'not_started',
           project_id: proj.id, notes: [], attachments: [], owners: ['Levi'],
-          subtasks: (t.subtasks || []).map((s, j) => ({ id:`st${i}${j}`, title:s, done:false })),
+          subtasks: (t.subtasks || []).map((s, j) => ({ id: (s && typeof s === 'object' && s.id) || `st${i}${j}`, title: (s && typeof s === 'object') ? (s.title || '') : s, done:false })),
           sort_order: i + 1, updated_at: new Date().toISOString()
         }))
         await supabase.from('tasks').insert(inserts)
@@ -6894,7 +6894,7 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
                   </div>
                 ) : (
                   <div key={si} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
-                    <input value={s} onChange={e => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===ti?{...t,subtasks:t.subtasks.map((sub,j)=>j===si?e.target.value:sub)}:t) }))}
+                    <input value={typeof s === 'string' ? s : (s?.title || '')} onChange={e => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===ti?{...t,subtasks:t.subtasks.map((sub,j)=>j===si?e.target.value:sub)}:t) }))}
                       style={{ flex:1, fontSize:11, border:'none', borderBottom:'0.5px solid #e5e5e5', outline:'none', background:'transparent', fontFamily:'inherit', color:'#555', padding:'1px 0' }} />
                     <button onClick={() => removeSubtask(ti, si)} style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:11 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
                   </div>
