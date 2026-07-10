@@ -1,7 +1,18 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from './supabase'
 import DOMPurify from 'dompurify'
-import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory } from 'lucide-react'
+import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory, Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
+import { useEditor, EditorContent, Node as TiptapNode, Extension as TiptapExtension } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import { TextStyle, Color, FontSize } from '@tiptap/extension-text-style'
+import Highlight from '@tiptap/extension-highlight'
+import Subscript from '@tiptap/extension-subscript'
+import Superscript from '@tiptap/extension-superscript'
+import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
+import { TaskList, TaskItem } from '@tiptap/extension-list'
+import TiptapImage from '@tiptap/extension-image'
+import TextAlign from '@tiptap/extension-text-align'
+import { Placeholder } from '@tiptap/extensions'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
@@ -1059,608 +1070,382 @@ function MentionPicker({ members, onInsert }) {
   )
 }
 
+// ─── TipTap building blocks (engine under the notes editor) ───────────────────
+// Font-size steps shared by the toolbar dropdown and the legacy <font> upgrade
+const FONT_STEPS = { 1: '0.72em', 2: '0.86em', 3: '1em', 4: '1.3em', 5: '1.7em' }
+
+// Inline @mention chip — parses the spans older notes already contain
+const MentionChip = TiptapNode.create({
+  name: 'mention',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  addAttributes() { return { name: { default: '' } } },
+  parseHTML() { return [{ tag: 'span[data-mention]', getAttrs: el => ({ name: el.getAttribute('data-mention') || (el.textContent || '').replace(/^@/, '') }) }] },
+  renderHTML({ node }) { return ['span', { 'data-mention': node.attrs.name, style: 'background:#ede9fe;color:#7c3aed;border-radius:4px;padding:1px 6px;font-weight:500;white-space:nowrap' }, `@${node.attrs.name}`] },
+})
+
+// Image that keeps a persistable width (percent); pasted images stay base64
+const NoteImage = TiptapImage.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: el => (el.style && el.style.width) || el.getAttribute('width') || null,
+        renderHTML: attrs => attrs.width ? { style: `width:${attrs.width}` } : {},
+      },
+    }
+  },
+}).configure({ allowBase64: true })
+
+// Table cell that keeps its fill color
+const FillTableCell = TableCell.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: null,
+        parseHTML: el => (el.style && el.style.backgroundColor) || null,
+        renderHTML: attrs => attrs.backgroundColor ? { style: `background-color:${attrs.backgroundColor}` } : {},
+      },
+    }
+  },
+})
+
+// Tab indents inside lists (Shift-Tab outdents); in tables the Table extension owns Tab
+const TabKeymap = TiptapExtension.create({
+  name: 'tabKeymap',
+  addKeyboardShortcuts() {
+    return {
+      Tab: () => this.editor.isActive('table') ? false
+        : (this.editor.commands.sinkListItem('taskItem') || this.editor.commands.sinkListItem('listItem') || this.editor.commands.insertContent('    ')),
+      'Shift-Tab': () => this.editor.isActive('table') ? false
+        : (this.editor.commands.liftListItem('taskItem') || this.editor.commands.liftListItem('listItem')),
+    }
+  },
+})
+
+// Upgrade execCommand-era note HTML so it round-trips through the TipTap schema:
+// <font size> → sized spans, hand-rolled checkbox divs → real task lists.
+function upgradeLegacyNoteHtml(html) {
+  if (!html) return ''
+  const root = document.createElement('div')
+  root.innerHTML = html
+  root.querySelectorAll('font[size]').forEach(f => {
+    const span = document.createElement('span')
+    span.style.fontSize = FONT_STEPS[f.getAttribute('size')] || '1em'
+    while (f.firstChild) span.appendChild(f.firstChild)
+    f.replaceWith(span)
+  })
+  const isCheckRow = el => !!(el && el.nodeType === 1 && el.tagName === 'DIV' && el.querySelector(':scope > input[type="checkbox"]'))
+  const absorbed = new Set() // rows already folded into a list (root is detached, so isConnected can't be used)
+  ;[...root.querySelectorAll('div')].filter(isCheckRow).forEach(row => {
+    if (absorbed.has(row)) return
+    const ul = document.createElement('ul')
+    ul.setAttribute('data-type', 'taskList')
+    row.before(ul)
+    let cur = row
+    while (isCheckRow(cur)) {
+      absorbed.add(cur)
+      const next = cur.nextElementSibling
+      const li = document.createElement('li')
+      li.setAttribute('data-type', 'taskItem')
+      li.setAttribute('data-checked', cur.querySelector('input[type="checkbox"]').hasAttribute('checked') ? 'true' : 'false')
+      const p = document.createElement('p')
+      p.textContent = (cur.querySelector('span')?.textContent || cur.textContent || '').trim()
+      li.appendChild(p)
+      ul.appendChild(li)
+      cur.remove()
+      cur = next
+    }
+  })
+  return root.innerHTML
+}
+
+const NOTE_EDITOR_CSS = `
+.note-editor .ProseMirror,.note-editor [contenteditable="true"]{outline:none;padding:12px 16px;min-height:200px}
+.note-editor p{margin:0 0 2px}
+.note-editor h1{font-size:1.5em;margin:10px 0 4px}
+.note-editor h2{font-size:1.3em;margin:8px 0 3px}
+.note-editor h3{font-size:1.15em;margin:6px 0 2px}
+.note-editor ul,.note-editor ol{padding-left:20px;margin:2px 0}
+.note-editor ul[data-type="taskList"]{list-style:none;padding-left:2px}
+.note-editor ul[data-type="taskList"] li{display:flex;gap:8px;align-items:flex-start;margin:2px 0}
+.note-editor ul[data-type="taskList"] li>label{flex-shrink:0;display:flex;align-items:center;height:1.55em}
+.note-editor ul[data-type="taskList"] li>label input{width:14px;height:14px;cursor:pointer;margin:0}
+.note-editor ul[data-type="taskList"] li>div{flex:1;min-width:0}
+.note-editor ul[data-type="taskList"] li[data-checked="true"]>div{color:#aaa;text-decoration:line-through}
+.note-editor blockquote{border-left:3px solid #ddd6fe;margin:6px 0;padding:2px 12px;color:#555}
+.note-editor pre{background:#f5f5f3;border-radius:8px;padding:10px 12px;font-size:0.9em;overflow-x:auto}
+.note-editor hr{border:none;border-top:1px solid #e5e5e5;margin:10px 0}
+.note-editor a{color:#4f46e5;text-decoration:underline;cursor:pointer}
+.note-editor table{border-collapse:collapse;width:100%;margin:8px 0;table-layout:fixed}
+.note-editor td,.note-editor th{border:1px solid #d1d5db;padding:3px 8px;min-width:40px;vertical-align:top;position:relative;line-height:1.6}
+.note-editor .selectedCell:after{content:'';position:absolute;inset:0;background:rgba(124,58,237,0.08);pointer-events:none}
+.note-editor .column-resize-handle{position:absolute;right:-2px;top:0;bottom:-2px;width:4px;background:#c4b5fd;pointer-events:none}
+.note-editor .resize-cursor{cursor:col-resize}
+.note-editor img{max-width:100%;border-radius:6px;display:block;margin:4px 0}
+.note-editor img.ProseMirror-selectednode{outline:2px solid #7c3aed;outline-offset:2px}
+.note-editor p.is-editor-empty:first-child::before{content:attr(data-placeholder);color:#ccc;float:left;height:0;pointer-events:none}
+`
+
 function RichTextEditor({ initialValue, onChange, isMobile = false, members = [] }) {
-  const editorRef = useRef(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
-  const [fontSize, setFontSize] = useState('3') // reflects the size at the caret
   const [tableHover, setTableHover] = useState([0, 0])
-  const [tableCtx, setTableCtx] = useState(null)
-  const [imgSel, setImgSel] = useState(null)
-  const [imgBar, setImgBar] = useState(null)
-  const wrapperRef = useRef(null)
-  const pasteInProgressRef = useRef(false)
-  const dragCleanupRef = useRef(null)
-  useEffect(() => () => {
-    if (dragCleanupRef.current) {
-      document.removeEventListener('mousemove', dragCleanupRef.current.onMove)
-      document.removeEventListener('mouseup', dragCleanupRef.current.onUp)
-    }
-  }, [])
+  const editorRef = useRef(null)
 
-  const handlePaste = async e => {
-    const items = Array.from(e.clipboardData?.items || [])
-    const imageItem = items.find(item => item.type.startsWith('image/'))
-    if (!imageItem) return
-    e.preventDefault()
-    const file = imageItem.getAsFile()
-    if (!file) return
-
-    // Show blob URL immediately so the image appears with zero delay
-    const objectUrl = URL.createObjectURL(file)
-    const phId = `imgph${Date.now()}`
-    pasteInProgressRef.current = true
-    editorRef.current.focus()
-    document.execCommand('insertHTML', false,
-      `<img id="${phId}" src="${objectUrl}" style="max-width:100%;border-radius:6px;margin:4px 0;display:block">`)
-
-    // Convert to compressed base64 — stored directly in note body, no Supabase Storage needed
-    const dataUrl = await new Promise(resolve => {
-      const reader = new FileReader()
-      reader.onload = ev => {
-        const imgEl = new Image()
-        imgEl.onload = () => {
-          const maxW = 1200
-          const scale = Math.min(1, maxW / imgEl.naturalWidth)
-          const canvas = document.createElement('canvas')
-          canvas.width = Math.round(imgEl.naturalWidth * scale)
-          canvas.height = Math.round(imgEl.naturalHeight * scale)
-          canvas.getContext('2d').drawImage(imgEl, 0, 0, canvas.width, canvas.height)
-          resolve(canvas.toDataURL('image/jpeg', 0.82))
-        }
-        imgEl.src = ev.target.result
-      }
-      reader.readAsDataURL(file)
-    })
-
-    pasteInProgressRef.current = false
-    URL.revokeObjectURL(objectUrl)
-
-    const img = editorRef.current?.querySelector(`#${phId}`)
-    if (img) {
-      img.src = dataUrl
-      img.removeAttribute('id')
-    } else if (editorRef.current) {
-      const newImg = document.createElement('img')
-      newImg.src = dataUrl
-      newImg.style.cssText = 'max-width:100%;border-radius:6px;margin:4px 0;display:block'
-      editorRef.current.appendChild(newImg)
-    }
-
-    if (editorRef.current) onChange(editorRef.current.innerHTML)
-  }
-
-  const computeImgBar = (imgEl) => {
-    if (!wrapperRef.current) return
-    const wRect = wrapperRef.current.getBoundingClientRect()
-    const iRect = imgEl.getBoundingClientRect()
-    setImgBar({ top: iRect.top - wRect.top, left: iRect.left - wRect.left, width: iRect.width, height: iRect.height })
-  }
-
-  const selectImg = (imgEl) => {
-    if (imgSel) imgSel.style.outline = ''
-    if (imgEl) { imgEl.style.outline = '2px solid #7c3aed'; imgEl.style.outlineOffset = '2px' }
-    setImgSel(imgEl)
-    if (imgEl) computeImgBar(imgEl)
-    else setImgBar(null)
-  }
-
-  const setImgWidth = (w) => {
-    if (!imgSel) return
-    imgSel.style.width = w
-    imgSel.style.maxWidth = '100%'
-    imgSel.removeAttribute('height')
-    onChange(editorRef.current.innerHTML)
-    computeImgBar(imgSel)
-  }
-
-  const removeSelectedImg = () => {
-    if (!imgSel) return
-    imgSel.style.outline = ''
-    imgSel.remove()
-    onChange(editorRef.current.innerHTML)
-    setImgSel(null); setImgBar(null)
-  }
-
-  const startDragResize = (e) => {
-    e.preventDefault()
-    const el = imgSel
-    if (!el) return
-    const startX = e.clientX
-    const startW = el.getBoundingClientRect().width
-    const onMove = (mv) => {
-      el.style.width = Math.max(50, startW + mv.clientX - startX) + 'px'
-      el.style.maxWidth = '100%'
-      computeImgBar(el)
-    }
-    const onUp = () => {
-      if (editorRef.current) onChange(editorRef.current.innerHTML)
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-      dragCleanupRef.current = null
-    }
-    dragCleanupRef.current = { onMove, onUp }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }
-
-  useLayoutEffect(() => { if (editorRef.current) editorRef.current.innerHTML = DOMPurify.sanitize(initialValue || '') }, [])
-
-  useEffect(() => {
-    const check = () => {
-      const sel = window.getSelection()
-      if (!sel || !sel.anchorNode || !editorRef.current) return setTableCtx(null)
-      let td = null, tr = null, table = null, cur = sel.anchorNode
-      while (cur && cur !== editorRef.current) {
-        if (!td && cur.nodeName === 'TD') td = cur
-        if (!tr && cur.nodeName === 'TR') tr = cur
-        if (!table && cur.nodeName === 'TABLE') table = cur
-        cur = cur.parentNode
-      }
-      setTableCtx(td && tr && table ? { td, tr, table } : null)
-      // Reflect the size at the caret in the font-size dropdown
-      if (editorRef.current.contains(sel.anchorNode)) { const fs = document.queryCommandValue('fontSize'); setFontSize(fs && /^[1-5]$/.test(fs) ? fs : '3') }
-    }
-    document.addEventListener('selectionchange', check)
-    return () => document.removeEventListener('selectionchange', check)
-  }, [])
-
-  const exec = (cmd, val = null) => {
-    editorRef.current.focus()
-    document.execCommand(cmd, false, val)
-    const fs = document.queryCommandValue('fontSize'); setFontSize(fs && /^[1-5]$/.test(fs) ? fs : '3')
-    onChange(editorRef.current.innerHTML)
-  }
-
-  const insertTable = (rows, cols) => {
-    const cellHTML = `<td style="border:1px solid #d1d5db;padding:3px 8px;min-width:60px;">&nbsp;</td>`
-    const rowHTML = `<tr>${Array(cols).fill(cellHTML).join('')}</tr>`
-    exec('insertHTML', `<table style="border-collapse:collapse;width:100%;margin:8px 0">${Array(rows).fill(rowHTML).join('')}</table><p><br></p>`)
-    setShowTablePicker(false)
-  }
-
-  const convertToChecklist = () => {
-    const sel = window.getSelection()
-    if (!sel || !editorRef.current) return
-    const makeItem = text => {
-      const div = document.createElement('div')
-      div.style.cssText = 'display:flex;align-items:center;gap:8px;margin:2px 0'
-      const cb = document.createElement('input')
-      cb.type = 'checkbox'
-      cb.style.cssText = 'width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0'
-      const span = document.createElement('span')
-      span.style.lineHeight = '1.5'
-      if (text) span.textContent = text
-      div.appendChild(cb)
-      div.appendChild(span)
-      return { div, span }
-    }
-    const placeCursor = span => {
-      const range = document.createRange()
-      range.selectNodeContents(span)
-      range.collapse(false)
-      sel.removeAllRanges()
-      sel.addRange(range)
-    }
-    if (!sel.isCollapsed && sel.toString().trim()) {
-      const text = sel.toString()
-      const { div, span } = makeItem(text)
-      const range = sel.getRangeAt(0)
-      range.deleteContents()
-      range.insertNode(div)
-      placeCursor(span)
-    } else {
-      let block = sel.anchorNode
-      while (block && block.parentNode !== editorRef.current) block = block.parentNode
-      if (!block || block === editorRef.current || block.nodeName === 'TABLE') {
-        exec('insertHTML', '<div style="display:flex;align-items:center;gap:8px;margin:2px 0"><input type="checkbox" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0"><span style="line-height:1.5">Checklist item</span></div>')
-        onChange(editorRef.current.innerHTML)
-        return
-      }
-      const isChecklist = block.nodeType === 1 && !!block.querySelector('input[type="checkbox"]')
-      if (isChecklist) {
-        const { div, span } = makeItem('')
-        block.parentNode.insertBefore(div, block.nextSibling)
-        placeCursor(span)
-      } else {
-        const text = (block.textContent || '').trim()
-        const { div, span } = makeItem(text)
-        block.parentNode.replaceChild(div, block)
-        placeCursor(span)
-      }
-    }
-    onChange(editorRef.current.innerHTML)
-  }
-
-  const getChecklistCtx = () => {
-    const sel = window.getSelection()
-    if (!sel || !sel.anchorNode || !editorRef.current) return null
-    let cur = sel.anchorNode
-    while (cur && cur !== editorRef.current) {
-      if (cur.nodeName === 'DIV') {
-        const cb = cur.querySelector('input[type="checkbox"]')
-        if (cb) return { div: cur, cb, span: cur.querySelector('span') }
-      }
-      cur = cur.parentNode
-    }
-    return null
-  }
-
-  const handleKeyDown = e => {
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      if (tableCtx) {
-        const { td, tr, table } = tableCtx
-        const rows = Array.from(table.rows)
-        const colIdx = Array.from(tr.cells).indexOf(td)
-        const rowIdx = rows.indexOf(tr)
-        if (e.shiftKey) {
-          const prev = colIdx > 0 ? tr.cells[colIdx - 1]
-            : rowIdx > 0 ? rows[rowIdx - 1].cells[rows[rowIdx - 1].cells.length - 1] : null
-          if (prev) focusCell(prev)
-        } else {
-          if (colIdx < tr.cells.length - 1) {
-            focusCell(tr.cells[colIdx + 1])
-          } else if (rowIdx < rows.length - 1) {
-            focusCell(rows[rowIdx + 1].cells[0])
-          } else {
-            tableOp('row-below')
-            const newRow = Array.from(table.rows)[rowIdx + 1]
-            if (newRow) focusCell(newRow.cells[0])
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: { openOnClick: false } }),
+      TextStyle, Color, FontSize,
+      Highlight.configure({ multicolor: true }),
+      Subscript, Superscript,
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      Table.configure({ resizable: true }),
+      TableRow, TableHeader, FillTableCell,
+      TaskList, TaskItem.configure({ nested: true }),
+      NoteImage, MentionChip, TabKeymap,
+      Placeholder.configure({ placeholder: 'Start writing…' }),
+    ],
+    content: DOMPurify.sanitize(upgradeLegacyNoteHtml(initialValue || '')),
+    shouldRerenderOnTransaction: true, // toolbar active states track the caret
+    onUpdate: ({ editor: ed }) => onChange(ed.getHTML()),
+    editorProps: {
+      // Pasted images: compress via canvas → base64 (no storage round-trip), same as the old editor
+      handlePaste: (view, event) => {
+        const item = Array.from(event.clipboardData?.items || []).find(i => i.type.startsWith('image/'))
+        if (!item) return false
+        const file = item.getAsFile()
+        if (!file) return false
+        event.preventDefault()
+        const reader = new FileReader()
+        reader.onload = ev => {
+          const imgEl = new window.Image()
+          imgEl.onload = () => {
+            const maxW = 1200
+            const scale = Math.min(1, maxW / imgEl.naturalWidth)
+            const canvas = document.createElement('canvas')
+            canvas.width = Math.round(imgEl.naturalWidth * scale)
+            canvas.height = Math.round(imgEl.naturalHeight * scale)
+            canvas.getContext('2d').drawImage(imgEl, 0, 0, canvas.width, canvas.height)
+            editorRef.current?.chain().focus().setImage({ src: canvas.toDataURL('image/jpeg', 0.82) }).run()
           }
+          imgEl.src = ev.target.result
         }
-      } else {
-        let cur = window.getSelection()?.anchorNode
-        let inList = false
-        while (cur && cur !== editorRef.current) {
-          if (cur.nodeName === 'LI') { inList = true; break }
-          cur = cur.parentNode
-        }
-        if (inList) {
-          e.shiftKey ? exec('outdent') : exec('indent')
-        } else {
-          exec('insertText', '    ')
-        }
-      }
-      return
-    }
-    if (e.key !== 'Enter' && e.key !== 'Backspace') return
-    const ctx = getChecklistCtx()
-    if (!ctx) return
-    const sel = window.getSelection()
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      const newDiv = document.createElement('div')
-      newDiv.style.cssText = 'display:flex;align-items:center;gap:8px;margin:2px 0'
-      const newCb = document.createElement('input')
-      newCb.type = 'checkbox'
-      newCb.style.cssText = 'width:14px;height:14px;cursor:pointer;flex-shrink:0;margin:0'
-      const newSpan = document.createElement('span')
-      newSpan.style.lineHeight = '1.5'
-      newDiv.appendChild(newCb)
-      newDiv.appendChild(newSpan)
-      ctx.div.parentNode.insertBefore(newDiv, ctx.div.nextSibling)
-      const range = document.createRange()
-      range.setStart(newSpan, 0)
-      range.collapse(true)
-      sel.removeAllRanges()
-      sel.addRange(range)
-      onChange(editorRef.current.innerHTML)
-    } else if (e.key === 'Backspace') {
-      const atStart = sel && sel.isCollapsed && sel.anchorOffset === 0
-      const isEmpty = !ctx.span || ctx.span.textContent === ''
-      if (atStart && isEmpty) {
-        e.preventDefault()
-        const prev = ctx.div.previousSibling
-        ctx.div.remove()
-        if (prev) {
-          const range = document.createRange()
-          range.selectNodeContents(prev)
-          range.collapse(false)
-          sel.removeAllRanges()
-          sel.addRange(range)
-        }
-        onChange(editorRef.current.innerHTML)
-      }
-    }
-  }
+        reader.readAsDataURL(file)
+        return true
+      },
+    },
+  })
+  editorRef.current = editor
 
-  const fillCell = color => {
-    if (!tableCtx) return
-    tableCtx.td.style.backgroundColor = color
-    onChange(editorRef.current.innerHTML)
-  }
+  if (!editor) return null
+  const chain = () => editor.chain().focus()
+  const active = (...a) => editor.isActive(...a)
 
-  const focusCell = cell => {
-    editorRef.current.focus()
-    const sel = window.getSelection()
-    const range = document.createRange()
-    const node = cell.firstChild || cell
-    range.setStart(node, 0)
-    range.collapse(true)
-    sel.removeAllRanges()
-    sel.addRange(range)
-  }
-
-  const tableOp = op => {
-    if (!tableCtx) return
-    const { td, tr, table } = tableCtx
-    const rows = Array.from(table.rows)
-    const colIdx = Array.from(tr.cells).indexOf(td)
-    const rowIdx = rows.indexOf(tr)
-    const mkCell = () => {
-      const c = document.createElement('td')
-      c.style.cssText = 'border:1px solid #d1d5db;padding:3px 8px;min-width:60px;'
-      c.innerHTML = ' '
-      return c
-    }
-    if (op === 'col-left' || op === 'col-right') {
-      const idx = op === 'col-left' ? colIdx : colIdx + 1
-      rows.forEach(r => r.insertBefore(mkCell(), r.cells[idx] || null))
-    } else if (op === 'col-del') {
-      if (rows[0]?.cells.length > 1) {
-        rows.forEach(r => { if (r.cells[colIdx]) r.deleteCell(colIdx) })
-        const targetCell = rows[rowIdx]?.cells[Math.min(colIdx, rows[0].cells.length - 1)]
-        if (targetCell) focusCell(targetCell)
-      }
-    } else if (op === 'row-above' || op === 'row-below') {
-      const newRow = document.createElement('tr')
-      for (let i = 0; i < tr.cells.length; i++) newRow.appendChild(mkCell())
-      tr.parentNode.insertBefore(newRow, op === 'row-above' ? tr : tr.nextSibling)
-    } else if (op === 'row-del') {
-      if (rows.length > 1) {
-        tr.remove()
-        const updatedRows = Array.from(table.rows)
-        const targetRow = updatedRows[Math.min(rowIdx, updatedRows.length - 1)]
-        const targetCell = targetRow?.cells[Math.min(colIdx, (targetRow?.cells.length || 1) - 1)]
-        if (targetCell) focusCell(targetCell)
-      } else {
-        const sibling = table.nextSibling || table.previousSibling
-        table.remove()
-        editorRef.current.focus()
-        if (sibling) {
-          const r = document.createRange()
-          r.selectNodeContents(sibling)
-          r.collapse(true)
-          const s = window.getSelection()
-          s.removeAllRanges()
-          s.addRange(r)
-        }
-      }
-    } else if (op === 'merge-right') {
-      const nextCell = tr.cells[colIdx + 1]
-      if (nextCell) {
-        td.colSpan = (td.colSpan || 1) + (nextCell.colSpan || 1)
-        const content = nextCell.innerHTML.trim()
-        if (content && content !== '&nbsp;') td.innerHTML += ' ' + content
-        nextCell.remove()
-        focusCell(td)
-      }
-    } else if (op === 'merge-down') {
-      const nextRow = rows[rowIdx + 1]
-      if (nextRow && nextRow.cells[colIdx]) {
-        const belowCell = nextRow.cells[colIdx]
-        td.rowSpan = (td.rowSpan || 1) + (belowCell.rowSpan || 1)
-        const content = belowCell.innerHTML.trim()
-        if (content && content !== '&nbsp;') td.innerHTML += ' ' + content
-        belowCell.remove()
-        focusCell(td)
-      }
-    } else if (op === 'split') {
-      const extraCols = (td.colSpan || 1) - 1
-      if (extraCols > 0) {
-        td.colSpan = 1
-        for (let i = 0; i < extraCols; i++) tr.insertBefore(mkCell(), tr.cells[colIdx + 1] || null)
-      }
-      const extraRows = (td.rowSpan || 1) - 1
-      if (extraRows > 0) {
-        td.rowSpan = 1
-        for (let i = 1; i <= extraRows; i++) {
-          const targetRow = rows[rowIdx + i]
-          if (targetRow) targetRow.insertBefore(mkCell(), targetRow.cells[colIdx] || null)
-        }
-      }
-      focusCell(td)
-    }
-    onChange(editorRef.current.innerHTML)
-  }
-
-  const COLORS = [
-    '#111111','#c0392b','#0C447C','#27500A','#7d3c98','#d35400',
-    '#f1948a','#85c1e9','#a9dfbf','#d7bde2','#fad7a0','#a2d9ce','#f9e79f','#aab7b8',
-  ]
-  const HIGHLIGHTS = ['#fef08a','#bbf7d0','#bae6fd','#fecdd3','#fed7aa','#e9d5ff']
-  const CELL_FILLS  = ['','#fef9c3','#dbeafe','#dcfce7','#fce7f3','#ffedd5','#f3f4f6','#1e293b']
-  const sep = { width:'1px', height:16, background:'#ece9f5', margin:'0 5px', flexShrink:0 }
-  // Ghost toolbar button — transparent, purple hover, matches the app's icon-button language
-  const ghost = { fontSize:12.5, height:26, minWidth:26, padding:'0 7px', border:'none', borderRadius:7, background:'transparent', cursor:'pointer', fontFamily:'inherit', color:'#555', lineHeight:1, display:'inline-flex', alignItems:'center', justifyContent:'center' }
-  const hoverIn = e => e.currentTarget.style.background = '#f0edff'
-  const hoverOut = e => e.currentTarget.style.background = 'transparent'
-  const tbtn = (label, cmd, val = null, extra = {}) => {
-    const { title, ...st } = extra
+  // ── Toolbar chrome (ghost buttons, purple hover — the app's language) ──
+  const sep = { width: '1px', height: 16, background: '#ece9f5', margin: '0 5px', flexShrink: 0 }
+  const ghost = { fontSize: 12.5, height: 26, minWidth: 26, padding: '0 7px', border: 'none', borderRadius: 7, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', color: '#555', lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
+  const tbtn = (label, action, opts = {}) => {
+    const on = !!opts.active
     return (
-      <button onMouseDown={e => { e.preventDefault(); exec(cmd, val) }} title={title}
-        style={{ ...ghost, ...st }} onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
+      <button key={opts.key} onMouseDown={e => { e.preventDefault(); action() }} title={opts.title} disabled={opts.disabled}
+        style={{ ...ghost, ...(on ? { background: '#ede9fe', color: '#7c3aed' } : {}), opacity: opts.disabled ? 0.35 : 1, ...opts.style }}
+        onMouseEnter={e => { if (!on && !opts.disabled) e.currentTarget.style.background = '#f0edff' }}
+        onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent' }}>
         {label}
       </button>
     )
   }
-  const xbtn = (label, action, title) => (
-    <button onMouseDown={e => { e.preventDefault(); action() }} title={title}
-      style={{ ...ghost, fontSize:11, height:24, color:'#7c3aed' }}
-      onMouseEnter={e => e.currentTarget.style.background='#ede9fe'} onMouseLeave={hoverOut}>
-      {label}
-    </button>
-  )
-  const rowStyle = { display:'flex', gap:2, padding:'5px 8px', background:'white', flexWrap:'wrap', alignItems:'center' }
+  const rowStyle = { display: 'flex', gap: 2, padding: '5px 8px', background: 'white', flexWrap: 'wrap', alignItems: 'center' }
+
+  // Numeric font size (px) — reads current size at the caret; legacy em values map back through the base size
+  const SIZE_LADDER = [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 36, 48]
+  const baseSize = isMobile ? 16 : 15
+  const curSizePx = (() => {
+    const fs = editor.getAttributes('textStyle').fontSize
+    if (!fs) return baseSize
+    if (String(fs).endsWith('px')) return Math.round(parseFloat(fs))
+    if (String(fs).endsWith('em')) return Math.round(parseFloat(fs) * baseSize)
+    return baseSize
+  })()
+  const applySize = px => {
+    const v = Math.round(px)
+    if (!v || isNaN(v)) return
+    const clamped = Math.max(6, Math.min(96, v))
+    clamped === baseSize ? chain().unsetFontSize().run() : chain().setFontSize(clamped + 'px').run()
+  }
+  const stepSize = dir => {
+    const next = dir > 0 ? SIZE_LADDER.find(s => s > curSizePx) : [...SIZE_LADDER].reverse().find(s => s < curSizePx)
+    if (next) applySize(next)
+  }
+  const editLink = () => {
+    const prev = editor.getAttributes('link').href || ''
+    const url = window.prompt('Link URL (empty to remove)', prev)
+    if (url === null) return
+    if (!url.trim()) { chain().extendMarkRange('link').unsetLink().run(); return }
+    chain().extendMarkRange('link').setLink({ href: /^(https?:|mailto:)/i.test(url) ? url : `https://${url}` }).run()
+  }
+  const insertMention = name => chain().insertContent([{ type: 'mention', attrs: { name } }, { type: 'text', text: ' ' }]).run()
+
+  const COLORS = [
+    '#111111', '#c0392b', '#0C447C', '#27500A', '#7d3c98', '#d35400',
+    '#f1948a', '#85c1e9', '#a9dfbf', '#d7bde2', '#fad7a0', '#a2d9ce', '#f9e79f', '#aab7b8',
+  ]
+  const HIGHLIGHTS = ['#fef08a', '#bbf7d0', '#bae6fd', '#fecdd3', '#fed7aa', '#e9d5ff']
+  const CELL_FILLS = ['', '#fef9c3', '#dbeafe', '#dcfce7', '#fce7f3', '#ffedd5', '#f3f4f6', '#1e293b']
 
   return (
-    <div ref={wrapperRef} style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0, position:'relative' }}>
-      <style>{`.note-editor p{margin:0}.note-editor td{line-height:1.6}.note-editor ul,.note-editor ol{padding-left:18px;margin:2px 0}.note-editor ol{list-style:none;counter-reset:item}.note-editor ol>li{counter-increment:item}.note-editor ol>li::before{content:counters(item,".")". ";margin-right:3px}.note-editor font[size="1"]{font-size:0.72em}.note-editor font[size="2"]{font-size:0.86em}.note-editor font[size="3"]{font-size:1em}.note-editor font[size="4"]{font-size:1.3em}.note-editor font[size="5"]{font-size:1.7em}`}</style>
-      {/* Toolbar — sticky so it stays above keyboard on mobile */}
-      <div style={{ position:'sticky', top:0, zIndex:5, background:'white', border:'0.5px solid #e5e5e5', borderBottom:'none', borderRadius:'10px 10px 0 0', overflow:'visible' }}>
-      {/* Row 1: text formatting + lists + table + size */}
-      <div style={{ ...rowStyle, borderBottom:'0.5px solid #f2eff9', borderRadius:'10px 10px 0 0' }}>
-        {tbtn('B', 'bold', null, { fontWeight:700 })}
-        {tbtn('I', 'italic', null, { fontStyle:'italic' })}
-        {tbtn('U', 'underline', null, { textDecoration:'underline' })}
-        {tbtn('S', 'strikeThrough', null, { textDecoration:'line-through' })}
-        {tbtn(<span>x<sup>2</sup></span>, 'superscript', null, { title:'Superscript' })}
-        {tbtn(<span>x<sub>2</sub></span>, 'subscript', null, { title:'Subscript' })}
-        <div style={sep} />
-        {tbtn('• List', 'insertUnorderedList')}
-        {tbtn('1. List', 'insertOrderedList')}
-        {tbtn('→', 'indent', null, { title:'Indent' })}
-        {tbtn('←', 'outdent', null, { title:'Outdent' })}
-        <div style={sep} />
-        <button onMouseDown={e => { e.preventDefault(); convertToChecklist() }}
-          style={{ ...ghost, padding:'0 8px' }} onMouseEnter={hoverIn} onMouseLeave={hoverOut}
-          title="Convert current line or selected text to checklist item">
-          ☑ Check
-        </button>
-        <div style={sep} />
-        <div style={{ position:'relative' }}>
-          <button onMouseDown={e => { e.preventDefault(); setShowTablePicker(v => !v) }}
-            style={{ ...ghost, padding:'0 8px', background:showTablePicker?'#ede9fe':'transparent', color:showTablePicker?'#7c3aed':'#555' }}
-            onMouseEnter={e => { if (!showTablePicker) e.currentTarget.style.background='#f0edff' }} onMouseLeave={e => { if (!showTablePicker) e.currentTarget.style.background='transparent' }}>
-            ⊞ Table
-          </button>
-          {showTablePicker && (
-            <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:20 }}>
-              <div style={{ fontSize:10, color:'#888', marginBottom:5, textAlign:'center', minWidth:120 }}>
-                {tableHover[0] > 0 ? `${tableHover[0]} × ${tableHover[1]} table` : 'Hover to select'}
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, position: 'relative' }}>
+      <style>{NOTE_EDITOR_CSS}</style>
+      {/* Toolbar — sticky so it stays above the keyboard on mobile */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 5, background: 'white', border: '0.5px solid #e5e5e5', borderBottom: 'none' }}>
+        {/* Row 1: history · blocks · marks · lists · inserts · size · align */}
+        <div style={{ ...rowStyle, borderBottom: '0.5px solid #f2eff9' }}>
+          {tbtn(<Undo2 size={14} />, () => chain().undo().run(), { title: 'Undo', disabled: !editor.can().undo() })}
+          {tbtn(<Redo2 size={14} />, () => chain().redo().run(), { title: 'Redo', disabled: !editor.can().redo() })}
+          <div style={sep} />
+          {tbtn('B', () => chain().toggleBold().run(), { active: active('bold'), style: { fontWeight: 700 } })}
+          {tbtn('I', () => chain().toggleItalic().run(), { active: active('italic'), style: { fontStyle: 'italic' } })}
+          {tbtn('U', () => chain().toggleUnderline().run(), { active: active('underline'), style: { textDecoration: 'underline' } })}
+          {tbtn('S', () => chain().toggleStrike().run(), { active: active('strike'), style: { textDecoration: 'line-through' } })}
+          {tbtn(<span>x<sup>2</sup></span>, () => chain().toggleSuperscript().run(), { active: active('superscript'), title: 'Superscript' })}
+          {tbtn(<span>x<sub>2</sub></span>, () => chain().toggleSubscript().run(), { active: active('subscript'), title: 'Subscript' })}
+          <div style={sep} />
+          {tbtn('• List', () => chain().toggleBulletList().run(), { active: active('bulletList') })}
+          {tbtn('1. List', () => chain().toggleOrderedList().run(), { active: active('orderedList') })}
+          {tbtn('☑ Check', () => chain().toggleTaskList().run(), { active: active('taskList'), title: 'Checklist' })}
+          {tbtn('→', () => { chain().sinkListItem(active('taskItem') ? 'taskItem' : 'listItem').run() }, { title: 'Indent' })}
+          {tbtn('←', () => { chain().liftListItem(active('taskItem') ? 'taskItem' : 'listItem').run() }, { title: 'Outdent' })}
+          <div style={sep} />
+          {tbtn(<Link2 size={14} />, editLink, { active: active('link'), title: 'Add / edit link' })}
+          {tbtn(<Quote size={13} />, () => chain().toggleBlockquote().run(), { active: active('blockquote'), title: 'Quote' })}
+          {tbtn(<Minus size={14} />, () => chain().setHorizontalRule().run(), { title: 'Divider' })}
+          <div style={{ position: 'relative' }}>
+            <button onMouseDown={e => { e.preventDefault(); setShowTablePicker(v => !v) }}
+              style={{ ...ghost, padding: '0 8px', background: showTablePicker ? '#ede9fe' : 'transparent', color: showTablePicker ? '#7c3aed' : '#555' }}
+              onMouseEnter={e => { if (!showTablePicker) e.currentTarget.style.background = '#f0edff' }} onMouseLeave={e => { if (!showTablePicker) e.currentTarget.style.background = 'transparent' }}>
+              ⊞ Table
+            </button>
+            {showTablePicker && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, background: 'white', border: '0.5px solid #e5e5e5', borderRadius: 8, padding: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 20 }}
+                onMouseLeave={() => setTableHover([0, 0])}>
+                <div style={{ fontSize: 10, color: '#888', marginBottom: 5, textAlign: 'center', minWidth: 120 }}>
+                  {tableHover[0] > 0 ? `${tableHover[0]} × ${tableHover[1]} table` : 'Hover to select'}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 18px)', gap: 2 }}>
+                  {Array.from({ length: 36 }).map((_, i) => {
+                    const r = Math.floor(i / 6) + 1, c = (i % 6) + 1
+                    const on = r <= tableHover[0] && c <= tableHover[1]
+                    return (
+                      <div key={i}
+                        style={{ width: 16, height: 16, background: on ? '#ddd6fe' : '#f0f0f0', border: `1px solid ${on ? '#c4b5fd' : '#e0e0e0'}`, borderRadius: 2, cursor: 'pointer' }}
+                        onMouseEnter={() => setTableHover([r, c])}
+                        onClick={() => { if (tableHover[0] > 0) { chain().insertTable({ rows: tableHover[0], cols: tableHover[1], withHeaderRow: false }).run(); setShowTablePicker(false) } }} />
+                    )
+                  })}
+                </div>
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 18px)', gap:2 }}>
-                {Array.from({ length:36 }).map((_, i) => {
-                  const r = Math.floor(i/6)+1, c = (i%6)+1
-                  const active = r <= tableHover[0] && c <= tableHover[1]
-                  return (
-                    <div key={i}
-                      style={{ width:16, height:16, background:active?'#bfdbfe':'#f0f0f0', border:`1px solid ${active?'#93c5fd':'#e0e0e0'}`, borderRadius:2, cursor:'pointer' }}
-                      onMouseEnter={() => setTableHover([r,c])}
-                      onClick={() => tableHover[0] > 0 && insertTable(tableHover[0], tableHover[1])} />
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-        <div style={sep} />
-        <select value={fontSize} onMouseDown={e => e.stopPropagation()}
-          onChange={e => exec('fontSize', e.target.value)}
-          style={{ fontSize:11, border:'0.5px solid #e5e2ee', borderRadius:7, padding:'0 6px', background:'#faf9ff', cursor:'pointer', height:26, color:'#555', outline:'none' }}>
-          <option value="1">X-Small</option>
-          <option value="2">Small</option>
-          <option value="3">Normal</option>
-          <option value="4">Large</option>
-          <option value="5">X-Large</option>
-        </select>
-        <div style={sep} />
-        {tbtn('✕ fmt', 'removeFormat', null, { color:'#aaa', fontSize:11 })}
-        {members.length > 0 && (
-          <>
+            )}
+          </div>
+          <div style={sep} />
+          <div style={{ display: 'flex', alignItems: 'center', border: '0.5px solid #e5e2ee', borderRadius: 7, background: '#faf9ff', height: 26, overflow: 'hidden', flexShrink: 0 }} title="Font size (px)">
+            <button onMouseDown={e => { e.preventDefault(); stepSize(-1) }}
+              style={{ ...ghost, height: '100%', minWidth: 22, borderRadius: 0, fontSize: 14 }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f0edff'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>−</button>
+            <input key={curSizePx} type="text" inputMode="numeric" defaultValue={curSizePx}
+              onMouseDown={e => e.stopPropagation()}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applySize(parseInt(e.target.value, 10)) } }}
+              onBlur={e => { const v = parseInt(e.target.value, 10); if (v && v !== curSizePx) applySize(v) }}
+              style={{ width: 26, textAlign: 'center', fontSize: 11.5, border: 'none', outline: 'none', background: 'transparent', color: '#555', fontFamily: 'inherit', padding: 0 }} />
+            <button onMouseDown={e => { e.preventDefault(); stepSize(1) }}
+              style={{ ...ghost, height: '100%', minWidth: 22, borderRadius: 0, fontSize: 13 }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f0edff'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>+</button>
+          </div>
+          {!isMobile && <>
             <div style={sep} />
-            <MentionPicker members={members} onInsert={name => {
-              editorRef.current.focus()
-              document.execCommand('insertHTML', false,
-                `<span data-mention="${name}" style="background:#ede9fe;color:#7c3aed;border-radius:4px;padding:1px 6px;font-weight:500;white-space:nowrap">@${name}</span>&nbsp;`)
-              onChange(editorRef.current.innerHTML)
-            }} />
-          </>
+            {tbtn(<AlignLeft size={14} />, () => chain().setTextAlign('left').run(), { active: active({ textAlign: 'left' }), title: 'Align left' })}
+            {tbtn(<AlignCenter size={14} />, () => chain().setTextAlign('center').run(), { active: active({ textAlign: 'center' }), title: 'Center' })}
+            {tbtn(<AlignRight size={14} />, () => chain().setTextAlign('right').run(), { active: active({ textAlign: 'right' }), title: 'Align right' })}
+          </>}
+          <div style={sep} />
+          {tbtn('✕ fmt', () => chain().unsetAllMarks().clearNodes().run(), { title: 'Clear formatting', style: { color: '#aaa', fontSize: 11 } })}
+          {members.length > 0 && <MentionPicker members={members} onInsert={insertMention} />}
+        </div>
+        {/* Row 2: colors — scrollable on mobile */}
+        <div style={{ ...rowStyle, gap: 5, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+          <span style={{ fontSize: 10, color: '#aaa', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Text</span>
+          <div style={sep} />
+          {COLORS.map(c => (
+            <button key={c} onMouseDown={e => { e.preventDefault(); chain().setColor(c).run() }}
+              style={{ width: isMobile ? 20 : 14, height: isMobile ? 20 : 14, borderRadius: '50%', background: c, border: '1.5px solid transparent', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#555'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'} />
+          ))}
+          <button onMouseDown={e => { e.preventDefault(); chain().unsetColor().run() }}
+            style={{ fontSize: 10, padding: '2px 6px', border: 'none', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#bbb', flexShrink: 0 }}
+            onMouseEnter={e => e.currentTarget.style.background = '#f0edff'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            title="Default color">✕</button>
+          <div style={{ ...sep, margin: '0 5px' }} />
+          <span style={{ fontSize: 10, color: '#aaa', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Highlight</span>
+          <div style={sep} />
+          {HIGHLIGHTS.map(c => (
+            <button key={c} onMouseDown={e => { e.preventDefault(); chain().toggleHighlight({ color: c }).run() }}
+              style={{ width: isMobile ? 22 : 16, height: isMobile ? 20 : 14, borderRadius: 3, background: c, border: '1.5px solid transparent', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#555'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'} />
+          ))}
+          <button onMouseDown={e => { e.preventDefault(); chain().unsetHighlight().run() }}
+            style={{ fontSize: 10, padding: isMobile ? '4px 8px' : '2px 6px', border: 'none', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#bbb', flexShrink: 0 }}
+            onMouseEnter={e => e.currentTarget.style.background = '#f0edff'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            title="Remove highlight">✕</button>
+        </div>
+        {/* Row 3: contextual table controls */}
+        {!isMobile && active('table') && (
+          <div style={{ ...rowStyle, gap: 4, background: '#faf5ff', borderTop: '0.5px solid #f2eff9' }}>
+            <span style={{ fontSize: 10, color: '#7c3aed', fontWeight: 500, marginRight: 2, flexShrink: 0 }}>Table</span>
+            <div style={{ ...sep, background: '#ddd6fe' }} />
+            {tbtn('← Col', () => chain().addColumnBefore().run(), { title: 'Insert column left', style: { fontSize: 11, color: '#7c3aed' } })}
+            {tbtn('Col →', () => chain().addColumnAfter().run(), { title: 'Insert column right', style: { fontSize: 11, color: '#7c3aed' } })}
+            {tbtn('✕ Col', () => chain().deleteColumn().run(), { title: 'Delete column', style: { fontSize: 11, color: '#7c3aed' } })}
+            <div style={{ ...sep, background: '#ddd6fe' }} />
+            {tbtn('↑ Row', () => chain().addRowBefore().run(), { title: 'Insert row above', style: { fontSize: 11, color: '#7c3aed' } })}
+            {tbtn('Row ↓', () => chain().addRowAfter().run(), { title: 'Insert row below', style: { fontSize: 11, color: '#7c3aed' } })}
+            {tbtn('✕ Row', () => chain().deleteRow().run(), { title: 'Delete row', style: { fontSize: 11, color: '#7c3aed' } })}
+            <div style={{ ...sep, background: '#ddd6fe' }} />
+            {tbtn('⊞→', () => chain().mergeCells().run(), { title: 'Merge cells', style: { color: '#7c3aed' } })}
+            {tbtn('⊟', () => chain().splitCell().run(), { title: 'Split cell', style: { color: '#7c3aed' } })}
+            {tbtn('✕ Table', () => chain().deleteTable().run(), { title: 'Delete table', style: { fontSize: 11, color: '#c0392b' } })}
+            <div style={{ ...sep, background: '#ddd6fe' }} />
+            <span style={{ fontSize: 10, color: '#7c3aed', flexShrink: 0 }}>Cell fill</span>
+            {CELL_FILLS.map((c, i) => (
+              <button key={i} onMouseDown={e => { e.preventDefault(); chain().setCellAttribute('backgroundColor', c || null).run() }}
+                title={c || 'Clear fill'}
+                style={{ width: 15, height: 15, borderRadius: 3, background: c || 'white', border: c ? '1.5px solid transparent' : '1.5px solid #d1d5db', cursor: 'pointer', padding: 0, flexShrink: 0, position: 'relative', overflow: 'hidden' }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = '#7c3aed'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = c ? 'transparent' : '#d1d5db'}>
+                {!c && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#bbb', lineHeight: 1 }}>✕</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* Row 3b: contextual image controls */}
+        {active('image') && (
+          <div style={{ ...rowStyle, gap: 4, background: '#faf5ff', borderTop: '0.5px solid #f2eff9' }}>
+            <span style={{ fontSize: 10, color: '#7c3aed', fontWeight: 500, marginRight: 2, flexShrink: 0 }}>Image</span>
+            <div style={{ ...sep, background: '#ddd6fe' }} />
+            {['25%', '50%', '75%', '100%'].map(w => tbtn(w, () => chain().updateAttributes('image', { width: w }).run(), { key: w, title: `Width ${w}`, style: { fontSize: 11, color: '#7c3aed' }, active: editor.getAttributes('image').width === w }))}
+            {tbtn('Auto', () => chain().updateAttributes('image', { width: null }).run(), { title: 'Natural width', style: { fontSize: 11, color: '#7c3aed' } })}
+            <div style={{ ...sep, background: '#ddd6fe' }} />
+            {tbtn('✕ Remove', () => chain().deleteSelection().run(), { title: 'Remove image', style: { fontSize: 11, color: '#c0392b' } })}
+          </div>
         )}
       </div>
-      {/* Row 2: colors — scrollable on mobile */}
-      <div style={{ ...rowStyle, gap:5, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling:'touch' }}>
-        <span style={{ fontSize:10, color:'#aaa', flexShrink:0, textTransform:'uppercase', letterSpacing:'0.05em' }}>Text</span>
-        <div style={sep} />
-        {COLORS.map(c => (
-          <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }}
-            style={{ width: isMobile ? 20 : 14, height: isMobile ? 20 : 14, borderRadius:'50%', background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
-            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
-            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
-        ))}
-        <div style={{ ...sep, margin:'0 5px' }} />
-        <span style={{ fontSize:10, color:'#aaa', flexShrink:0, textTransform:'uppercase', letterSpacing:'0.05em' }}>Highlight</span>
-        <div style={sep} />
-        {HIGHLIGHTS.map(c => (
-          <button key={c} onMouseDown={e => { e.preventDefault(); exec('hiliteColor', c) }}
-            style={{ width: isMobile ? 22 : 16, height: isMobile ? 20 : 14, borderRadius:3, background:c, border:'1.5px solid transparent', cursor:'pointer', padding:0, flexShrink:0 }}
-            onMouseEnter={e => e.currentTarget.style.borderColor='#555'}
-            onMouseLeave={e => e.currentTarget.style.borderColor='transparent'} />
-        ))}
-        <button onMouseDown={e => { e.preventDefault(); exec('hiliteColor', 'transparent') }}
-          style={{ fontSize:10, padding: isMobile ? '4px 8px' : '2px 6px', border:'none', borderRadius:6, background:'transparent', cursor:'pointer', color:'#bbb', lineHeight:1.4, flexShrink:0 }}
-          onMouseEnter={e => e.currentTarget.style.background='#f0edff'} onMouseLeave={e => e.currentTarget.style.background='transparent'}
-          title="Remove highlight">✕</button>
-      </div>
-      {/* Row 3: table context controls (hidden on mobile) */}
-      {!isMobile && tableCtx && (
-        <div style={{ ...rowStyle, borderTop:'0.5px solid #e9d5ff', background:'#faf5ff', gap:4 }}>
-          <span style={{ fontSize:10, color:'#7c3aed', fontWeight:500, marginRight:2, flexShrink:0 }}>Table</span>
-          <div style={{ ...sep, background:'#ddd6fe' }} />
-          {xbtn('← Col', () => tableOp('col-left'), 'Insert column to the left')}
-          {xbtn('Col →', () => tableOp('col-right'), 'Insert column to the right')}
-          {xbtn('✕ Col', () => tableOp('col-del'), 'Delete this column')}
-          <div style={{ ...sep, background:'#ddd6fe' }} />
-          {xbtn('↑ Row', () => tableOp('row-above'), 'Insert row above')}
-          {xbtn('Row ↓', () => tableOp('row-below'), 'Insert row below')}
-          {xbtn('✕ Row', () => tableOp('row-del'), 'Delete this row')}
-          <div style={{ ...sep, background:'#ddd6fe' }} />
-          {xbtn('⊞→', () => tableOp('merge-right'), 'Merge with cell to the right')}
-          {xbtn('⊞↓', () => tableOp('merge-down'), 'Merge with cell below')}
-          {xbtn('⊟', () => tableOp('split'), 'Split merged cell')}
-          <div style={{ ...sep, background:'#ddd6fe' }} />
-          <span style={{ fontSize:10, color:'#7c3aed', flexShrink:0 }}>Cell fill</span>
-          {CELL_FILLS.map((c, i) => (
-            <button key={i} onMouseDown={e => { e.preventDefault(); fillCell(c) }}
-              title={c || 'Clear fill'}
-              style={{ width:15, height:15, borderRadius:3, background:c||'white', border:c?'1.5px solid transparent':'1.5px solid #d1d5db', cursor:'pointer', padding:0, flexShrink:0, position:'relative', overflow:'hidden' }}
-              onMouseEnter={e => e.currentTarget.style.borderColor='#7c3aed'}
-              onMouseLeave={e => e.currentTarget.style.borderColor=c?'transparent':'#d1d5db'}>
-              {!c && <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#bbb', lineHeight:1 }}>✕</span>}
-            </button>
-          ))}
-        </div>
-      )}
-      </div>{/* end sticky toolbar */}
-      <div ref={editorRef} contentEditable suppressContentEditableWarning
-        onInput={() => { if (!pasteInProgressRef.current) onChange(editorRef.current.innerHTML) }}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        onScroll={() => { if (imgSel) computeImgBar(imgSel) }}
-        onClick={e => {
-          if (e.target.type === 'checkbox') setTimeout(() => onChange(editorRef.current.innerHTML), 0)
-          setShowTablePicker(false)
-          if (e.target.tagName === 'IMG') { selectImg(e.target) }
-          else { selectImg(null) }
-        }}
-        onMouseLeave={() => setTableHover([0,0])}
-        className="note-editor"
-        style={{ flex:1, border:'0.5px solid #e5e5e5', borderTop:'none', borderRadius:'0 0 10px 10px', padding:'12px 16px', outline:'none', fontSize: isMobile ? 16 : 15, lineHeight:1.55, overflowY:'auto', WebkitOverflowScrolling:'touch', color:'#333', minHeight:200 }} />
-      {imgSel && imgBar && (<>
-        <div onMouseDown={e => e.preventDefault()} style={{
-          position:'absolute', top: Math.max(2, imgBar.top - 34), left: imgBar.left,
-          zIndex:200, background:'#1c1c1e', borderRadius:6,
-          display:'flex', alignItems:'center', gap:1, padding:'3px 5px',
-          boxShadow:'0 2px 8px rgba(0,0,0,0.3)', pointerEvents:'auto'
-        }}>
-          {['25%','50%','75%','100%'].map(w => (
-            <button key={w} onMouseDown={e => { e.preventDefault(); setImgWidth(w) }}
-              style={{ background:'none', border:'none', color:'#fff', fontSize:11, cursor:'pointer', padding:'1px 6px', borderRadius:3, lineHeight:1.6 }}
-              onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.15)'}
-              onMouseLeave={e => e.currentTarget.style.background='none'}>{w}</button>
-          ))}
-          <div style={{ width:1, background:'#555', height:14, margin:'0 2px' }} />
-          <button onMouseDown={e => { e.preventDefault(); removeSelectedImg() }}
-            style={{ background:'none', border:'none', color:'#ff6b6b', fontSize:11, cursor:'pointer', padding:'1px 6px', borderRadius:3, lineHeight:1.6 }}
-            onMouseEnter={e => e.currentTarget.style.background='rgba(255,80,80,0.15)'}
-            onMouseLeave={e => e.currentTarget.style.background='none'}>✕</button>
-        </div>
-        <div onMouseDown={startDragResize} style={{
-          position:'absolute', top: imgBar.top + imgBar.height - 8, left: imgBar.left + imgBar.width - 8,
-          width:16, height:16, background:'#7c3aed', borderRadius:'0 0 4px 0',
-          cursor:'se-resize', zIndex:200, border:'2px solid white', boxShadow:'0 1px 3px rgba(0,0,0,0.25)'
-        }} />
-      </>)}
+      {/* Editing surface */}
+      <EditorContent editor={editor} className="note-editor"
+        style={{ flex: 1, border: '0.5px solid #e5e5e5', borderTop: 'none', overflowY: 'auto', WebkitOverflowScrolling: 'touch', fontSize: isMobile ? 16 : 15, lineHeight: 1.55, color: '#333', minHeight: 200, cursor: 'text' }}
+        onClick={e => { if (e.target === e.currentTarget || e.target.classList?.contains('note-editor')) editor.chain().focus('end').run() }} />
     </div>
   )
 }
@@ -3216,6 +3001,23 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   const [dragOverTarget, setDragOverTarget] = useState(null) // group id | 'ungrouped' | null
   const dragNoteRef = useRef(null)
   const isMobileNotes = window.innerWidth < 640
+  // Resizable note-list sidebar (desktop) — width persists per device
+  const [sidebarW, setSidebarW] = useState(() => { const v = parseInt(localStorage.getItem('taskr-notes-sidebar-w'), 10); return v >= 160 && v <= 520 ? v : 220 })
+  const startSidebarDrag = e => {
+    e.preventDefault()
+    const startX = e.clientX, startW = sidebarW
+    const clamp = w => Math.max(160, Math.min(520, w))
+    const onMove = mv => setSidebarW(clamp(startW + mv.clientX - startX))
+    const onUp = mv => {
+      document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', onUp)
+      document.body.style.userSelect = ''; document.body.style.cursor = ''
+      const w = clamp(startW + mv.clientX - startX)
+      try { localStorage.setItem('taskr-notes-sidebar-w', String(w)) } catch {}
+    }
+    document.body.style.userSelect = 'none'; document.body.style.cursor = 'col-resize'
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+  }
 
   // Group tree helpers (one level of nesting: groups → subgroups)
   const topGroups = groups.filter(g => !g.parent_id)
@@ -3394,7 +3196,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   const activeGroupLabel = activeGroupId === undefined ? 'All Notes' : activeGroupId === null ? 'Ungrouped' : (groups.find(g => g.id === activeGroupId)?.name || 'Notes')
 
   const sidebar = (
-    <div style={{ width: isMobileNotes ? '100%' : 220, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+    <div style={{ width: isMobileNotes ? '100%' : sidebarW, flexShrink:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, display:'flex', flexDirection:'column', overflow:'hidden' }}>
       <div style={{ padding:'8px 12px', borderBottom:'0.5px solid #f0f0f0' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:7 }}>
           <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>{activeGroupLabel}</span>
@@ -3618,8 +3420,8 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
           {selectedId && (() => {
             const atts = (() => { const n = notes.find(x => x.id === selectedId); return Array.isArray(n?.attachments) ? n.attachments : [] })()
             return (
-              <div style={{ flexShrink:0, padding:'0 14px', maxHeight:170, overflowY:'auto' }}>
-                <AttachmentSection attachments={atts} entityPath={`notes/${selectedId}`}
+              <div style={{ flexShrink:0, padding:'8px 14px', background:'#faf9fb', borderBottom:'0.5px solid #eee', maxHeight:150, overflowY:'auto' }}>
+                <AttachmentSection compact attachments={atts} entityPath={`notes/${selectedId}`}
                   onAdd={att => onSave({ ...draft, attachments: [...atts, att] }, selectedId)}
                   onRemove={id => onSave({ ...draft, attachments: atts.filter(a => a.id !== id) }, selectedId)} />
               </div>
@@ -3643,8 +3445,14 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   }
 
   const layout = (
-    <div style={{ display:'flex', gap:16, height: focused ? 'calc(100vh - 72px)' : 'calc(100vh - 220px)', minHeight:400 }}>
+    <div style={{ display:'flex', height: focused ? 'calc(100vh - 72px)' : 'calc(100vh - 220px)', minHeight:400 }}>
       {sidebar}
+      <div onPointerDown={startSidebarDrag} title="Drag to resize the note list"
+        style={{ width:16, flexShrink:0, cursor:'col-resize', display:'flex', alignItems:'stretch', justifyContent:'center' }}
+        onMouseEnter={e => { e.currentTarget.firstChild.style.background = '#c4b5fd' }}
+        onMouseLeave={e => { e.currentTarget.firstChild.style.background = 'transparent' }}>
+        <div style={{ width:2.5, borderRadius:2, background:'transparent', margin:'8px 0', transition:'background 0.12s' }} />
+      </div>
       {editorPane}
     </div>
   )
@@ -3777,7 +3585,7 @@ function DatePickerISO({ value, onChange, initialMonth, minDate }) {
   return <DatePicker value={toDisplay(value)} onChange={v => onChange(toISO(v))} initialMonth={initialMonth} minDate={minDate} />
 }
 
-function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
+function AttachmentSection({ attachments, entityPath, onAdd, onRemove, compact = false }) {
   const fileRef = useRef()
   const [uploading, setUploading] = useState(false)
   const handleFile = async e => {
@@ -3797,7 +3605,7 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove }) {
     onRemove(att.id)
   }
   return (
-    <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:4 }}>
+    <div style={compact ? {} : { borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:4 }}>
       <label style={FIELD_LABEL}>Attachments</label>
       {attachments.map(att => (
         <div key={att.id} onDoubleClick={() => window.open(att.url, '_blank', 'noopener,noreferrer')} title="Double-click to open in a new tab"
@@ -4953,7 +4761,7 @@ function LoginScreen() {
   return (
     <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4ff', padding:16 }}>
       <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:16, padding:32, boxShadow:'0 4px 24px rgba(124,58,237,0.10)' }}>
-        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}><img src="/icon-192.png" alt="" style={{width:26,height:26,borderRadius:7,verticalAlign:-4,marginRight:8}} />TASKr</h1>
         {mode === 'sent' ? (
           <>
             <p style={{ fontSize:14, color:'#555', marginTop:8 }}>Check your email — a password reset link is on its way to <strong>{email}</strong>.</p>
@@ -5012,7 +4820,7 @@ function SetNewPasswordScreen({ onDone }) {
   return (
     <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4ff', padding:16 }}>
       <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:16, padding:32, boxShadow:'0 4px 24px rgba(124,58,237,0.10)' }}>
-        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}><img src="/icon-192.png" alt="" style={{width:26,height:26,borderRadius:7,verticalAlign:-4,marginRight:8}} />TASKr</h1>
         <p style={{ fontSize:13, color:'#777', margin:'6px 0 20px' }}>Set a new password for your account.</p>
         {done ? (
           <p style={{ fontSize:14, color:'#3a7d44', fontWeight:500 }}>Password updated! Signing you in…</p>
@@ -6306,7 +6114,7 @@ export default function App() {
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, marginBottom:isMobile?'0.9rem':'1.25rem', paddingBottom:isMobile?'0.75rem':'1rem' }}>
-        <h1 style={{ fontSize:isMobile?18:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', whiteSpace:'nowrap', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <h1 style={{ fontSize:isMobile?18:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', whiteSpace:'nowrap', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}><img src="/icon-192.png" alt="" style={{width:26,height:26,borderRadius:7,verticalAlign:-4,marginRight:8}} />TASKr</h1>
         <div style={{ display:'flex', alignItems:'center', gap:isMobile?6:10, minWidth:0 }}>
           <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:isMobile?1:4 }}>
             <span style={{ fontSize:isMobile?11:12, color:'#7c3aed', whiteSpace:'nowrap' }}>{new Date().toLocaleDateString('en-US', isMobile ? { weekday:'short', month:'short', day:'numeric' } : { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
