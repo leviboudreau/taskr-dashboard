@@ -1062,6 +1062,7 @@ function MentionPicker({ members, onInsert }) {
 function RichTextEditor({ initialValue, onChange, isMobile = false, members = [] }) {
   const editorRef = useRef(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
+  const [fontSize, setFontSize] = useState('3') // reflects the size at the caret
   const [tableHover, setTableHover] = useState([0, 0])
   const [tableCtx, setTableCtx] = useState(null)
   const [imgSel, setImgSel] = useState(null)
@@ -1196,6 +1197,8 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
         cur = cur.parentNode
       }
       setTableCtx(td && tr && table ? { td, tr, table } : null)
+      // Reflect the size at the caret in the font-size dropdown
+      if (editorRef.current.contains(sel.anchorNode)) { const fs = document.queryCommandValue('fontSize'); setFontSize(fs && /^[1-5]$/.test(fs) ? fs : '3') }
     }
     document.addEventListener('selectionchange', check)
     return () => document.removeEventListener('selectionchange', check)
@@ -1204,6 +1207,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
   const exec = (cmd, val = null) => {
     editorRef.current.focus()
     document.execCommand(cmd, false, val)
+    const fs = document.queryCommandValue('fontSize'); setFontSize(fs && /^[1-5]$/.test(fs) ? fs : '3')
     onChange(editorRef.current.innerHTML)
   }
 
@@ -1500,6 +1504,8 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
         {tbtn('I', 'italic', null, { fontStyle:'italic' })}
         {tbtn('U', 'underline', null, { textDecoration:'underline' })}
         {tbtn('S', 'strikeThrough', null, { textDecoration:'line-through' })}
+        {tbtn(<span>x<sup>2</sup></span>, 'superscript', null, { title:'Superscript' })}
+        {tbtn(<span>x<sub>2</sub></span>, 'subscript', null, { title:'Subscript' })}
         <div style={sep} />
         {tbtn('• List', 'insertUnorderedList')}
         {tbtn('1. List', 'insertOrderedList')}
@@ -1539,8 +1545,8 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
           )}
         </div>
         <div style={sep} />
-        <select defaultValue="3" onMouseDown={e => e.stopPropagation()}
-          onChange={e => { exec('fontSize', e.target.value); e.target.value='3' }}
+        <select value={fontSize} onMouseDown={e => e.stopPropagation()}
+          onChange={e => exec('fontSize', e.target.value)}
           style={{ fontSize:11, border:'0.5px solid #e5e2ee', borderRadius:7, padding:'0 6px', background:'#faf9ff', cursor:'pointer', height:26, color:'#555', outline:'none' }}>
           <option value="1">X-Small</option>
           <option value="2">Small</option>
@@ -3608,19 +3614,19 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
               ) : null
             })()}
           </div>
-          <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
-            onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }}
-            members={members} />
           {selectedId && (() => {
             const atts = (() => { const n = notes.find(x => x.id === selectedId); return Array.isArray(n?.attachments) ? n.attachments : [] })()
             return (
-              <div style={{ flexShrink:0, padding:'0 14px 10px', maxHeight:170, overflowY:'auto' }}>
+              <div style={{ flexShrink:0, padding:'0 14px', maxHeight:170, overflowY:'auto' }}>
                 <AttachmentSection attachments={atts} entityPath={`notes/${selectedId}`}
                   onAdd={att => onSave({ ...draft, attachments: [...atts, att] }, selectedId)}
                   onRemove={id => onSave({ ...draft, attachments: atts.filter(a => a.id !== id) }, selectedId)} />
               </div>
             )
           })()}
+          <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
+            onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }}
+            members={members} />
         </>
       )}
     </div>
