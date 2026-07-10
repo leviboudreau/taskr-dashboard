@@ -1982,7 +1982,7 @@ Important rules:
 
 // ─── Follow Ups Tab ───────────────────────────────────────────────────────────
 const DEFAULT_FOLLOW_UP_PEOPLE = ['Margarita', 'Illya', 'Matthew', 'Kaat']
-function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, onOpenTask, onReorderFollowUps, onReorderTasks, people = DEFAULT_FOLLOW_UP_PEOPLE, tasks = [], entityMap = {} }) {
+function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreateTask, onOpenTask, onReorderFollowUps, onReorderTasks, people = DEFAULT_FOLLOW_UP_PEOPLE, tasks = [], entityMap = {}, isMobile = false }) {
   const [activePerson, setActivePerson] = useState(null)
   const [showDone, setShowDone] = useState(false)
   const [addingFor, setAddingFor] = useState(null)
@@ -2044,6 +2044,16 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
   })
   const dropInd = <div style={{ height:2, borderRadius:1, background:'#7c3aed', margin:'0 0 3px' }} />
   const mark = (listKey, id) => ({ before: dropTarget?.listKey === listKey && dropTarget?.overId === id && dropTarget?.pos === 'before', after: dropTarget?.listKey === listKey && dropTarget?.overId === id && dropTarget?.pos === 'after' })
+  // Touch devices can't drag (HTML5 DnD is mouse-only), so mobile gets up/down arrows instead
+  const arrowMove = (list, i, dir, kind) => { const j = i + dir; if (j < 0 || j >= list.length) return; (kind === 'task' ? reorderTasks : reorderItems)(list, list[i].id, list[j].id, dir < 0 ? 'before' : 'after') }
+  const mArrows = (list, i, kind) => (isMobile && list.length > 1) ? (
+    <div style={{ display:'flex', flexDirection:'column', flexShrink:0 }}>
+      <button onClick={e => { e.stopPropagation(); arrowMove(list, i, -1, kind) }} disabled={i === 0} title="Move up"
+        style={{ background:'none', border:'none', cursor:i===0?'default':'pointer', color:i===0?'#e8e8e8':'#bbb', fontSize:11, lineHeight:1, padding:'0 5px' }}>▲</button>
+      <button onClick={e => { e.stopPropagation(); arrowMove(list, i, 1, kind) }} disabled={i === list.length-1} title="Move down"
+        style={{ background:'none', border:'none', cursor:i===list.length-1?'default':'pointer', color:i===list.length-1?'#e8e8e8':'#bbb', fontSize:11, lineHeight:1, padding:'0 5px' }}>▼</button>
+    </div>
+  ) : null
 
   const taskRow = (t, list, listKey) => {
     const ss = subStyle(tss(t))
@@ -2057,6 +2067,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
           <div style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background:ss.bg, border:`1px solid ${ss.border}` }} />
           <span style={{ flex:1, fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</span>
           <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:10, padding:'1px 6px', whiteSpace:'nowrap', flexShrink:0 }}>{ss.label}</span>
+          {mArrows(list, list.findIndex(x => x.id === t.id), 'task')}
         </div>
         {m.after && dropInd}
       </div>
@@ -2170,7 +2181,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                   {items.length === 0 && addingFor !== person && (
                     <div style={{ fontSize:12, color:'#bbb', padding:'2px 0' }}>No pending follow-ups — click + Add to create one</div>
                   )}
-                  {items.map(item => {
+                  {items.map((item, idx) => {
                     const m = mark(`${person}:items`, item.id)
                     const dh = editingId === item.id ? {} : rowDrag(item.id, `${person}:items`, 'item', items)
                     return (
@@ -2189,6 +2200,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
                       ) : (
                         <span onClick={() => !item.done && startEdit(item)} style={{ flex:1, fontSize:13, color:item.done?'#bbb':'#333', textDecoration:item.done?'line-through':'none', cursor:item.done?'default':'text' }}>{item.text}</span>
                       )}
+                      {editingId !== item.id && mArrows(items, idx, 'item')}
                       {editingId !== item.id && (
                         <>
                           {!item.done && onCreateTask && (
@@ -3552,6 +3564,18 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                     style={{ fontSize:13, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 8px', cursor:'pointer', color:'#555', lineHeight:1 }}>
                     ⛶
                   </button>
+                )}
+                {/* Mobile can't drag notes onto groups, so it gets a move-to-group selector */}
+                {isMobileNotes && groups.length > 0 && onMoveNote && (
+                  <select title="Move to group" value={notes.find(n => n.id === selectedId)?.group_id || ''}
+                    onChange={e => onMoveNote(selectedId, e.target.value || null)}
+                    style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 8px', cursor:'pointer', color:'#555', outline:'none', maxWidth:120 }}>
+                    <option value="">Ungrouped</option>
+                    {topGroups.flatMap(g => [
+                      <option key={g.id} value={g.id}>{g.name}</option>,
+                      ...subsOf(g.id).map(sg => <option key={sg.id} value={sg.id}>↳ {sg.name}</option>)
+                    ])}
+                  </select>
                 )}
                 <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
                   {copied ? '✓' : '📋'}
@@ -5112,7 +5136,7 @@ function QualSubtaskRow({ st, allSubs, sched, onUpdate }) {
             <>
               <div onClick={() => setDepOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
               <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:200, minWidth:230, maxHeight:240, overflowY:'auto', padding:6 }}>
-                {others.length === 0 && <div style={{ fontSize:11, color:'#bbb', padding:6 }}>No other subtasks</div>}
+                {others.length === 0 && deps.length === 0 && <div style={{ fontSize:11, color:'#bbb', padding:6 }}>No other subtasks</div>}
                 {others.map(o => { const on = deps.includes(o.id); return (
                   <button key={o.id} onClick={() => onUpdate({ depends_on: on ? deps.filter(d => d !== o.id) : [...deps, o.id] })}
                     style={{ display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', padding:'5px 7px', background:'none', border:'none', borderRadius:6, cursor:'pointer', fontSize:11 }}
@@ -5122,6 +5146,14 @@ function QualSubtaskRow({ st, allSubs, sched, onUpdate }) {
                     <span style={{ flex:1, color:'#333' }}>{o.title}</span>
                   </button>
                 )})}
+                {deps.filter(d => !others.some(o => o.id === d)).map(d => (
+                  <button key={d} onClick={() => onUpdate({ depends_on: deps.filter(x => x !== d) })} title="Removed subtask — click to clear this stale dependency"
+                    style={{ display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', padding:'5px 7px', background:'none', border:'none', borderRadius:6, cursor:'pointer', fontSize:11 }}
+                    onMouseEnter={e => e.currentTarget.style.background='#fff5f5'} onMouseLeave={e => e.currentTarget.style.background='none'}>
+                    <span style={{ width:11, flexShrink:0, color:'#c0392b', fontSize:10 }}>✓</span>
+                    <span style={{ flex:1, color:'#c0392b' }}>{d} <span style={{ color:'#bbb' }}>(removed)</span></span>
+                  </button>
+                ))}
               </div>
             </>
           )}
@@ -6709,7 +6741,7 @@ export default function App() {
 
       {/* ── Follow Ups ── */}
       {tab === 'followups' && (
-        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={followUpPeople} tasks={tasks} entityMap={entityMap}
+        <FollowUpsTab followUps={followUps} onAdd={addFollowUp} onToggle={toggleFollowUp} onDelete={deleteFollowUp} onUpdate={updateFollowUp} people={followUpPeople} tasks={tasks} entityMap={entityMap} isMobile={isMobile}
           onReorderFollowUps={reorderFollowUps} onReorderTasks={reorderTaskOrders}
           onOpenTask={t => { setForm({...t}); setIsEdit(true) }}
           onCreateTask={item => { setForm({ title:item.text, status:'active', owners:[item.person], substatus:'not_started' }); setIsEdit(false) }} />
@@ -6783,7 +6815,7 @@ function DepPicker({ deps, options, onChange }) {
         <>
           <div onClick={() => setOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
           <div style={{ position:'absolute', top:'calc(100% + 4px)', right:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:200, minWidth:230, maxHeight:240, overflowY:'auto', padding:6 }}>
-            {options.length === 0 && <div style={{ fontSize:11, color:'#bbb', padding:6 }}>No other subtasks</div>}
+            {options.length === 0 && deps.length === 0 && <div style={{ fontSize:11, color:'#bbb', padding:6 }}>No other subtasks</div>}
             {options.map(o => { const on = deps.includes(o.id); return (
               <button key={o.id} onClick={() => onChange(on ? deps.filter(d => d !== o.id) : [...deps, o.id])}
                 style={{ display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', padding:'5px 7px', background:'none', border:'none', borderRadius:6, cursor:'pointer', fontSize:11 }}
@@ -6793,6 +6825,14 @@ function DepPicker({ deps, options, onChange }) {
                 <span style={{ flex:1, color:'#333' }}>{o.title}</span>
               </button>
             )})}
+            {deps.filter(d => !options.some(o => o.id === d)).map(d => (
+              <button key={d} onClick={() => onChange(deps.filter(x => x !== d))} title="Removed subtask — click to clear this stale dependency"
+                style={{ display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', padding:'5px 7px', background:'none', border:'none', borderRadius:6, cursor:'pointer', fontSize:11 }}
+                onMouseEnter={e => e.currentTarget.style.background='#fff5f5'} onMouseLeave={e => e.currentTarget.style.background='none'}>
+                <span style={{ width:11, flexShrink:0, color:'#c0392b', fontSize:10 }}>✓</span>
+                <span style={{ flex:1, color:'#c0392b' }}>{d} <span style={{ color:'#bbb' }}>(removed)</span></span>
+              </button>
+            ))}
           </div>
         </>
       )}
@@ -6851,7 +6891,14 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
   const removeTask = i => setDraft(d => ({ ...d, tasks: d.tasks.filter((_,idx) => idx !== i) }))
   const updateTaskTitle = (i, v) => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===i?{...t,title:v}:t) }))
   const addSubtask = (i, v) => { const s = v.trim(); if (!s) return; setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===i ? { ...t, subtasks:[...t.subtasks, scheduled ? { id: nextSubId(i, t.subtasks), title: s, duration: 1, depends_on: [] } : s] } : t) })) }
-  const removeSubtask = (ti, si) => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===ti?{...t,subtasks:t.subtasks.filter((_,j)=>j!==si)}:t) }))
+  const removeSubtask = (ti, si) => setDraft(d => {
+    const removedId = scheduled ? d.tasks[ti]?.subtasks?.[si]?.id : null
+    return { ...d, tasks: d.tasks.map((t, idx) => {
+      let subs = idx === ti ? t.subtasks.filter((_, j) => j !== si) : t.subtasks
+      if (removedId) subs = subs.map(s => (s && typeof s === 'object' && Array.isArray(s.depends_on) && s.depends_on.includes(removedId)) ? { ...s, depends_on: s.depends_on.filter(x => x !== removedId) } : s)
+      return { ...t, subtasks: subs }
+    }) }
+  })
 
   // Every subtask across the template (for the dependency picker)
   const allTemplateSubs = (scheduled && draft) ? draft.tasks.flatMap(t => (t.subtasks || []).map(su => ({ id: su.id, title: su.title, trackShort: (t.title || '').split(' ')[0] }))) : []
