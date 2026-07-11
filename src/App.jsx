@@ -3592,13 +3592,19 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove, compact =
     const file = e.target.files[0]
     if (!file) return
     setUploading(true)
-    const path = `${entityPath}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-    const { error } = await supabase.storage.from('taskr-attachments').upload(path, file)
-    if (error) { console.error('[TASKr] upload error', error); setUploading(false); return }
-    const { data: { publicUrl } } = supabase.storage.from('taskr-attachments').getPublicUrl(path)
-    onAdd({ id: 'att' + Date.now(), name: file.name, size: file.size, type: file.type, path, url: publicUrl, ts: Date.now() })
-    setUploading(false)
-    e.target.value = ''
+    try {
+      const path = `${entityPath}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+      const { error } = await supabase.storage.from('taskr-attachments').upload(path, file)
+      if (error) { console.error('[TASKr] upload error', error); alert(`Upload failed: ${error.message}`); return }
+      const { data: { publicUrl } } = supabase.storage.from('taskr-attachments').getPublicUrl(path)
+      onAdd({ id: 'att' + Date.now(), name: file.name, size: file.size, type: file.type, path, url: publicUrl, ts: Date.now() })
+    } catch (err) {
+      console.error('[TASKr] upload error', err)
+      alert(`Upload failed: ${err.message || err}`)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
   }
   const handleRemove = async att => {
     await supabase.storage.from('taskr-attachments').remove([att.path])
