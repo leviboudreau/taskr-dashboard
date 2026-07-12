@@ -22,6 +22,7 @@ const COLS = [
   { key: 'in_progress', lbl: 'In progress' },
   { key: 'at_risk',     lbl: 'At risk' },
   { key: 'on_hold',     lbl: 'On hold' },
+  { key: 'waiting',     lbl: 'Waiting' },
   { key: 'complete',    lbl: 'Complete' },
 ]
 const SUBSTATUS = [
@@ -31,6 +32,7 @@ const SUBSTATUS = [
   { key: 'in_progress', label: 'In progress', bg: '#E6F1FB', tc: '#0C447C', border: '#85B7EB' },
   { key: 'at_risk', label: 'At risk', bg: '#FCEBEB', tc: '#791F1F', border: '#F09595' },
   { key: 'on_hold', label: 'On hold', bg: '#FAEEDA', tc: '#633806', border: '#FAC775' },
+  { key: 'waiting', label: 'Waiting', bg: '#FFF4E0', tc: '#8A5A00', border: '#F0A500' },
   { key: 'complete', label: 'Complete', bg: '#EAF3DE', tc: '#27500A', border: '#97C459' },
   { key: 'canceled', label: 'Canceled', bg: '#F1EFE8', tc: '#888780', border: '#B4B2A9' },
 ]
@@ -185,6 +187,22 @@ const fmtDateTime = iso => { if (!iso) return '—'; const d = new Date(iso); re
 // ─── Shared modal / form styling (matches the app's menu + pill language) ──────
 const MODAL_OVERLAY = { position:'fixed', inset:0, background:'rgba(40,30,60,0.32)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingBottom:'env(safe-area-inset-bottom)', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)' }
 const MODAL_CARD = { background:'white', borderRadius:16, border:'0.5px solid #e5e5e5', boxShadow:'0 12px 40px rgba(80,60,120,0.18)', padding:'1.1rem 1.25rem', width:'100%', maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }
+// Standard modal close (X) button. Rendered as the FIRST child inside a scrollable modal card: the
+// zero-height sticky wrapper pins it to the top-right of the card's visible scroll position (not just
+// its static top), so it never scrolls out of reach on long forms. No DOM restructuring required —
+// just drop this in right after the card's opening <div>.
+function ModalCloseButton({ onClick }) {
+  return (
+    <div style={{ position:'sticky', top:0, zIndex:20, height:0, display:'flex', justifyContent:'flex-end', pointerEvents:'none' }}>
+      <button onClick={onClick} title="Close" aria-label="Close"
+        style={{ pointerEvents:'auto', marginTop:10, marginRight:10, width:26, height:26, borderRadius:'50%', background:'#111', color:'white', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, lineHeight:1, padding:0, flexShrink:0, fontFamily:'inherit', boxShadow:'0 1px 4px rgba(0,0,0,0.2)' }}
+        onMouseEnter={e => e.currentTarget.style.background = '#333'}
+        onMouseLeave={e => e.currentTarget.style.background = '#111'}>
+        ✕
+      </button>
+    </div>
+  )
+}
 const FIELD_LABEL = { fontSize:10, fontWeight:600, color:'#a99fc0', display:'block', marginBottom:5, textTransform:'uppercase', letterSpacing:'0.06em' }
 const FIELD_SELECT = { width:'100%', fontSize:13, padding:'7px 9px', border:'0.5px solid #e0e0e0', borderRadius:8, background:'white', outline:'none', fontFamily:'inherit', color:'#333', cursor:'pointer' }
 const FIELD_INPUT = { width:'100%', boxSizing:'border-box', fontSize:13, padding:'7px 9px', border:'0.5px solid #e0e0e0', borderRadius:8, background:'white', outline:'none', fontFamily:'inherit', color:'#333' }
@@ -368,7 +386,7 @@ function WorldClock({ style: extraStyle = {} }) {
 
 // ─── Badge ────────────────────────────────────────────────────────────────────
 function Badge({ type, children }) {
-  const s = { domain:{ background:'#E6F1FB', color:'#0C447C' }, owner:{ background:'#E1F5EE', color:'#085041' }, due:{ background:'#FAEEDA', color:'#633806' }, high:{ background:'#FCEBEB', color:'#791F1F' }, done:{ background:'#EAF3DE', color:'#27500A' } }[type] || {}
+  const s = { domain:{ background:'#E6F1FB', color:'#0C447C' }, owner:{ background:'#E1F5EE', color:'#085041' }, due:{ background:'#FAEEDA', color:'#633806' }, high:{ background:'#FCEBEB', color:'#791F1F' }, done:{ background:'#EAF3DE', color:'#27500A' }, waiting:{ background:'#FFF4E0', color:'#8A5A00' } }[type] || {}
   return <span style={{ ...s, fontSize:11, padding:'2px 7px', borderRadius:20, whiteSpace:'nowrap' }}>{children}</span>
 }
 
@@ -435,9 +453,10 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
                 ))}
               </div>
             )}
-            {!compact && (showOwners || task.due || hasSubtasks || hasNotes || attachCount > 0) && (
+            {!compact && (showOwners || task.due || hasSubtasks || hasNotes || attachCount > 0 || (task.status === 'waiting' && task.waiting_on)) && (
               <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:6, flexWrap:'wrap' }}>
                 {showOwners && owners.map(o => <OwnerPip key={o} name={o} />)}
+                {task.status === 'waiting' && task.waiting_on && <Badge type="waiting">waiting on: {task.waiting_on}</Badge>}
                 {task.due && <Badge type="due">{task.due}</Badge>}
                 {hasSubtasks && (
                   <button onClick={e => { e.stopPropagation(); setSubtasksOpen(o => !o) }} style={{ fontSize:10, color:'#888', background:'none', border:'0.5px solid #ddd', borderRadius:20, padding:'2px 6px', cursor:'pointer' }}>
@@ -598,11 +617,12 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
     <>
       <div style={{ ...MODAL_OVERLAY, zIndex:50 }}>
         <div style={{ ...MODAL_CARD, maxWidth:520 }}>
+          <ModalCloseButton onClick={onClose} />
 
           {/* Title */}
           <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)}
             placeholder={isProject ? 'Project title...' : 'Escalation title...'}
-            style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: 6, color:isProject?'#111':RED, background:'transparent', padding:0 }} />
+            style={{ width:'100%', boxSizing:'border-box', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: 6, color:isProject?'#111':RED, background:'transparent', padding:'0 34px 0 0' }} />
           <TimestampMeta created={entity.created_at} updated={entity.updated_at} />
           {entity.template_name && (
             <div style={{ marginBottom:14 }}>
@@ -1503,14 +1523,22 @@ function BriefingTab() {
       // Delete today's existing row first
       await supabase.from('briefings').delete().eq('date', todayISO)
 
-      const [{ data: tasks }, { data: calRaw }] = await Promise.all([
-        supabase.from('tasks').select('*').eq('status', 'active'),
+      const [{ data: tasks }, { data: calRaw }, { data: qualsRaw }, { data: qualTasksRaw }] = await Promise.all([
+        supabase.from('tasks').select('*').in('status', ['active', 'waiting']),
         supabase.from('calendar_events').select('*'),
+        supabase.from('qualifications').select('*'),
+        supabase.from('tasks').select('*').not('qualification_id', 'is', null), // unfiltered by status — computeSchedule needs every track task
       ])
 
-      // Build task meta lookup for Action required coloring
+      // Qualification-linked track tasks are represented richly in the Qualifications section below;
+      // keep the flat task list to standalone tasks so the same stage isn't reported twice.
+      const standaloneTasks = (tasks || []).filter(t => !t.qualification_id)
+      const activeTasks = standaloneTasks.filter(t => t.status === 'active')
+      const waitingTasks = standaloneTasks.filter(t => t.status === 'waiting')
+
+      // Build task meta lookup for Action required coloring (fuzzy title match against generated bullets)
       const meta = {}
-      ;(tasks || []).forEach(t => { meta[t.title.toLowerCase()] = { color: t.color, substatus: t.substatus } })
+      ;(standaloneTasks || []).forEach(t => { meta[t.title.toLowerCase()] = { color: t.color, substatus: t.substatus } })
       taskMetaRef.current = meta
 
       const todayDate = fromISODate(todayISO)
@@ -1533,7 +1561,9 @@ function BriefingTab() {
         }),
       ].join('\n') || 'None scheduled.'
 
-      const taskLines = (tasks || []).map(t => {
+      // Days since last update — the raw figure the model needs to actually judge staleness (used by Suggestions)
+      const daysSince = iso => iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)) : null
+      const buildTaskLines = list => list.map(t => {
         const parts = [`- [${t.title}]`]
         if ((t.owners||[]).length) parts.push(`owners: ${t.owners.join(', ')}`)
         if (t.substatus) parts.push(`substatus: ${t.substatus}`)
@@ -1541,8 +1571,53 @@ function BriefingTab() {
         if (t.due) parts.push(`due: ${t.due}`)
         const openSubs = (Array.isArray(t.subtasks) ? t.subtasks : []).filter(s => !s.done).length
         if (openSubs) parts.push(`open subtasks: ${openSubs}`)
+        const days = daysSince(t.updated_at)
+        if (days !== null) parts.push(`updated ${days}d ago`)
         return parts.join(' | ')
       }).join('\n') || 'None.'
+      const taskLines = buildTaskLines(activeTasks)
+
+      // Waiting tasks: the actionable signal here is how LONG they've waited, not their content —
+      // waiting_since (falls back to updated_at for rows predating that column) drives the day count.
+      const waitingLines = waitingTasks.map(t => {
+        const parts = [`- [${t.title}]`]
+        if (t.waiting_on) parts.push(`waiting on: ${t.waiting_on}`)
+        const waitDays = daysSince(t.waiting_since) ?? daysSince(t.updated_at)
+        if (waitDays !== null) parts.push(`waiting ${waitDays} day${waitDays === 1 ? '' : 's'}`)
+        if ((t.owners||[]).length) parts.push(`owners: ${t.owners.join(', ')}`)
+        if (t.due) parts.push(`due: ${t.due}`)
+        return parts.join(' | ')
+      }).join('\n') || 'None.'
+
+      // Supplier qualifications — one live-scheduled summary line per qualification
+      const qualLines = (qualsRaw || []).map(q => {
+        const linked = (qualTasksRaw || []).filter(t => t.qualification_id === q.id)
+        const { schedule, projectedEnd } = computeSchedule({ start_date: q.start_date }, linked, todayISO)
+        const stages = linked.flatMap(t => Array.isArray(t.subtasks) ? t.subtasks : [])
+        const nonNA = stages.filter(s => !s.na)
+        const doneCount = nonNA.filter(s => s.done).length
+        const inFlight = nonNA.filter(s => !s.done && schedule[s.id] && schedule[s.id].plannedStart <= todayISO)
+        const overdue = nonNA.filter(s => !s.done && schedule[s.id]?.overdue)
+        // The terminal critical-path stage is always the latest-ending one by construction — that's tautological,
+        // not informative. What actually drives the timeline is whichever critical-path stage contributes the
+        // most business days to the chain's length.
+        const driver = nonNA.filter(s => schedule[s.id]?.critical).reduce((best, s) => {
+          const dur = Number(s.duration) || 0
+          if (!best || dur > (Number(best.duration) || 0)) return s
+          return best
+        }, null)
+        const dueDate = parseDueDate(q.due)
+        const pastDue = dueDate && projectedEnd && fromISODate(projectedEnd) > dueDate
+
+        const parts = [`- ${q.name}${q.site ? ` (${q.site})` : ''}`]
+        parts.push(`status: ${q.status || 'not_started'}`)
+        parts.push(`projected: ${projectedEnd || 'n/a'}${pastDue ? ` [PAST DUE — due ${q.due}]` : ''}`)
+        parts.push(`progress: ${doneCount}/${nonNA.length} stages`)
+        parts.push(`overdue stages: ${overdue.length}`)
+        parts.push(`in flight: ${inFlight.length ? inFlight.map(s => s.title).join(', ') : 'none'}`)
+        parts.push(`critical path driver: ${driver ? `${driver.title} (${driver.duration ?? 0}bd)` : 'n/a'}`)
+        return parts.join(' | ')
+      }).join('\n')
 
       const horizonLines = horizonEvents.length
         ? horizonEvents.map(ev => `- ${ev.start_date} ${ev.title}${ev.type==='travel'?' (travel)':''}`).join('\n') : ''
@@ -1554,8 +1629,14 @@ function BriefingTab() {
 Today's calendar events:
 ${calLines}
 
-Active tasks:
-${taskLines}${horizonLines ? `\n\nUpcoming (next 14 days):\n${horizonLines}` : ''}
+Active tasks (with days since last update):
+${taskLines}
+
+Waiting tasks (blocked on someone or something outside Levi's control — each line gives who/what it's waiting
+on and how many days it's been waiting; briefing-worthiness is entirely about that day count, not the content.
+A wait of a couple of days is completely normal and not worth mentioning. A wait stretching toward a week or
+more, especially with no owner chasing it, is worth a nudge):
+${waitingLines}${qualLines ? `\n\nSupplier qualifications:\n${qualLines}` : ''}${horizonLines ? `\n\nUpcoming (next 14 days):\n${horizonLines}` : ''}
 
 Format the briefing exactly in this order with these section headers:
 
@@ -1569,10 +1650,13 @@ One motivational or leadership quote relevant to quality, leadership, or the nat
 One genuinely interesting fact on any topic. Keep it to 2-3 sentences. Make it something worth remembering.
 
 ## Action required
-Tasks flagged red, substatus at_risk, or with open subtasks. For each item lead with the task title in bold, then one sentence on why it needs attention and what the next action is. If nothing qualifies, omit this section entirely.
+Tasks flagged red, substatus at_risk, or with open subtasks; qualification stages that are overdue; any qualification whose projected completion has slipped past its due date; and any waiting task whose wait has stretched to an unreasonable length (use judgment — roughly a week or more with no sign of movement, longer if it's waiting on something that's normally slow). For each item lead with the task, stage, or qualification name in bold, then one sentence on why it needs attention and what the next action is — for a stale wait, that action is usually "follow up with X." If nothing qualifies, omit this section entirely.
+
+## Qualifications
+Only include this section if supplier qualification data was provided above. Summarize each qualification's status and projected completion, and call out anything overdue or slipping past its due date — reference the critical path driver by name when a qualification's timeline is being driven by a specific stage. If no qualification data was provided, omit this section entirely.
 
 ## Suggestions
-3 to 5 opinionated, specific bullets on what Levi should focus on, follow up on, or decide today. Go beyond the active task list — if something hasn't been touched in a while, a deadline is approaching, a team member may need a check-in, or a strategic initiative is stalling, call it out. Be direct and useful, not generic.
+3 to 5 opinionated, specific bullets on what Levi should focus on, follow up on, or decide today. Go beyond the active task list — use the "days since last update" figures to call out active tasks that have gone genuinely stale (not just old), use the "waiting N days" figures to flag waits worth a check-in even if they don't rise to Action required, flag a qualification stage or critical path driver worth checking on, note if a team member may need a check-in, or call out a strategic initiative that's stalling. Be direct and useful, not generic.
 
 ## On your calendar
 Bullet list of today's events with times and duration. If none, write "No meetings scheduled — good day to focus."
@@ -1581,8 +1665,8 @@ Bullet list of today's events with times and duration. If none, write "No meetin
 Anything with a due date in the next 14 days, upcoming travel, or recurring deadlines (KQM Data Entry, KQM Report). Format as a simple dated list.
 
 Important rules:
-- You MUST include every section above using the exact ## headers shown. Never omit Quote of the day or Did you know — they are always required.
-- Use actual task titles and names, not generic descriptions.
+- You MUST include every section above using the exact ## headers shown. Never omit Quote of the day or Did you know — they are always required. Qualifications and Action required are the only sections you may omit, and only when their conditions say to.
+- Use actual task, stage, and qualification titles, not generic descriptions.
 - Keep the full briefing under 650 words.`
 
       const { data: proxyData, error: proxyError } = await supabase.functions.invoke('anthropic-proxy', {
@@ -1819,7 +1903,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
   const pendingFor = p => followUps.filter(f => f.person === p && !f.done).length
   const itemsFor = p => followUps.filter(f => f.person === p && (showDone || !f.done))
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || (new Date(a.created_at) - new Date(b.created_at)))
-  const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
+  const tss = t => t.status === 'waiting' ? 'waiting' : (t.substatus || (t.status === 'done' ? 'complete' : 'not_started'))
   const tasksFor = p => tasks.filter(t => (t.owners||[]).includes(p) && tss(t) !== 'complete' && tss(t) !== 'canceled')
   const visiblePeople = activePerson ? [activePerson] : allPeople
 
@@ -2194,6 +2278,7 @@ function Row({ t, hideLinked, listTasks, listId, v, gridReorder }) {
           {v.groupBy !== 'domain' && t.domain && <Badge type="domain">{t.domain}</Badge>}
           {t.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, border:'0.5px solid #F09595', whiteSpace:'nowrap' }}>High</span>}
           {v.groupBy !== 'owner' && showOwners && <OwnerStack owners={owners} />}
+          {t.status === 'waiting' && t.waiting_on && <Badge type="waiting">waiting on: {t.waiting_on}</Badge>}
           {t.due && <Badge type="due">{t.due}</Badge>}
         </div>
       </div>
@@ -2379,7 +2464,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const dragTaskRef = useRef(null)                // id of the block being dragged — a task id, or `proj:<pid>` for a cluster (for reorder detection)
   const dragEntRef = useRef(null)                 // id of escalation being dragged (for reorder)
 
-  const tss = t => t.substatus || (t.status === 'done' ? 'complete' : 'not_started')
+  const tss = t => t.status === 'waiting' ? 'waiting' : (t.substatus || (t.status === 'done' ? 'complete' : 'not_started'))
   const ownerMatch = t => { if (hiddenOwners.size === 0) return true; const o = t.owners || []; return o.some(n => !hiddenOwners.has(n)) }
   const q = search.trim().toLowerCase()
   const matchSearch = t => !q || (t.title || '').toLowerCase().includes(q) || (Array.isArray(t.notes) && t.notes.some(n => (n.text || '').toLowerCase().includes(q)))
@@ -3794,7 +3879,7 @@ function SubtaskRow({ st, onChange, onDelete }) {
 
 function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 50, members = MEMBERS, defaultOwner, lockedDomain = null }) {
   const defaultOwners = defaultOwner ? [defaultOwner] : ['Levi']
-  const EMPTY = { title:'', status:'active', domain:'', owners:defaultOwners, due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, qualification_id:null, attachments:[] }
+  const EMPTY = { title:'', status:'active', domain:'', owners:defaultOwners, due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, qualification_id:null, attachments:[], waiting_on:'' }
   const tempId = useRef(crypto.randomUUID())
   const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:defaultOwners, notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[], attachments:Array.isArray(task?.attachments)?task.attachments:[] })
   const [newNote, setNewNote] = useState('')
@@ -3809,10 +3894,23 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
 
   const coreFields = (
     <>
+      <div style={{ display:'grid', gridTemplateColumns: f.status === 'waiting' ? '1fr 1fr' : '1fr', gap:8, marginBottom:10 }}>
+        <div style={f.status === 'waiting' ? undefined : { maxWidth:200 }}><label style={FIELD_LABEL}>Task status</label>
+          <select value={f.status || 'active'} onChange={e => set('status', e.target.value)} style={FIELD_SELECT}>
+            <option value="active">Active</option>
+            <option value="waiting">Waiting</option>
+            <option value="someday">Someday</option>
+            <option value="done">Done</option>
+          </select></div>
+        {f.status === 'waiting' && (
+          <div><label style={FIELD_LABEL}>Waiting on</label>
+            <input value={f.waiting_on || ''} onChange={e => set('waiting_on', e.target.value)} placeholder="Who or what is this blocked on?" style={FIELD_INPUT} /></div>
+        )}
+      </div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
         <div><label style={FIELD_LABEL}>Status</label>
           <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
-            {SUBSTATUS.filter(s => s.key && s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            {SUBSTATUS.filter(s => s.key && s.key !== 'canceled' && s.key !== 'waiting').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select></div>
         <div><label style={FIELD_LABEL}>Priority</label>
           <select value={f.priority} onChange={e => set('priority', e.target.value)} style={FIELD_SELECT}>
@@ -3872,8 +3970,9 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
   return (
     <div style={{ ...MODAL_OVERLAY, zIndex }}>
       <div style={{ ...MODAL_CARD, maxWidth:480 }}>
+        <ModalCloseButton onClick={onClose} />
         <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)} placeholder="Task title..."
-          style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: isEdit ? 6 : 14, color:'#111', background:'transparent', padding:0 }} />
+          style={{ width:'100%', boxSizing:'border-box', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: isEdit ? 6 : 14, color:'#111', background:'transparent', padding:'0 34px 0 0' }} />
         {isEdit && <TimestampMeta created={task?.created_at} updated={task?.updated_at} />}
 
         {!isEdit ? (
@@ -3972,7 +4071,8 @@ function CalendarEventForm({ event, isEdit, onSave, onDelete, onClose, members =
   return (
     <div style={{ ...MODAL_OVERLAY, zIndex:50 }}>
       <div style={{ ...MODAL_CARD, maxWidth:500 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
+        <ModalCloseButton onClick={onClose} />
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14, paddingRight:30 }}>
           <div style={{ position:'relative', flexShrink:0 }}>
             <button onClick={() => setEmojiOpen(o => !o)}
               style={{ width:44, height:38, fontSize:22, border:'0.5px solid #e0e0e0', borderRadius:6, background:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxSizing:'border-box' }}>
@@ -4578,9 +4678,9 @@ function DayScheduleModal({ date, events, onClose, onEventClick, onAddEvent }) {
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)', zIndex:55 }}>
       <div style={{ background:'white', borderRadius:12, border:'0.5px solid #e5e5e5', padding:'1.25rem', width:'100%', maxWidth:480, maxHeight:'88dvh', overflowY:'auto', overscrollBehavior:'contain', WebkitOverflowScrolling:'touch' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+        <ModalCloseButton onClick={onClose} />
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14, paddingRight:30 }}>
           <span style={{ fontSize:15, fontWeight:500, color:'#111' }}>{label}</span>
-          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#aaa', fontSize:18, padding:0, lineHeight:1 }}>×</button>
         </div>
 
         <button onClick={() => onAddEvent(date)} style={{ width:'100%', marginBottom:12, padding:'8px 0', fontSize:12, color:'#888', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer' }}>
@@ -5009,9 +5109,9 @@ function ChangePassword({ onClose }) {
   return (
     <div style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={e => { if (e.target===e.currentTarget) onClose() }}>
       <div style={{ width:'100%', maxWidth:360, background:'white', borderRadius:14, padding:24, boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+        <ModalCloseButton onClick={onClose} />
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, paddingRight:30 }}>
           <span style={{ fontSize:15, fontWeight:600, color:'#111' }}>Change Password</span>
-          <button onClick={onClose} style={{ background:'none', border:'none', fontSize:18, cursor:'pointer', color:'#aaa', lineHeight:1 }}>✕</button>
         </div>
         {done ? (
           <p style={{ fontSize:14, color:'#3a7d44', fontWeight:500 }}>Password updated successfully.</p>
@@ -5466,9 +5566,10 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
       <style>{`@media (max-width: 480px) { .qform-status-strip { grid-template-columns: repeat(2, 1fr) !important; } }`}</style>
       <div style={{ ...MODAL_OVERLAY, zIndex:50 }}>
         <div style={{ ...MODAL_CARD, maxWidth:640 }}>
+          <ModalCloseButton onClick={onClose} />
 
           {/* 1. Header — compact, read-first */}
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, paddingRight:30 }}>
             <div style={{ flex:1, minWidth:0 }}>
               <InlineText value={f.name} onChange={v => set('name', v)} editingDefault={!isEdit} placeholder="Qualification name..."
                 inputStyle={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', color:'#111', background:'transparent', padding:0, fontFamily:'inherit' }}
@@ -6194,14 +6295,20 @@ export default function App() {
     await supabase.from('calendars').update({ visible }).eq('id', id)
   }
 
-  const buildTaskPayload = data => {
+  // `prior` (the pre-edit task row, when editing) lets us tell a fresh transition into 'waiting' apart from
+  // staying waiting — so waiting_since stamps once and doesn't reset every time an unrelated field is edited.
+  const buildTaskPayload = (data, prior = null) => {
+    const status = data.status || 'active'
     const payload = {
-      title: data.title, status: 'active', domain: data.domain||'',
+      title: data.title, status, domain: data.domain||'',
       owners: data.owners||(currentUserName ? [currentUserName] : ['Levi']), due: data.due||'', priority: data.priority||'',
       color: data.color||'', substatus: data.substatus||'not_started',
       notes: data.notes||[], today: !!data.today, subtasks: data.subtasks||[], attachments: data.attachments||[],
+      waiting_on: status === 'waiting' ? (data.waiting_on || '') : '',
       updated_at: new Date().toISOString(),
     }
+    const wasWaiting = prior?.status === 'waiting'
+    payload.waiting_since = status === 'waiting' ? (wasWaiting ? (prior.waiting_since || new Date().toISOString()) : new Date().toISOString()) : null
     if (data.project_id !== undefined) payload.project_id = data.project_id || null
     if (data.escalation_id !== undefined) payload.escalation_id = data.escalation_id || null
     if (data.qualification_id !== undefined) payload.qualification_id = data.qualification_id || null
@@ -6211,7 +6318,8 @@ export default function App() {
   }
 
   const saveTask = async data => {
-    const payload = buildTaskPayload(data)
+    const prior = isEdit && form?.id ? tasks.find(t => t.id === form.id) : null
+    const payload = buildTaskPayload(data, prior)
     let error
     if (isEdit && form?.id) {
       ({ error } = await supabase.from('tasks').update(payload).eq('id', form.id))
@@ -6225,7 +6333,8 @@ export default function App() {
   }
 
   const saveTaskSilent = async (data, editId = null) => {
-    const payload = buildTaskPayload(data)
+    const prior = editId ? tasks.find(t => t.id === editId) : null
+    const payload = buildTaskPayload(data, prior)
     if (editId) {
       await supabase.from('tasks').update(payload).eq('id', editId)
     } else {
