@@ -3717,6 +3717,15 @@ function DatePickerISO({ value, onChange, initialMonth, minDate }) {
   return <DatePicker value={toDisplay(value)} onChange={v => onChange(toISO(v))} initialMonth={initialMonth} minDate={minDate} />
 }
 
+// taskr-attachments is a PRIVATE bucket — files are reached only via short-lived signed URLs
+const ATTACHMENT_URL_TTL = 300 // seconds
+async function openAttachment(att) {
+  if (!att?.path) { alert('Attachment is missing its storage path.'); return }
+  const { data, error } = await supabase.storage.from('taskr-attachments').createSignedUrl(att.path, ATTACHMENT_URL_TTL)
+  if (error || !data?.signedUrl) { alert(`Could not open attachment: ${error?.message || 'unknown error'}`); return }
+  window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+}
+
 function AttachmentSection({ attachments, entityPath, onAdd, onRemove, compact = false }) {
   const fileRef = useRef()
   const [uploading, setUploading] = useState(false)
@@ -3728,8 +3737,8 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove, compact =
       const path = `${entityPath}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
       const { error } = await supabase.storage.from('taskr-attachments').upload(path, file)
       if (error) { console.error('[TASKr] upload error', error); alert(`Upload failed: ${error.message}`); return }
-      const { data: { publicUrl } } = supabase.storage.from('taskr-attachments').getPublicUrl(path)
-      onAdd({ id: 'att' + Date.now(), name: file.name, size: file.size, type: file.type, path, url: publicUrl, ts: Date.now() })
+      // Store only the storage path; URLs are signed on demand (private bucket)
+      onAdd({ id: 'att' + Date.now(), name: file.name, size: file.size, type: file.type, path, ts: Date.now() })
     } catch (err) {
       console.error('[TASKr] upload error', err)
       alert(`Upload failed: ${err.message || err}`)
@@ -3746,11 +3755,11 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove, compact =
     <div style={compact ? {} : { borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:4 }}>
       <label style={FIELD_LABEL}>Attachments</label>
       {attachments.map(att => (
-        <div key={att.id} onDoubleClick={() => window.open(att.url, '_blank', 'noopener,noreferrer')} title="Double-click to open in a new tab"
+        <div key={att.id} onDoubleClick={() => openAttachment(att)} title="Double-click to open in a new tab"
           style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, padding:'6px 8px', background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0', cursor:'pointer' }}>
           <span style={{ fontSize:11, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{att.name}</span>
           {att.size && <span style={{ fontSize:10, color:'#bbb', flexShrink:0 }}>{(att.size/1024).toFixed(0)}KB</span>}
-          <a href={att.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize:10, color:'#378ADD', flexShrink:0, textDecoration:'none' }}>Open</a>
+          <button onClick={e => { e.stopPropagation(); openAttachment(att) }} style={{ fontSize:10, color:'#378ADD', flexShrink:0, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0 }}>Open</button>
           <button onClick={() => handleRemove(att)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
         </div>
       ))}
@@ -6026,8 +6035,9 @@ export default function App() {
           const newPath = `notes/${newId}/${fname}`
           const { error: cpErr } = await supabase.storage.from('taskr-attachments').copy(a.path, newPath)
           if (cpErr) throw cpErr
-          const { data: { publicUrl } } = supabase.storage.from('taskr-attachments').getPublicUrl(newPath)
-          copied.push({ ...a, id: 'att' + Date.now() + Math.random().toString(36).slice(2, 6), path: newPath, url: publicUrl, ts: Date.now() })
+          // private bucket: keep the storage path only; URLs are signed on demand. Strip any legacy public url.
+          const { url: _legacyUrl, ...rest } = a
+          copied.push({ ...rest, id: 'att' + Date.now() + Math.random().toString(36).slice(2, 6), path: newPath, ts: Date.now() })
         } catch (e) { console.error('[TASKr] duplicate attachment copy failed', e) }
       }
       if (copied.length) await supabase.from('notes').update({ attachments: copied }).eq('id', newId)
