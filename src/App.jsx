@@ -1113,18 +1113,29 @@ const FillTableCell = TableCell.extend({
   },
 })
 
-// Tab indents inside lists (Shift-Tab outdents); in tables the Table extension owns Tab
+// Tab indents inside lists (Shift-Tab outdents). In tables the Table extension owns Tab; outside
+// any list we return false so Tab isn't trapped (default focus behaviour) and never injects spaces.
 const TabKeymap = TiptapExtension.create({
   name: 'tabKeymap',
   addKeyboardShortcuts() {
+    const inList = () => this.editor.isActive('taskItem') || this.editor.isActive('listItem')
     return {
-      Tab: () => this.editor.isActive('table') ? false
-        : (this.editor.commands.sinkListItem('taskItem') || this.editor.commands.sinkListItem('listItem') || this.editor.commands.insertContent('    ')),
-      'Shift-Tab': () => this.editor.isActive('table') ? false
-        : (this.editor.commands.liftListItem('taskItem') || this.editor.commands.liftListItem('listItem')),
+      Tab: () => {
+        if (this.editor.isActive('table') || !inList()) return false
+        this.editor.commands.sinkListItem(this.editor.isActive('taskItem') ? 'taskItem' : 'listItem')
+        return true // consume within a list even when it can't sink (first item) so no spaces get inserted
+      },
+      'Shift-Tab': () => {
+        if (this.editor.isActive('table') || !inList()) return false
+        this.editor.commands.liftListItem(this.editor.isActive('taskItem') ? 'taskItem' : 'listItem')
+        return true
+      },
     }
   },
 })
+
+// Canonical note ordering: manual sort_order first (dense, global), then newest-first as a stable tiebreak
+const manualNoteCmp = (a, b) => ((a.sort_order ?? 1e9) - (b.sort_order ?? 1e9)) || (new Date(b.created_at) - new Date(a.created_at))
 
 // Upgrade execCommand-era note HTML so it round-trips through the TipTap schema:
 // <font size> → sized spans, hand-rolled checkbox divs → real task lists.
@@ -3050,18 +3061,31 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   })
   // ── Drag-to-rearrange: notes within the list, groups/subgroups among siblings ──
   const reorderInd = <div style={{ height:2, borderRadius:1, background:'#7c3aed', margin:'0 8px' }} />
-  const reorderVisibleNotes = (draggedId, targetId, pos) => {
-    if (!onReorderNotes) return
-    const ids = visibleNotes.map(n => n.id).filter(id => id !== draggedId)
+  // Reorder against the FULL note order (not just the filtered view) so per-group drags don't collide
+  // with other groups' sort_order — the dense global renumber keeps every view consistent.
+  const reorderNoteRelative = (draggedId, targetId, pos) => {
+    if (!onReorderNotes || draggedId === targetId) return
+    const ids = [...notes].sort(manualNoteCmp).map(n => n.id).filter(id => id !== draggedId)
     let idx = ids.indexOf(targetId); if (idx < 0) return; if (pos === 'after') idx++
     ids.splice(idx, 0, draggedId)
     onReorderNotes(ids.map((id, i) => ({ id, sort_order: i })))
     if (sortKey !== 'manual') { setSortKey('manual'); setSortDir('asc') } // dragging implies a custom order
   }
+  // Mobile fallback: nudge a note one slot within the currently visible list
+  const moveNoteBy = (nid, dir) => {
+    const vis = visibleNotes.map(n => n.id); const i = vis.indexOf(nid); const j = i + dir
+    if (i < 0 || j < 0 || j >= vis.length) return
+    reorderNoteRelative(nid, vis[j], dir > 0 ? 'after' : 'before')
+  }
+  // Touch devices can't use HTML5 drag, so rows get ↑/↓ nudge buttons instead
+  const mArrow = (label, onClick, disabled) => (
+    <button onClick={e => { e.stopPropagation(); onClick() }} disabled={disabled}
+      style={{ fontSize:12, lineHeight:1, background:'none', border:'none', cursor: disabled ? 'default' : 'pointer', color: disabled ? '#e0e0e0' : '#999', padding:'4px 5px' }}>{label}</button>
+  )
   const noteReorderHandlers = nid => ({
     onDragOver: e => { const d = dragNoteRef.current; if (d && d !== nid) { e.preventDefault(); e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setReorderTarget({ kind:'note', id:nid, pos: e.clientY < r.top + r.height/2 ? 'before' : 'after' }) } },
     onDragLeave: e => { if (!e.currentTarget.contains(e.relatedTarget)) setReorderTarget(t => (t?.kind==='note' && t?.id===nid) ? null : t) },
-    onDrop: e => { const d = dragNoteRef.current; if (d && d !== nid) { e.preventDefault(); e.stopPropagation(); reorderVisibleNotes(d, nid, reorderTarget?.pos || 'before') } dragNoteRef.current = null; setReorderTarget(null); setDragOverTarget(null) },
+    onDrop: e => { const d = dragNoteRef.current; if (d && d !== nid) { e.preventDefault(); e.stopPropagation(); reorderNoteRelative(d, nid, reorderTarget?.pos || 'before') } dragNoteRef.current = null; setReorderTarget(null); setDragOverTarget(null) },
   })
   const reorderSiblingGroups = (draggedId, targetId, pos) => {
     if (!onReorderGroups) return
@@ -3071,6 +3095,13 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
     let idx = sibs.indexOf(targetId); if (idx < 0) return; if (pos === 'after') idx++
     sibs.splice(idx, 0, draggedId)
     onReorderGroups(sibs.map((id, i) => ({ id, sort_order: i })))
+  }
+  // Mobile fallback: nudge a group/subgroup one slot among its siblings
+  const moveGroupBy = (g, dir) => {
+    const sibs = (g.parent_id ? subsOf(g.parent_id) : topGroups).map(x => x.id)
+    const i = sibs.indexOf(g.id); const j = i + dir
+    if (i < 0 || j < 0 || j >= sibs.length) return
+    reorderSiblingGroups(g.id, sibs[j], dir > 0 ? 'after' : 'before')
   }
   // Group rows accept BOTH: a dragged note (move into group) and a dragged sibling group (reorder)
   const groupRowHandlers = g => ({
@@ -3305,7 +3336,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
               </div>
             )})()}
             {/* Top-level groups → subgroups */}
-            {topGroups.map(g => {
+            {topGroups.map((g, gIdx) => {
               const subs = subsOf(g.id)
               const collapsed = collapsedGroups.has(g.id)
               const over = dragOverTarget === g.id
@@ -3324,6 +3355,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                         : <span style={{ width:14, flexShrink:0 }} />}
                       <span style={{ fontSize:12, color: active ? '#7c3aed' : '#555', fontWeight: active ? 600 : 400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.name}</span>
                       <div style={{ display:'flex', gap:1, alignItems:'center', flexShrink:0 }}>
+                        {isMobileNotes && onReorderGroups && <>{mArrow('↑', () => moveGroupBy(g, -1), gIdx === 0)}{mArrow('↓', () => moveGroupBy(g, 1), gIdx === topGroups.length - 1)}</>}
                         <span style={{ fontSize:11, color:'#bbb', marginRight:2 }}>{countFor(g.id)}</span>
                         <button onClick={e => { e.stopPropagation(); setAddingSubFor(g.id); setNewSubName(''); setCollapsedGroups(prev => { const n = new Set(prev); n.delete(g.id); try { localStorage.setItem('taskr-notes-collapsed', JSON.stringify([...n])) } catch {} return n }) }}
                           style={{ fontSize:13, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 3px', lineHeight:1 }} title="Add subgroup">+</button>
@@ -3337,7 +3369,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                   {gm.after && reorderInd}
                   {deletingGroupId === g.id && renderDelConfirm(g)}
                   {/* Subgroups */}
-                  {!collapsed && subs.map(sg => {
+                  {!collapsed && subs.map((sg, sgIdx) => {
                     const sOver = dragOverTarget === sg.id
                     const sActive = activeGroupId === sg.id
                     const sgm = groupMark(sg.id)
@@ -3352,6 +3384,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                             <span style={{ color:'#ccc', fontSize:10, flexShrink:0 }}>↳</span>
                             <span style={{ fontSize:12, color: sActive ? '#7c3aed' : '#666', fontWeight: sActive ? 600 : 400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sg.name}</span>
                             <div style={{ display:'flex', gap:1, alignItems:'center', flexShrink:0 }}>
+                              {isMobileNotes && onReorderGroups && <>{mArrow('↑', () => moveGroupBy(sg, -1), sgIdx === 0)}{mArrow('↓', () => moveGroupBy(sg, 1), sgIdx === subs.length - 1)}</>}
                               <span style={{ fontSize:11, color:'#bbb', marginRight:2 }}>{countFor(sg.id)}</span>
                               <button onClick={e => { e.stopPropagation(); setRenamingGroupId(sg.id); setRenameText(sg.name) }}
                                 style={{ fontSize:11, background:'none', border:'none', cursor:'pointer', color:'#bbb', padding:'2px 4px', lineHeight:1 }} title="Rename">✎</button>
@@ -3401,7 +3434,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
         )}
         {/* Note list */}
         {visibleNotes.length === 0 && <div style={{ padding:'24px 12px', fontSize:12, color:'#bbb', textAlign:'center' }}>{search ? 'No matches.' : 'No notes yet.'}<br/>{!search && 'Tap + New to start.'}</div>}
-        {visibleNotes.map(n => {
+        {visibleNotes.map((n, nIdx) => {
           const sw = swipeState[n.id] || {}
           const nm = noteMark(n.id)
           return (
@@ -3423,7 +3456,13 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                 style={{ position:'relative', padding:'11px 12px', cursor:'pointer', background:selectedId===n.id?'#f5f5f3':'white', transform:`translateX(${sw.x||0}px)`, transition: sw.startX ? 'none' : 'transform 0.2s ease', minHeight:40, display:'flex', alignItems:'center', boxSizing:'border-box' }}
                 onMouseEnter={e => { if (selectedId!==n.id && !isMobileNotes) e.currentTarget.style.background='#fafafa' }}
                 onMouseLeave={e => { if (selectedId!==n.id && !isMobileNotes) e.currentTarget.style.background='white' }}>
-                <div style={{ fontSize:13, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
+                <div style={{ flex:1, minWidth:0, fontSize:13, fontWeight:selectedId===n.id?500:400, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title||'Untitled'}</div>
+                {isMobileNotes && onReorderNotes && (
+                  <div style={{ display:'inline-flex', flexShrink:0, marginLeft:4 }}>
+                    {mArrow('↑', () => moveNoteBy(n.id, -1), nIdx === 0)}
+                    {mArrow('↓', () => moveNoteBy(n.id, 1), nIdx === visibleNotes.length - 1)}
+                  </div>
+                )}
               </div>
               {nm.after && reorderInd}
             </div>
@@ -3515,8 +3554,8 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
             return (
               <div style={{ flexShrink:0, padding:'8px 14px', background:'#faf9fb', borderBottom:'0.5px solid #eee', maxHeight:150, overflowY:'auto' }}>
                 <AttachmentSection compact attachments={atts} entityPath={`notes/${selectedId}`}
-                  onAdd={att => onSave({ ...draft, attachments: [...atts, att] }, selectedId)}
-                  onRemove={id => onSave({ ...draft, attachments: atts.filter(a => a.id !== id) }, selectedId)} />
+                  onAdd={att => onSave({ ...draftRef.current, attachments: [...atts, att] }, selectedId)}
+                  onRemove={id => onSave({ ...draftRef.current, attachments: atts.filter(a => a.id !== id) }, selectedId)} />
               </div>
             )
           })()}
@@ -5583,7 +5622,7 @@ export default function App() {
   const [qualifications, setQualifications] = useState([])
   const [qualificationTemplates, setQualificationTemplates] = useState([])
   const [userPrefs, setUserPrefs] = useState({}) // per-user UI prefs (e.g. Tasks-page layout), synced across devices
-  const prefsTimerRef = useRef(null)
+  const prefsDirtyRef = useRef(false) // true once the user has changed a pref this session (gates the write-back effect)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(() => { const saved = localStorage.getItem('taskr-tab'); return (saved && saved !== 'tasks') ? saved : 'linear' })
   const switchTab = t => { setTab(t); localStorage.setItem('taskr-tab', t) }
@@ -5661,6 +5700,7 @@ export default function App() {
     // Load per-user prefs once on the full (non-silent) load, so silent refreshes never clobber in-flight layout edits
     if (!silent) {
       const { data: prefRow } = await supabase.from('user_prefs').select('prefs').eq('user_id', session.user.id).maybeSingle()
+      prefsDirtyRef.current = false // freshly loaded from DB — don't let the write-back effect echo it straight back
       setUserPrefs(prefRow?.prefs || {})
     }
     setLoading(false)
@@ -5668,20 +5708,20 @@ export default function App() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Merge a preference change into the user's prefs blob and upsert it (debounced)
+  // Merge a preference change into the user's prefs blob (pure state update); the effect below persists it
   const savePref = useCallback((section, key, value) => {
-    if (!session) return
-    setUserPrefs(prev => {
-      const next = { ...prev, [section]: { ...(prev[section] || {}), [key]: value } }
-      clearTimeout(prefsTimerRef.current)
-      prefsTimerRef.current = setTimeout(() => {
-        // supabase-js builders are lazy — without .then() the request never fires
-        supabase.from('user_prefs').upsert({ user_id: session.user.id, prefs: next, updated_at: new Date().toISOString() })
-          .then(({ error }) => { if (error) console.error('[TASKr] savePref error', error) })
-      }, 600)
-      return next
-    })
-  }, [session])
+    prefsDirtyRef.current = true
+    setUserPrefs(prev => ({ ...prev, [section]: { ...(prev[section] || {}), [key]: value } }))
+  }, [])
+  // Debounced write-back — only fires for user-initiated changes, never for prefs just loaded from the DB
+  useEffect(() => {
+    if (!prefsDirtyRef.current || !session) return
+    const t = setTimeout(() => {
+      supabase.from('user_prefs').upsert({ user_id: session.user.id, prefs: userPrefs, updated_at: new Date().toISOString() })
+        .then(({ error }) => { if (error) console.error('[TASKr] savePref error', error) })
+    }, 600)
+    return () => clearTimeout(t)
+  }, [userPrefs, session])
 
   useEffect(() => {
     const ch = supabase.channel('app-changes')
@@ -5992,20 +6032,34 @@ export default function App() {
       }
       if (copied.length) await supabase.from('notes').update({ attachments: copied }).eq('id', newId)
     }
+    // Place the copy right after its source in the manual order (dense global renumber, only write what moved)
+    const orderedIds = [...notes].sort(manualNoteCmp).map(n => n.id)
+    const si = orderedIds.indexOf(id)
+    orderedIds.splice(si + 1, 0, newId)
+    await Promise.all(orderedIds
+      .map((nid, i) => ({ id: nid, sort_order: i }))
+      .filter(u => u.id === newId || (notes.find(n => n.id === u.id)?.sort_order ?? null) !== u.sort_order)
+      .map(u => supabase.from('notes').update({ sort_order: u.sort_order }).eq('id', u.id)))
     await loadData(true)
     return newId
   }
 
-  // Manual note ordering (drag-to-rearrange on the Notes page)
+  // Manual note ordering (drag-to-rearrange on the Notes page) — updates carry the full dense order; only write rows that moved
   const reorderNotes = async updates => {
+    const changed = updates.filter(u => (notes.find(n => n.id === u.id)?.sort_order ?? null) !== u.sort_order)
+    if (!changed.length) return
     setNotes(prev => prev.map(n => { const u = updates.find(x => x.id === n.id); return u ? { ...n, sort_order: u.sort_order } : n })) // optimistic
-    await Promise.all(updates.map(u => supabase.from('notes').update({ sort_order: u.sort_order }).eq('id', u.id)))
+    const results = await Promise.all(changed.map(u => supabase.from('notes').update({ sort_order: u.sort_order }).eq('id', u.id)))
+    const err = results.find(r => r.error)
+    if (err) { console.error('[TASKr] reorderNotes error', err.error); loadData(true) } // revert optimistic state on failure
   }
   // Reorder note groups / subgroups among their siblings
   const reorderNoteGroups = async updates => {
     setNoteGroups(prev => prev.map(g => { const u = updates.find(x => x.id === g.id); return u ? { ...g, sort_order: u.sort_order } : g })
       .sort((a, b) => (a.sort_order||0) - (b.sort_order||0))) // optimistic
-    await Promise.all(updates.map(u => supabase.from('note_groups').update({ sort_order: u.sort_order }).eq('id', u.id)))
+    const results = await Promise.all(updates.map(u => supabase.from('note_groups').update({ sort_order: u.sort_order }).eq('id', u.id)))
+    const err = results.find(r => r.error)
+    if (err) { console.error('[TASKr] reorderNoteGroups error', err.error); loadData(true) } // revert optimistic state on failure
   }
 
   const addFollowUp = async (text, person) => {
