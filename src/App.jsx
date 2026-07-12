@@ -2099,27 +2099,44 @@ const linHideBtn = onClick => (
   </button>
 )
 
+// Curated palettes for domain section customization — soft tints for the card, readable darks for the header
+const DOMAIN_SHADES = [
+  '#fee2e2', '#ffe4e6', '#fce7f3', '#fae8ff', '#f3e8ff', '#ede9fe', '#e0e7ff', '#dbeafe',
+  '#e0f2fe', '#cffafe', '#ccfbf1', '#d1fae5', '#dcfce7', '#ecfccb', '#fef9c3', '#fef3c7',
+  '#ffedd5', '#fee2d5', '#f5f5f4', '#f4f2ec', '#ede9e3', '#e7e5e4', '#e5e7eb', '#dbe4ee',
+]
+const DOMAIN_TEXT_COLORS = [
+  '#991b1b', '#be123c', '#be185d', '#a21caf', '#7e22ce', '#6d28d9', '#4338ca', '#1d4ed8',
+  '#0369a1', '#0e7490', '#0f766e', '#047857', '#15803d', '#4d7c0f', '#a16207', '#b45309',
+  '#c2410c', '#7f1d1d', '#111111', '#374151', '#57534e', '#6b7280', '#0c4a6e', '#3f6212',
+]
+
 function DomainColorPopover({ name, meta, onUpdate, onClose }) {
+  const grid = (label, current, options, key) => (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:5 }}>
+        <span style={{ fontSize:10, color:'#888', textTransform:'uppercase', letterSpacing:'0.05em' }}>{label}</span>
+        <button onClick={() => onUpdate({ [key]: null })} title={`Reset ${label.toLowerCase()} to default`}
+          style={{ fontSize:10, padding:'1px 8px', borderRadius:8, border:'0.5px solid #e0e0e0', background: current ? 'white' : '#ede9fe', color: current ? '#888' : '#7c3aed', cursor:'pointer', fontWeight: current ? 400 : 600 }}>
+          Default
+        </button>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(8, 20px)', gap:4 }}>
+        {options.map(c => (
+          <button key={c} onClick={() => onUpdate({ [key]: c })} title={c}
+            style={{ width:20, height:20, borderRadius:5, background:c, border: current === c ? '2px solid #7c3aed' : '1px solid rgba(0,0,0,0.08)', cursor:'pointer', padding:0, boxSizing:'border-box' }} />
+        ))}
+      </div>
+    </div>
+  )
   return (
     <>
       <div onClick={e => { e.stopPropagation(); onClose() }} style={{ position:'fixed', inset:0, zIndex:150 }} />
       <div onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}
-        style={{ position:'absolute', top:'calc(100% + 4px)', right:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, padding:10, minWidth:170 }}>
+        style={{ position:'absolute', top:'calc(100% + 4px)', right:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, padding:10, width:206 }}>
         <div style={{ fontSize:10, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{name}</div>
-        <label style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, fontSize:12, color:'#555', marginBottom:8, cursor:'pointer' }}>
-          Shade
-          <input type="color" value={meta.color || '#f7f7f5'} onChange={e => onUpdate({ color: e.target.value })} style={{ width:32, height:24, border:'none', padding:0, cursor:'pointer', background:'none' }} />
-        </label>
-        <label style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, fontSize:12, color:'#555', marginBottom: (meta.color || meta.text_color) ? 8 : 0, cursor:'pointer' }}>
-          Title color
-          <input type="color" value={meta.text_color || '#888888'} onChange={e => onUpdate({ text_color: e.target.value })} style={{ width:32, height:24, border:'none', padding:0, cursor:'pointer', background:'none' }} />
-        </label>
-        {(meta.color || meta.text_color) && (
-          <button onClick={() => onUpdate({ color:null, text_color:null })}
-            style={{ fontSize:11, color:'#888', background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'3px 0', cursor:'pointer', width:'100%' }}>
-            Reset to default
-          </button>
-        )}
+        {grid('Section shade', meta.color, DOMAIN_SHADES, 'color')}
+        {grid('Header text', meta.text_color, DOMAIN_TEXT_COLORS, 'text_color')}
       </div>
     </>
   )
@@ -2971,12 +2988,12 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
 }
 
 // ─── Notes Section (wrapper with sub-tabs) ────────────────────────────────────
-function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, onReorderNotes, onReorderGroups, members = [] }) {
-  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} onMoveNote={onMoveNote} onReorderNotes={onReorderNotes} onReorderGroups={onReorderGroups} members={members} />
+function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, onReorderNotes, onReorderGroups, onDuplicateNote, members = [] }) {
+  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} onMoveNote={onMoveNote} onReorderNotes={onReorderNotes} onReorderGroups={onReorderGroups} onDuplicate={onDuplicateNote} members={members} />
 }
 
 // ─── Notes Tab ───────────────────────────────────────────────────────────────
-function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, onReorderNotes, onReorderGroups, members = [] }) {
+function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, onReorderNotes, onReorderGroups, onDuplicate, members = [] }) {
   const [selectedId, setSelectedId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [dirty, setDirty] = useState(false)
@@ -3460,6 +3477,17 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                       ...subsOf(g.id).map(sg => <option key={sg.id} value={sg.id}>↳ {sg.name}</option>)
                     ])}
                   </select>
+                )}
+                {selectedId && onDuplicate && (
+                  <button onClick={async () => {
+                      if (dirty) { await onSave(draft, selectedId); setDirty(false) }
+                      const nid = await onDuplicate(selectedId)
+                      if (nid) { setSelectedId(nid); setDraft({ title: `${draft.title || 'Untitled'} (copy)`, body: draft.body || '' }); setDirty(false); if (isMobileNotes) setMobileView('editor') }
+                    }}
+                    title="Duplicate note"
+                    style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 10px', cursor:'pointer', color:'#555' }}>
+                    ⧉
+                  </button>
                 )}
                 <button onClick={handleCopy} style={{ fontSize:11, background:'#f5f5f3', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 10px', cursor:'pointer', color: copied?'#3a7d44':'#555' }}>
                   {copied ? '✓' : '📋'}
@@ -4832,7 +4860,7 @@ function LoginScreen() {
   return (
     <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4ff', padding:16 }}>
       <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:16, padding:32, boxShadow:'0 4px 24px rgba(124,58,237,0.10)' }}>
-        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}><img src="/icon-192.png" alt="" style={{width:26,height:26,borderRadius:7,verticalAlign:-4,marginRight:8}} />TASKr</h1>
+        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         {mode === 'sent' ? (
           <>
             <p style={{ fontSize:14, color:'#555', marginTop:8 }}>Check your email — a password reset link is on its way to <strong>{email}</strong>.</p>
@@ -4891,7 +4919,7 @@ function SetNewPasswordScreen({ onDone }) {
   return (
     <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4ff', padding:16 }}>
       <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:16, padding:32, boxShadow:'0 4px 24px rgba(124,58,237,0.10)' }}>
-        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}><img src="/icon-192.png" alt="" style={{width:26,height:26,borderRadius:7,verticalAlign:-4,marginRight:8}} />TASKr</h1>
+        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         <p style={{ fontSize:13, color:'#777', margin:'6px 0 20px' }}>Set a new password for your account.</p>
         {done ? (
           <p style={{ fontSize:14, color:'#3a7d44', fontWeight:500 }}>Password updated! Signing you in…</p>
@@ -5647,7 +5675,9 @@ export default function App() {
       const next = { ...prev, [section]: { ...(prev[section] || {}), [key]: value } }
       clearTimeout(prefsTimerRef.current)
       prefsTimerRef.current = setTimeout(() => {
+        // supabase-js builders are lazy — without .then() the request never fires
         supabase.from('user_prefs').upsert({ user_id: session.user.id, prefs: next, updated_at: new Date().toISOString() })
+          .then(({ error }) => { if (error) console.error('[TASKr] savePref error', error) })
       }, 600)
       return next
     })
@@ -5939,6 +5969,33 @@ export default function App() {
     if (error) { console.error('[TASKr] moveNote error', error); loadData(true) }
   }
 
+  // Duplicate a note — attachments get real storage copies so the two notes never share files
+  const duplicateNote = async id => {
+    const src = notes.find(n => n.id === id)
+    if (!src) return null
+    const payload = { title: `${src.title || 'Untitled'} (copy)`, body: src.body || '', group_id: src.group_id ?? null, sort_order: src.sort_order ?? 0, updated_at: new Date().toISOString() }
+    const { data: ins, error } = await supabase.from('notes').insert(payload).select('id').single()
+    if (error) { console.error('[TASKr] duplicateNote error', error); alert(`Could not duplicate note: ${error.message}`); return null }
+    const newId = ins.id
+    const atts = Array.isArray(src.attachments) ? src.attachments : []
+    if (atts.length) {
+      const copied = []
+      for (const a of atts) {
+        try {
+          const fname = (a.path || '').split('/').pop() || a.name
+          const newPath = `notes/${newId}/${fname}`
+          const { error: cpErr } = await supabase.storage.from('taskr-attachments').copy(a.path, newPath)
+          if (cpErr) throw cpErr
+          const { data: { publicUrl } } = supabase.storage.from('taskr-attachments').getPublicUrl(newPath)
+          copied.push({ ...a, id: 'att' + Date.now() + Math.random().toString(36).slice(2, 6), path: newPath, url: publicUrl, ts: Date.now() })
+        } catch (e) { console.error('[TASKr] duplicate attachment copy failed', e) }
+      }
+      if (copied.length) await supabase.from('notes').update({ attachments: copied }).eq('id', newId)
+    }
+    await loadData(true)
+    return newId
+  }
+
   // Manual note ordering (drag-to-rearrange on the Notes page)
   const reorderNotes = async updates => {
     setNotes(prev => prev.map(n => { const u = updates.find(x => x.id === n.id); return u ? { ...n, sort_order: u.sort_order } : n })) // optimistic
@@ -6197,7 +6254,7 @@ export default function App() {
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, marginBottom:isMobile?'0.9rem':'1.25rem', paddingBottom:isMobile?'0.75rem':'1rem' }}>
-        <h1 style={{ fontSize:isMobile?18:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', whiteSpace:'nowrap', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}><img src="/icon-192.png" alt="" style={{width:26,height:26,borderRadius:7,verticalAlign:-4,marginRight:8}} />TASKr</h1>
+        <h1 style={{ fontSize:isMobile?18:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', whiteSpace:'nowrap', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         <div style={{ display:'flex', alignItems:'center', gap:isMobile?6:10, minWidth:0 }}>
           <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:isMobile?1:4 }}>
             <span style={{ fontSize:isMobile?11:12, color:'#7c3aed', whiteSpace:'nowrap' }}>{new Date().toLocaleDateString('en-US', isMobile ? { weekday:'short', month:'short', day:'numeric' } : { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
@@ -6678,7 +6735,7 @@ export default function App() {
 
       {/* ── Notes ── */}
       {tab === 'notes' && (
-        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} onMoveNote={moveNote} onReorderNotes={reorderNotes} onReorderGroups={reorderNoteGroups} members={memberNames} />
+        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} onMoveNote={moveNote} onReorderNotes={reorderNotes} onReorderGroups={reorderNoteGroups} onDuplicateNote={duplicateNote} members={memberNames} />
       )}
 
       {/* ── Follow Ups ── */}
