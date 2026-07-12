@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import { supabase } from './supabase'
 import DOMPurify from 'dompurify'
-import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory, Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
+import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory, Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight, Flag } from 'lucide-react'
 import { useEditor, EditorContent, Node as TiptapNode, Extension as TiptapExtension } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TextStyle, Color, FontSize } from '@tiptap/extension-text-style'
@@ -5067,7 +5067,7 @@ function computeSchedule(qualification, trackTasks, todayISO) {
     // A pinned start overrides the computed start; the stage no longer reflows from its predecessors
     const pinned = !!s.pinned_start
     let start = pinned ? bizForward(fromISODate(s.pinned_start)) : bizForward(predMax || anchor)
-    let end, actualEnd = null, effEnd, warning = null
+    let end, actualEnd = null, effEnd, warning = null, overdue = false
     // pinned start before a predecessor's effective end = explicit soft-dependency overlap
     if (pinned && predMax && toISODate(start) < toISODate(predMax)) warning = 'pinned-overlap'
     if (s.na) {
@@ -5088,6 +5088,7 @@ function computeSchedule(qualification, trackTasks, todayISO) {
         if (!pinned && toISODate(start) < todayISO) start = new Date(todayFwd)
         if (toISODate(end) < toISODate(start)) start = new Date(end)
         effEnd = new Date(end)
+        if (toISODate(fromISODate(s.expected_end)) < todayISO) overdue = true // manual override itself has already passed
       } else {
         const dur = Number(s.duration) || 0
         const pct = Math.max(0, Math.min(100, Number(s.percent) || 0))
@@ -5096,11 +5097,12 @@ function computeSchedule(qualification, trackTasks, todayISO) {
         if (toISODate(start) < todayISO || toISODate(normalEnd) < todayISO) { // overdue / late start → forecast remaining from today
           if (!pinned) start = new Date(todayFwd)                           // non-pinned snaps start to today; pinned keeps its date
           end = addBiz(new Date(todayFwd), remaining)
+          overdue = true                                                    // the stretch path fired
         } else end = normalEnd                                              // future stage on schedule → full duration
         effEnd = new Date(end)
       }
     }
-    startD[id] = start; endD[id] = end; eff[id] = effEnd; meta[id] = { actualEnd, warning }
+    startD[id] = start; endD[id] = end; eff[id] = effEnd; meta[id] = { actualEnd, warning, overdue }
   }
 
   // ── Projected completion = latest effective end ──
@@ -5139,7 +5141,7 @@ function computeSchedule(qualification, trackTasks, todayISO) {
       plannedStart: toISODate(startD[id]), plannedEnd: toISODate(endD[id]),
       actualEnd: meta[id].actualEnd ? toISODate(meta[id].actualEnd) : null,
       slack: isCrit ? 0 : Math.max(0, bizBetween(eff[id], latestEnd)),
-      latestEnd: toISODate(latestEnd), critical: isCrit, warning: meta[id].warning,
+      latestEnd: toISODate(latestEnd), critical: isCrit, warning: meta[id].warning, overdue: meta[id].overdue,
     }
   }
   return { schedule, critical, projectedEnd }
@@ -5315,6 +5317,79 @@ function QualificationCard({ qual, tasks, onOpen, onDragStart, onDragEnd, draggi
   )
 }
 
+// ─── Read-first inline-edit primitives (click text → input, blur/Enter commits) ──
+// All three bind live (value/onChange) rather than deferring to a commit-on-blur draft — a draft would risk
+// losing an in-progress edit if the user clicks Save before the field blurs. "editing" only toggles the view.
+function InlineText({ value, onChange, placeholder = '—', display, editingDefault = false, inputStyle, textStyle }) {
+  const [editing, setEditing] = useState(editingDefault)
+  if (editing) {
+    return <input autoFocus value={value || ''} onChange={e => onChange(e.target.value)}
+      onBlur={() => setEditing(false)} onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditing(false) }}
+      placeholder={placeholder} style={inputStyle} />
+  }
+  return (
+    <span onClick={() => setEditing(true)} title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
+      {display !== undefined ? display : (value || <span style={{ color: '#ccc' }}>{placeholder}</span>)}
+    </span>
+  )
+}
+
+function InlineSelect({ value, options, onChange, display, placeholder = '—', textStyle }) {
+  const [editing, setEditing] = useState(false)
+  if (editing) {
+    return <select autoFocus value={value} onChange={e => { onChange(e.target.value); setEditing(false) }}
+      onBlur={() => setEditing(false)} style={FIELD_SELECT}>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  }
+  const label = options.find(o => o.value === value)?.label
+  return (
+    <span onClick={() => setEditing(true)} title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
+      {display !== undefined ? display : (label || <span style={{ color: '#ccc' }}>{placeholder}</span>)}
+    </span>
+  )
+}
+
+function InlineDate({ value, onChange, iso = false, placeholder = '—', textStyle }) {
+  const [editing, setEditing] = useState(false)
+  const ref = useRef()
+  useEffect(() => {
+    if (!editing) return
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setEditing(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [editing])
+  const closeIfComplete = v => { onChange(v); if (v === '' || (iso ? /^\d{4}-\d{2}-\d{2}$/.test(v) : /^\d{2}\/\d{2}\/\d{2}$/.test(v))) setEditing(false) }
+  if (editing) {
+    return <div ref={ref} style={{ minWidth: 170 }}>
+      {iso ? <DatePickerISO value={value} onChange={closeIfComplete} /> : <DatePicker value={value} onChange={closeIfComplete} />}
+    </div>
+  }
+  const display = value ? (iso ? fromISODate(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : value) : null
+  return (
+    <span onClick={() => setEditing(true)} title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
+      {display || <span style={{ color: '#ccc' }}>{placeholder}</span>}
+    </span>
+  )
+}
+
+function CollapsibleSection({ title, summary, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{ borderTop: '0.5px solid #f0f0f0', marginTop: 14, paddingTop: 10 }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontFamily: 'inherit', textAlign: 'left' }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{title}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, color: '#bbb' }}>{summary}</span>
+          <span style={{ fontSize: 10, color: '#bbb', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
+        </span>
+      </button>
+      {open && <div style={{ marginTop: 10 }}>{children}</div>}
+    </div>
+  )
+}
+
 // ─── Qualification Form / Detail ──────────────────────────────────────────────
 function QualificationForm({ qual, isEdit, templates, domains, members, tasks, onSave, onDelete, onClose, onSaveTask, onDeleteTask, onUpdateSubtask }) {
   const [f, setF] = useState({
@@ -5326,154 +5401,257 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
     attachments: Array.isArray(qual.attachments) ? qual.attachments : [],
   })
   const [newNote, setNewNote] = useState('')
-  const [expanded, setExpanded] = useState(() => new Set())
+  const [openStages, setOpenStages] = useState(() => new Set()) // subtask ids whose QualSubtaskRow editor is expanded
   const [taskForm, setTaskForm] = useState(null)
   const [isEditTask, setIsEditTask] = useState(false)
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
   const toggleOwner = m => { const cur = f.owners||[]; set('owners', cur.includes(m) ? cur.filter(o=>o!==m) : [...cur, m]) }
   const addNote = () => { const text = newNote.trim(); if (!text) return; set('notes', [...f.notes, { id:'n'+Date.now(), text, ts:Date.now() }]); setNewNote('') }
   const removeNote = id => setF(p => ({ ...p, notes: p.notes.filter(n => n.id !== id) }))
-  const toggleExpand = id => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleOpenStage = id => setOpenStages(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const linkedTasks = isEdit ? tasks.filter(t => t.qualification_id === qual.id).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)) : []
   const taskDomains = [...new Set([...(domains||[]), 'Supplier Qualification'])]
   // Live schedule + cross-track subtask list for the dependency picker (recomputed as durations/deps/start change)
   const { schedule: sched, projectedEnd } = computeSchedule({ start_date: f.start_date }, linkedTasks, today())
+  const todayISO = today()
   const dueDate = parseDueDate(f.due), projSlipped = dueDate && projectedEnd && fromISODate(projectedEnd) > dueDate
   const allSubs = linkedTasks.flatMap(t => (Array.isArray(t.subtasks) ? t.subtasks : []).map(s => ({ id: s.id, title: s.title, taskId: t.id, trackShort: (t.title || '').split(' ')[0] })))
   const openAddStage = () => { setTaskForm({ title:'', status:'active', substatus:'not_started', domain:'Supplier Qualification', owners:f.owners, qualification_id:qual.id, notes:[], subtasks:[], attachments:[], project_id:null, escalation_id:null }); setIsEditTask(false) }
   const openEditStage = t => { setTaskForm({...t}); setIsEditTask(true) }
 
+  // ── Status-strip metrics (all derived live from the schedule, excluding N/A stages from every count) ──
+  const allStageObjs = linkedTasks.flatMap(t => Array.isArray(t.subtasks) ? t.subtasks : [])
+  const nonNAStages = allStageObjs.filter(s => !s.na)
+  const doneCount = nonNAStages.filter(s => s.done).length
+  const totalCount = nonNAStages.length
+  const inFlightStages = nonNAStages.filter(s => !s.done && sched[s.id] && sched[s.id].plannedStart <= todayISO)
+  const overdueStages = nonNAStages.filter(s => !s.done && sched[s.id]?.overdue)
+  const criticalCount = nonNAStages.filter(s => sched[s.id]?.critical).length
+  const inFlightLabel = inFlightStages.length === 0 ? '—' : inFlightStages.length === 1 ? inFlightStages[0].title : `${inFlightStages.length} stages`
+  const inFlightTitle = inFlightStages.map(s => s.title).join(', ') || undefined
+
+  const fmtSpanD = iso => iso ? fromISODate(iso).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : ''
+  const metricCard = (label, value, opts = {}) => (
+    <div title={opts.title} style={{ padding:'8px 10px', borderRadius:8, minWidth:0, boxSizing:'border-box',
+      background: opts.tone === 'danger' ? '#FCEBEB' : opts.tone === 'warn' ? '#FEF3E2' : '#faf9f7',
+      border: `0.5px solid ${opts.tone === 'danger' ? '#F09595' : opts.tone === 'warn' ? '#F5C177' : '#eee'}` }}>
+      <div style={{ fontSize:9, fontWeight:600, color:'#a99fc0', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:3 }}>{label}</div>
+      <div style={{ fontSize:13, fontWeight:600, color: opts.tone === 'danger' ? '#791F1F' : opts.tone === 'warn' ? '#78350f' : '#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{value}</div>
+    </div>
+  )
+
+  // ── Header: name + a single muted "{site} · {status} · started {date}" line ──
+  const statusLabel = QUAL_COLS.find(c => c.key === f.status)?.lbl || f.status
+  const subtitleParts = [
+    f.site || null,
+    statusLabel,
+    f.start_date ? `started ${fromISODate(f.start_date).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}` : null,
+    f.supplier || null, f.material || null,
+  ].filter(Boolean)
+  const subtitle = subtitleParts.join(' · ')
+
+  const notesCount = f.notes.length, attCount = f.attachments.length
+  const metaSummary = [notesCount ? `${notesCount} note${notesCount!==1?'s':''}` : 'no notes', isEdit ? `${attCount} file${attCount!==1?'s':''}` : null].filter(Boolean).join(' · ')
+
+  const stageStatusDot = (st, sc) => {
+    if (st.na) return <span style={{ width:8, height:8, borderRadius:'50%', border:'1.5px dashed #ccc', flexShrink:0, boxSizing:'border-box' }} />
+    if (st.done) return <span style={{ width:8, height:8, borderRadius:'50%', background:'#2f9e44', flexShrink:0 }} />
+    if (sc && sc.plannedStart <= todayISO) return <span style={{ width:8, height:8, borderRadius:'50%', background:'white', border:'2px solid #4f46e5', flexShrink:0, boxSizing:'border-box' }} />
+    return <span style={{ width:8, height:8, borderRadius:'50%', border:'1.5px solid #ccc', background:'white', flexShrink:0, boxSizing:'border-box' }} />
+  }
+
   return (
     <>
+      <style>{`@media (max-width: 480px) { .qform-status-strip { grid-template-columns: repeat(2, 1fr) !important; } }`}</style>
       <div style={{ ...MODAL_OVERLAY, zIndex:50 }}>
-        <div style={{ ...MODAL_CARD, maxWidth:520 }}>
-          <input autoFocus value={f.name} onChange={e => set('name', e.target.value)} placeholder="Qualification name..."
-            style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:6, color:'#111', background:'transparent', padding:0 }} />
-          <TimestampMeta created={qual.created_at} updated={qual.updated_at} />
-          {isEdit && projectedEnd && (
-            <div style={{ display:'inline-flex', alignItems:'center', gap:6, marginTop:2, marginBottom:2, fontSize:11, padding:'3px 10px', borderRadius:20,
-              background: projSlipped ? '#FCEBEB' : '#EAF3DE', color: projSlipped ? '#791F1F' : '#27500A', border:`0.5px solid ${projSlipped ? '#F09595' : '#97C459'}` }}
-              title={projSlipped ? `Projected completion is past the due date (${f.due})` : 'Projected completion based on the current schedule'}>
-              <span style={{ fontWeight:600 }}>Projected</span>
-              {fromISODate(projectedEnd).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}
-              {projSlipped && <span style={{ fontWeight:600 }}>· past due</span>}
+        <div style={{ ...MODAL_CARD, maxWidth:640 }}>
+
+          {/* 1. Header — compact, read-first */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <InlineText value={f.name} onChange={v => set('name', v)} editingDefault={!isEdit} placeholder="Qualification name..."
+                inputStyle={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', color:'#111', background:'transparent', padding:0, fontFamily:'inherit' }}
+                textStyle={{ display:'block', fontSize:18, fontWeight:700, color:'#111', lineHeight:1.3 }} />
+              {subtitle && <div title={subtitle} style={{ fontSize:11, color:'#999', marginTop:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{subtitle}</div>}
             </div>
-          )}
-
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
-            <div><label style={FIELD_LABEL}>Supplier</label>
-              <input value={f.supplier} onChange={e => set('supplier', e.target.value)} style={FIELD_INPUT} placeholder="Supplier name" /></div>
-            <div><label style={FIELD_LABEL}>Material</label>
-              <input value={f.material} onChange={e => set('material', e.target.value)} style={FIELD_INPUT} placeholder="Material / component" /></div>
-          </div>
-
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
-            <div><label style={FIELD_LABEL}>Status</label>
-              <select value={f.status} onChange={e => set('status', e.target.value)} style={FIELD_SELECT}>
-                {QUAL_COLS.map(c => <option key={c.key} value={c.key}>{c.lbl}</option>)}
-              </select></div>
-            <div><label style={FIELD_LABEL}>Priority</label>
-              <select value={f.priority} onChange={e => set('priority', e.target.value)} style={FIELD_SELECT}>
-                <option value="">Normal</option><option value="high">High</option>
-              </select></div>
-            <div><label style={FIELD_LABEL}>Due date</label>
-              <DatePicker value={f.due} onChange={v => set('due', v)} /></div>
-          </div>
-
-          <div style={{ marginBottom:12, maxWidth:200 }}>
-            <label style={FIELD_LABEL}>Start date · schedule anchor</label>
-            <DatePickerISO value={f.start_date} onChange={v => set('start_date', v)} />
-          </div>
-
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12, alignItems:'end' }}>
-            <div><label style={FIELD_LABEL}>Site</label>
-              <select value={f.site} onChange={e => set('site', e.target.value)} style={FIELD_SELECT}>
-                <option value="">— none —</option>
-                {QUAL_SITES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select></div>
-            <div><label style={FIELD_LABEL}>Flag color</label>
-              <div style={{ display:'flex', gap:5, alignItems:'center', height:32, flexWrap:'wrap' }}>
-                {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?18:13, height:fc.key?18:13, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
-              </div></div>
-          </div>
-
-          {!isEdit && (
-            <div style={{ marginBottom:12 }}>
-              <label style={FIELD_LABEL}>Template</label>
-              <select value={f.template_id} onChange={e => set('template_id', e.target.value)} style={FIELD_SELECT}>
-                <option value="">No template (empty)</option>
-                {templates.map(t => <option key={t.id} value={t.id}>{t.name} · {t.tasks?.length||0} stages</option>)}
-              </select>
-              {templates.length === 0 && <div style={{ fontSize:11, color:'#bbb', marginTop:4 }}>No templates yet — add them in Settings › Qual Templates.</div>}
-            </div>
-          )}
-
-          <div style={{ marginBottom:12 }}>
-            <label style={FIELD_LABEL}>Assigned to</label>
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-              {members.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
-            </div>
-          </div>
-
-          <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
-            <label style={FIELD_LABEL}>Notes</label>
-            {f.notes.map(n => (
-              <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
-                <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
-                <span style={{ flex:1 }}>{n.text}</span>
-                <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+            {isEdit && (f.owners||[]).length > 0 && (
+              <div style={{ display:'flex', gap:4, flexShrink:0, paddingTop:2 }}>
+                {f.owners.map(o => <OwnerPip key={o} name={o} />)}
               </div>
-            ))}
-            <div style={{ display:'flex', gap:8, marginTop:4 }}>
-              <input value={newNote} onChange={e=>setNewNote(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addNote()}} placeholder="Add a note..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
-              <button onClick={addNote} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
-            </div>
+            )}
           </div>
+          <TimestampMeta created={qual.created_at} updated={qual.updated_at} />
 
-          {isEdit && (
-            <AttachmentSection
-              attachments={f.attachments}
-              entityPath={`qualifications/${qual.id}`}
-              onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
-              onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
-            />
-          )}
-
-          {isEdit && (
-            <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginTop:12 }}>
-              <div style={{ fontSize:11, fontWeight:500, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Stages · {linkedTasks.length}</div>
-              {linkedTasks.length === 0 && <div style={{ fontSize:12, color:'#ccc', padding:'4px 0 10px' }}>No stages yet</div>}
-              {linkedTasks.map(t => {
-                const subs = Array.isArray(t.subtasks) ? t.subtasks : []
-                const done = (t.substatus||'not_started') === 'complete'
-                const open = expanded.has(t.id)
-                const ss = subStyle(t.substatus || 'not_started')
-                return (
-                  <div key={t.id} style={{ background:'#fafafa', borderRadius:6, border:'0.5px solid #f0f0f0', marginBottom:6 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px' }}>
-                      {subs.length > 0
-                        ? <button onClick={() => toggleExpand(t.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#bbb', fontSize:11, padding:0, width:12, flexShrink:0 }}>{open ? '▾' : '▸'}</button>
-                        : <span style={{ width:12, flexShrink:0 }} />}
-                      <span style={{ width:7, height:7, borderRadius:'50%', background:ss.bg||'#e5e5e5', border:`1px solid ${ss.border||'#ccc'}`, flexShrink:0 }} />
-                      <span onClick={() => openEditStage(t)} style={{ flex:1, fontSize:13, color:done?'#aaa':'#111', textDecoration:done?'line-through':'none', cursor:'pointer' }}>{t.title}</span>
-                      {subs.length > 0 && <span style={{ fontSize:10, color:'#aaa', flexShrink:0 }}>☑ {subs.filter(s=>s.done).length}/{subs.length}</span>}
-                      <button onClick={() => openEditStage(t)} style={{ fontSize:12, color:'#ccc', flexShrink:0, background:'none', border:'none', cursor:'pointer', padding:0 }}>›</button>
-                    </div>
-                    {open && subs.length > 0 && (
-                      <div style={{ padding:'0 10px 8px 20px' }}>
-                        {subs.map(st => (
-                          <QualSubtaskRow key={st.id} st={st} allSubs={allSubs} sched={sched[st.id]}
-                            onUpdate={patch => onUpdateSubtask(t.id, st.id, patch)} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-              <button onClick={openAddStage} style={{ width:'100%', marginTop:4, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer', fontFamily:'inherit' }}>+ New stage</button>
+          {/* 2. Status strip */}
+          {isEdit && totalCount > 0 && (
+            <div className="qform-status-strip" style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8, marginBottom:14 }}>
+              {metricCard('Projected', projectedEnd ? fromISODate(projectedEnd).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—',
+                projSlipped ? { tone:'danger', title:`Past the due date (${f.due})` } : { title:'Based on the current schedule' })}
+              {metricCard('Progress', `${doneCount} / ${totalCount}`)}
+              {metricCard('In flight', inFlightLabel, { title: inFlightTitle })}
+              {metricCard('Overdue', overdueStages.length, overdueStages.length > 0 ? { tone:'warn', title: overdueStages.map(s=>s.title).join(', ') } : {})}
             </div>
           )}
+
+          {/* 3. Stages — expanded by default, the visual focus */}
+          {isEdit && (
+            <div style={{ marginBottom:4 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                <span style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.05em' }}>Stages · {linkedTasks.length}</span>
+                {criticalCount > 0 && (
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, color:'#6d28d9', fontWeight:500 }}>
+                    <Flag size={11} /> {criticalCount} on the critical path
+                  </span>
+                )}
+              </div>
+              {linkedTasks.length === 0 && <div style={{ fontSize:12, color:'#ccc', padding:'4px 0 10px' }}>No stages yet</div>}
+              {linkedTasks.length > 0 && (
+                <div style={{ border:'0.5px solid #eee', borderRadius:8, overflow:'hidden' }}>
+                  {linkedTasks.map((t, ti) => {
+                    const subs = Array.isArray(t.subtasks) ? t.subtasks : []
+                    const trackDoneN = subs.filter(s => s.done).length
+                    const trackTotalN = subs.filter(s => !s.na).length
+                    const ss = subStyle(t.substatus || 'not_started')
+                    const span = subs.reduce((acc, s) => {
+                      const sc = sched[s.id]; if (!sc) return acc
+                      return {
+                        start: !acc.start || sc.plannedStart < acc.start ? sc.plannedStart : acc.start,
+                        end: !acc.end || sc.plannedEnd > acc.end ? sc.plannedEnd : acc.end,
+                      }
+                    }, { start:null, end:null })
+                    return (
+                      <div key={t.id} style={{ borderTop: ti > 0 ? '0.5px solid #eee' : 'none' }}>
+                        {/* Track header row */}
+                        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:'#faf9f7', borderBottom: subs.length ? '0.5px solid #f0f0f0' : 'none' }}>
+                          <span style={{ width:7, height:7, borderRadius:'50%', background:ss.bg||'#e5e5e5', border:`1px solid ${ss.border||'#ccc'}`, flexShrink:0 }} />
+                          <span style={{ flex:1, minWidth:60, fontSize:12, fontWeight:600, color:'#555', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</span>
+                          {subs.length > 0 && <span style={{ fontSize:10, color:'#aaa', flexShrink:0 }}>{trackDoneN}/{trackTotalN}</span>}
+                          {span.start && <span style={{ fontSize:10, color:'#bbb', flexShrink:0, whiteSpace:'nowrap' }}>{fmtSpanD(span.start)} → {fmtSpanD(span.end)}</span>}
+                          <button onClick={() => openEditStage(t)} title="Edit track" style={{ fontSize:12, color:'#ccc', flexShrink:0, background:'none', border:'none', cursor:'pointer', padding:0 }}>›</button>
+                        </div>
+                        {/* Stage rows */}
+                        {subs.map(st => {
+                          const sc = sched[st.id]
+                          const open = openStages.has(st.id)
+                          const isCrit = !st.na && sc?.critical
+                          const isOverdue = !st.na && !st.done && sc?.overdue
+                          return (
+                            <div key={st.id}>
+                              <div onClick={() => toggleOpenStage(st.id)}
+                                style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 10px 7px 12px', cursor:'pointer', flexWrap:'wrap',
+                                  borderLeft: isCrit ? '2.5px solid #6d28d9' : '2.5px solid transparent',
+                                  background: open ? '#faf9ff' : isOverdue ? '#FFFBF0' : 'transparent',
+                                  borderBottom:'0.5px solid #f5f5f5', opacity: st.na ? 0.6 : 1, boxSizing:'border-box' }}>
+                                {stageStatusDot(st, sc)}
+                                {isCrit && <Flag size={10} color="#6d28d9" style={{ flexShrink:0 }} />}
+                                <span style={{ flex:1, minWidth:90, fontSize:12, color: (st.done||st.na) ? '#999' : '#333', textDecoration: (st.done||st.na) ? 'line-through' : 'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                  {st.title}
+                                </span>
+                                <span style={{ fontSize:10, color: isOverdue ? '#b45309' : '#aaa', flexShrink:0, whiteSpace:'nowrap' }}>
+                                  {st.na ? 'N/A' : st.done ? `✓ ${fmtSpanD(sc?.actualEnd || st.completed_date)}` : `${st.duration ?? 0}bd · ${sc?.slack > 0 ? '+' + sc.slack + 'd slack' : 'no slack'}`}
+                                </span>
+                                {sc?.warning && <span title={sc.warning === 'pinned-overlap' ? 'Starts before its predecessor finishes (pinned start)' : 'Completed before its predecessor finished'} style={{ fontSize:10, color:'#d97706', cursor:'help', flexShrink:0 }}>⚠</span>}
+                                <span style={{ fontSize:9, color:'#ccc', flexShrink:0 }}>{open ? '▾' : '▸'}</span>
+                              </div>
+                              {open && (
+                                <div style={{ padding:'6px 10px 8px 12px', background:'#fbfbfd', borderBottom:'0.5px solid #f5f5f5' }}>
+                                  <QualSubtaskRow st={st} allSubs={allSubs} sched={sc} onUpdate={patch => onUpdateSubtask(t.id, st.id, patch)} />
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <button onClick={openAddStage} style={{ width:'100%', marginTop:8, padding:'7px 0', fontSize:12, color:'#aaa', border:'0.5px dashed #ccc', borderRadius:8, background:'none', cursor:'pointer', fontFamily:'inherit' }}>+ New stage</button>
+            </div>
+          )}
+
+          {/* 4. Metadata — collapsed disclosure (open by default only while creating, since there's nothing yet to "read") */}
+          <CollapsibleSection title="Details, notes, attachments" summary={metaSummary} defaultOpen={!isEdit}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+              <div><label style={FIELD_LABEL}>Supplier</label>
+                <InlineText value={f.supplier} onChange={v => set('supplier', v)} placeholder="Supplier name"
+                  inputStyle={FIELD_INPUT} textStyle={{ display:'block', fontSize:13, color: f.supplier ? '#333' : '#ccc', padding:'7px 0' }} /></div>
+              <div><label style={FIELD_LABEL}>Material</label>
+                <InlineText value={f.material} onChange={v => set('material', v)} placeholder="Material / component"
+                  inputStyle={FIELD_INPUT} textStyle={{ display:'block', fontSize:13, color: f.material ? '#333' : '#ccc', padding:'7px 0' }} /></div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
+              <div><label style={FIELD_LABEL}>Status</label>
+                <InlineSelect value={f.status} onChange={v => set('status', v)} options={QUAL_COLS.map(c => ({ value:c.key, label:c.lbl }))}
+                  textStyle={{ display:'block', fontSize:13, color:'#333', padding:'7px 0' }} /></div>
+              <div><label style={FIELD_LABEL}>Priority</label>
+                <InlineSelect value={f.priority} onChange={v => set('priority', v)} options={[{ value:'', label:'Normal' }, { value:'high', label:'High' }]}
+                  textStyle={{ display:'block', fontSize:13, color:'#333', padding:'7px 0' }} /></div>
+              <div><label style={FIELD_LABEL}>Due date</label>
+                <InlineDate value={f.due} onChange={v => set('due', v)} placeholder="Not set"
+                  textStyle={{ display:'block', fontSize:13, color: f.due ? '#333' : '#ccc', padding:'7px 0' }} /></div>
+            </div>
+
+            <div style={{ marginBottom:10, maxWidth:200 }}>
+              <label style={FIELD_LABEL}>Start date · schedule anchor</label>
+              <InlineDate value={f.start_date} onChange={v => set('start_date', v)} iso placeholder="Not set"
+                textStyle={{ display:'block', fontSize:13, color: f.start_date ? '#333' : '#ccc', padding:'7px 0' }} />
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10, alignItems:'start' }}>
+              <div><label style={FIELD_LABEL}>Site</label>
+                <InlineSelect value={f.site} onChange={v => set('site', v)} options={[{ value:'', label:'— none —' }, ...QUAL_SITES.map(s => ({ value:s, label:s }))]}
+                  textStyle={{ display:'block', fontSize:13, color: f.site ? '#333' : '#ccc', padding:'7px 0' }} /></div>
+              <div><label style={FIELD_LABEL}>Flag color</label>
+                <div style={{ display:'flex', gap:5, alignItems:'center', height:32, flexWrap:'wrap' }}>
+                  {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?18:13, height:fc.key?18:13, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
+                </div></div>
+            </div>
+
+            {!isEdit && (
+              <div style={{ marginBottom:10 }}>
+                <label style={FIELD_LABEL}>Template</label>
+                <select value={f.template_id} onChange={e => set('template_id', e.target.value)} style={FIELD_SELECT}>
+                  <option value="">No template (empty)</option>
+                  {templates.map(t => <option key={t.id} value={t.id}>{t.name} · {t.tasks?.length||0} stages</option>)}
+                </select>
+                {templates.length === 0 && <div style={{ fontSize:11, color:'#bbb', marginTop:4 }}>No templates yet — add them in Settings › Qual Templates.</div>}
+              </div>
+            )}
+
+            <div style={{ marginBottom:10 }}>
+              <label style={FIELD_LABEL}>Assigned to</label>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                {members.map(m => { const sel=(f.owners||[]).includes(m); const c=MEMBER_COLORS[m]||{}; return <button key={m} onClick={() => toggleOwner(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:8, cursor:'pointer', border:sel?`1.5px solid ${c.tc}`:'0.5px solid #e5e5e5', background:sel?c.bg:'white', color:sel?c.tc:'#888', fontWeight:sel?500:400 }}>{m}</button> })}
+              </div>
+            </div>
+
+            <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
+              <label style={FIELD_LABEL}>Notes</label>
+              {f.notes.map(n => (
+                <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
+                  <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
+                  <span style={{ flex:1 }}>{n.text}</span>
+                  <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+                </div>
+              ))}
+              <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                <input value={newNote} onChange={e=>setNewNote(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addNote()}} placeholder="Add a note..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+                <button onClick={addNote} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
+              </div>
+            </div>
+
+            {isEdit && (
+              <AttachmentSection
+                attachments={f.attachments}
+                entityPath={`qualifications/${qual.id}`}
+                onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
+                onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
+              />
+            )}
+          </CollapsibleSection>
 
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:12 }}>
             <div>{isEdit && <ConfirmDeleteButton onConfirm={() => { onDelete(qual.id); onClose() }} style={{ fontSize:12, color:'#E24B4A', background:'none', border:'0.5px solid #fcc', borderRadius:8, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>Delete qualification</ConfirmDeleteButton>}</div>
