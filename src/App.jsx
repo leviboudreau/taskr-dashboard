@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import { supabase } from './supabase'
 import DOMPurify from 'dompurify'
 import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory, Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
@@ -5030,11 +5030,18 @@ function ChangePassword({ onClose }) {
 
 // ─── Qualification scheduling engine ──────────────────────────────────────────
 // Pure. Returns { [subtaskId]: { plannedStart, plannedEnd, actualEnd } } — all ISO dates, business-day based.
+// Returns { schedule: {id -> {plannedStart, plannedEnd, actualEnd, slack, latestEnd, critical, warning}}, critical: Set<id>, projectedEnd: ISO|null }
 function computeSchedule(qualification, trackTasks, todayISO) {
   const bizForward = d => { const x = new Date(d); while (!isWeekday(x)) x.setDate(x.getDate() + 1); return x } // next business day (incl. same)
   const addBiz = (d, n) => { const x = new Date(d); if (n <= 0) return x; let c = 0; while (c < n) { x.setDate(x.getDate() + 1); if (isWeekday(x)) c++ } return x }
+  const subBiz = (d, n) => { const x = new Date(d); if (n <= 0) return x; let c = 0; while (c < n) { x.setDate(x.getDate() - 1); if (isWeekday(x)) c++ } return x }
+  const bizBetween = (a, b) => { // signed business days from a to b
+    if (toISODate(b) < toISODate(a)) return -bizBetween(b, a)
+    let c = 0; const x = new Date(a); while (toISODate(x) < toISODate(b)) { x.setDate(x.getDate() + 1); if (isWeekday(x)) c++ } return c
+  }
   const anchor = bizForward(fromISODate(qualification?.start_date || todayISO))
   const todayD = fromISODate(todayISO)
+  const todayFwd = bizForward(todayD)
 
   const subs = []
   for (const t of (trackTasks || [])) for (const s of (Array.isArray(t.subtasks) ? t.subtasks : [])) subs.push(s)
@@ -5051,49 +5058,128 @@ function computeSchedule(qualification, trackTasks, todayISO) {
   }
   for (const s of subs) visit(s.id)
 
-  const eff = {} // subtaskId -> effective end Date used by dependents
-  const result = {}
+  // ── Forward pass ── eff[id] = end propagated to dependents; startD/endD = displayed bar
+  const eff = {}, startD = {}, endD = {}, meta = {}
   for (const id of order) {
     const s = byId[id]; if (!s) continue
     const preds = (s.depends_on || []).filter(d => eff[d])
-    let start = preds.length ? new Date(Math.max(...preds.map(d => eff[d].getTime()))) : new Date(anchor)
-    start = bizForward(start)
-    let end, actualEnd = null, effEnd
+    const predMax = preds.length ? new Date(Math.max(...preds.map(d => eff[d].getTime()))) : null
+    // A pinned start overrides the computed start; the stage no longer reflows from its predecessors
+    const pinned = !!s.pinned_start
+    let start = pinned ? bizForward(fromISODate(s.pinned_start)) : bizForward(predMax || anchor)
+    let end, actualEnd = null, effEnd, warning = null
+    // pinned start before a predecessor's effective end = explicit soft-dependency overlap
+    if (pinned && predMax && toISODate(start) < toISODate(predMax)) warning = 'pinned-overlap'
     if (s.na) {
       // N/A: collapses to zero duration and passes its predecessors' end straight through
       end = new Date(start); effEnd = new Date(start)
     } else if (s.done) {
       end = addBiz(start, Number(s.duration) || 0)
-      if (s.completed_date) { actualEnd = fromISODate(s.completed_date); effEnd = fromISODate(s.completed_date) }
-      else effEnd = new Date(end)
+      if (s.completed_date) {
+        actualEnd = fromISODate(s.completed_date)
+        // BUG 2: a completion before a predecessor's end is honored for display but clamped for propagation
+        if (predMax && toISODate(actualEnd) < toISODate(predMax)) { warning = 'completed-early'; effEnd = new Date(predMax) }
+        else effEnd = new Date(actualEnd)
+      } else effEnd = new Date(end)
     } else {
-      if (toISODate(start) < todayISO) start = bizForward(todayD)          // snap: can't start in the past
-      end = addBiz(start, Number(s.duration) || 0)
-      if (toISODate(end) < todayISO) end = bizForward(todayD)              // overdue stretch: dependents flow from today
-      effEnd = new Date(end)
+      // BUG 1: open stage forecasts remaining work; never collapses to today. Pinned starts are respected as-is.
+      if (s.expected_end) {                                                 // authoritative manual override
+        end = bizForward(fromISODate(s.expected_end))
+        if (!pinned && toISODate(start) < todayISO) start = new Date(todayFwd)
+        if (toISODate(end) < toISODate(start)) start = new Date(end)
+        effEnd = new Date(end)
+      } else {
+        const dur = Number(s.duration) || 0
+        const pct = Math.max(0, Math.min(100, Number(s.percent) || 0))
+        const remaining = dur <= 0 ? 0 : Math.max(1, Math.ceil(dur * (1 - pct / 100)))
+        const normalEnd = addBiz(start, dur)
+        if (toISODate(start) < todayISO || toISODate(normalEnd) < todayISO) { // overdue / late start → forecast remaining from today
+          if (!pinned) start = new Date(todayFwd)                           // non-pinned snaps start to today; pinned keeps its date
+          end = addBiz(new Date(todayFwd), remaining)
+        } else end = normalEnd                                              // future stage on schedule → full duration
+        effEnd = new Date(end)
+      }
     }
-    eff[id] = effEnd
-    result[id] = { plannedStart: toISODate(start), plannedEnd: toISODate(end), actualEnd: actualEnd ? toISODate(actualEnd) : null }
+    startD[id] = start; endD[id] = end; eff[id] = effEnd; meta[id] = { actualEnd, warning }
   }
-  return result
+
+  // ── Projected completion = latest effective end ──
+  let projTime = -Infinity
+  for (const id of order) if (eff[id] && eff[id].getTime() > projTime) projTime = eff[id].getTime()
+  const projectedEnd = projTime === -Infinity ? null : toISODate(new Date(projTime))
+
+  // ── Critical path: from the latest-ending stage(s), walk back through the driving predecessor ──
+  const critical = new Set()
+  const walk = id => {
+    if (critical.has(id)) return
+    critical.add(id)
+    const preds = (byId[id]?.depends_on || []).filter(d => eff[d])
+    let best = null, bestT = -Infinity
+    for (const d of preds) { const t = eff[d].getTime(); if (t > bestT) { bestT = t; best = d } }
+    if (best) walk(best)
+  }
+  if (projTime > -Infinity) for (const id of order) if (eff[id] && eff[id].getTime() === projTime) walk(id)
+
+  // ── Slack (backward pass): latest allowable end per stage before it pushes projectedEnd ──
+  const succ = {}
+  for (const s of subs) for (const d of (s.depends_on || []).filter(x => byId[x])) (succ[d] ||= []).push(s.id)
+  const lae = {}
+  for (const id of [...order].reverse()) {
+    const outs = succ[id] || []
+    if (!outs.length) lae[id] = projTime
+    else lae[id] = Math.min(...outs.map(o => subBiz(new Date(lae[o]), Math.max(0, bizBetween(startD[o], eff[o]))).getTime()))
+  }
+
+  const schedule = {}
+  for (const id of order) {
+    if (!eff[id]) continue
+    const isCrit = critical.has(id)
+    const latestEnd = new Date(lae[id] ?? eff[id].getTime())
+    schedule[id] = {
+      plannedStart: toISODate(startD[id]), plannedEnd: toISODate(endD[id]),
+      actualEnd: meta[id].actualEnd ? toISODate(meta[id].actualEnd) : null,
+      slack: isCrit ? 0 : Math.max(0, bizBetween(eff[id], latestEnd)),
+      latestEnd: toISODate(latestEnd), critical: isCrit, warning: meta[id].warning,
+    }
+  }
+  return { schedule, critical, projectedEnd }
+}
+
+// Parse a due date (MM/DD/YY from DatePicker, or ISO) to a Date for comparison; null if empty/invalid
+function parseDueDate(s) {
+  if (!s) return null
+  const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  if (m) { const yy = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]); return new Date(yy, Number(m[1]) - 1, Number(m[2])) }
+  const d = new Date(s); return isNaN(d) ? null : d
 }
 
 // One editable subtask row (done · duration · N/A · dependencies · completed date)
 function QualSubtaskRow({ st, allSubs, sched, onUpdate }) {
   const [depOpen, setDepOpen] = useState(false)
+  const [showMore, setShowMore] = useState(false)
   const deps = Array.isArray(st.depends_on) ? st.depends_on : []
   const faded = !!st.na
+  const open = !st.done && !st.na               // stage still in progress (percent/expected_end apply)
+  const pct = Math.max(0, Math.min(100, Number(st.percent) || 0))
   const fmtD = iso => iso ? fromISODate(iso).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : '—'
   const others = allSubs.filter(o => o.id !== st.id)
+  const inputS = { fontSize:11, padding:'2px 4px', border:'0.5px solid #e0e0e0', borderRadius:4, outline:'none', fontFamily:'inherit' }
   return (
-    <div onClick={e => e.stopPropagation()} style={{ border:'0.5px solid #eee', borderRadius:6, padding:'6px 8px', marginBottom:4, background: faded ? '#f7f7f5' : 'white' }}>
+    <div onClick={e => e.stopPropagation()} style={{ border:`0.5px solid ${sched?.critical ? '#ddd6fe' : '#eee'}`, borderLeft: sched?.critical ? '2px solid #7c3aed' : '0.5px solid #eee', borderRadius:6, padding:'6px 8px', marginBottom:4, background: faded ? '#f7f7f5' : 'white' }}>
       <div style={{ display:'flex', alignItems:'center', gap:6, opacity: faded ? 0.65 : 1 }}>
         <input type="checkbox" checked={!!st.done} disabled={faded}
           onChange={e => onUpdate(e.target.checked ? { done:true, completed_date: st.completed_date || today() } : { done:false, completed_date:null })}
           style={{ width:13, height:13, cursor: faded ? 'default' : 'pointer', flexShrink:0 }} />
         <span style={{ flex:1, fontSize:12, color:(st.done||faded)?'#999':'#333', textDecoration:(st.done||faded)?'line-through':'none' }}>
-          {st.title}{faded && <span style={{ fontSize:9, marginLeft:5, color:'#aaa', fontWeight:600 }}>N/A</span>}
+          {st.title}
+          {faded && <span style={{ fontSize:9, marginLeft:5, color:'#aaa', fontWeight:600 }}>N/A</span>}
+          {sched?.warning && <span title={sched.warning === 'pinned-overlap' ? 'Starts before its predecessor finishes (pinned start)' : 'Completed before its predecessor finished'} style={{ fontSize:10, marginLeft:5, color:'#d97706', cursor:'help' }}>⚠</span>}
+          {st.pinned_start && <button onClick={() => onUpdate({ pinned_start: null })} title={`Pinned start ${st.pinned_start} — click to unpin (return to computed scheduling)`} style={{ fontSize:9, marginLeft:5, color:'#7c3aed', fontWeight:600, background:'none', border:'none', cursor:'pointer', padding:0 }}>📌</button>}
+          {open && pct > 0 && <span style={{ fontSize:9, marginLeft:5, color:'#7c3aed', fontWeight:600 }}>{pct}%</span>}
         </span>
+        {open && sched && (sched.critical
+          ? <span style={{ fontSize:8, color:'#7c3aed', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', flexShrink:0 }} title="On the critical path — no slack">critical</span>
+          : sched.slack > 0 && <span style={{ fontSize:9, color:'#aaa', flexShrink:0 }} title={`${sched.slack} business days of slack before this delays the qualification`}>+{sched.slack}d</span>)}
         {sched && <span style={{ fontSize:9, color:'#aaa', flexShrink:0, whiteSpace:'nowrap' }} title="Planned start → end (business days)">
           {sched.actualEnd ? `✓ ${fmtD(sched.actualEnd)}` : `${fmtD(sched.plannedStart)} → ${fmtD(sched.plannedEnd)}`}
         </span>}
@@ -5103,13 +5189,19 @@ function QualSubtaskRow({ st, allSubs, sched, onUpdate }) {
           Dur
           <input type="number" min={0} value={faded ? 0 : (st.duration ?? 0)} disabled={faded}
             onChange={e => onUpdate({ duration: Math.max(0, parseInt(e.target.value) || 0) })}
-            style={{ width:40, fontSize:11, padding:'2px 4px', border:'0.5px solid #e0e0e0', borderRadius:4, outline:'none' }} />
+            style={{ ...inputS, width:40 }} />
           bd
         </label>
-        <button onClick={() => onUpdate({ na: !st.na })}
+        <button onClick={() => onUpdate(st.na ? { na:false } : { na:true, done:false, completed_date:null, percent:0, expected_end:null })}
           style={{ fontSize:10, padding:'2px 8px', borderRadius:10, border:'none', cursor:'pointer', background: st.na ? '#ede9fe' : '#f0f0f0', color: st.na ? '#7c3aed' : '#888', fontWeight:500 }}>
           {st.na ? 'N/A ✓' : 'N/A'}
         </button>
+        {open && (
+          <button onClick={() => setShowMore(m => !m)} title="Progress · expected-end · pinned start"
+            style={{ fontSize:10, padding:'2px 8px', borderRadius:10, border:'0.5px solid #e0e0e0', cursor:'pointer', background: showMore ? '#f5f3ff' : 'white', color: (pct>0||st.expected_end||st.pinned_start) ? '#7c3aed' : '#888' }}>
+            ⋯{(pct>0||st.expected_end||st.pinned_start) ? ' •' : ''}
+          </button>
+        )}
         <div style={{ position:'relative' }}>
           <button onClick={() => setDepOpen(o => !o)}
             style={{ fontSize:10, padding:'2px 8px', borderRadius:10, border:'0.5px solid #e0e0e0', cursor:'pointer', background:'white', color: deps.length ? '#7c3aed' : '#888' }}>
@@ -5145,10 +5237,32 @@ function QualSubtaskRow({ st, allSubs, sched, onUpdate }) {
           <label style={{ display:'flex', alignItems:'center', gap:3, fontSize:10, color:'#888' }}>
             Done
             <input type="date" value={st.completed_date || today()} onChange={e => onUpdate({ completed_date: e.target.value || null })}
-              style={{ fontSize:10, padding:'2px 4px', border:'0.5px solid #e0e0e0', borderRadius:4, outline:'none', fontFamily:'inherit' }} />
+              style={{ ...inputS, fontSize:10 }} />
           </label>
         )}
       </div>
+      {open && showMore && (
+        <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:6, flexWrap:'wrap', paddingLeft:19, paddingTop:6, borderTop:'0.5px dashed #eee' }}>
+          <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }} title="How far through this stage the work is">
+            Progress
+            <input type="number" min={0} max={100} value={st.percent ?? 0}
+              onChange={e => onUpdate({ percent: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })}
+              style={{ ...inputS, width:44 }} />%
+          </label>
+          <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }} title="Manual override for when this stage is actually expected to finish — takes precedence over the computed forecast">
+            Expected end <span style={{ fontSize:8, color:'#bbb', fontStyle:'italic' }}>(override)</span>
+            <input type="date" value={st.expected_end || ''} onChange={e => onUpdate({ expected_end: e.target.value || null })}
+              style={{ ...inputS, fontSize:10, borderColor: st.expected_end ? '#c4b5fd' : '#e0e0e0' }} />
+            {st.expected_end && <button onClick={() => onUpdate({ expected_end: null })} title="Clear override" style={{ fontSize:11, color:'#bbb', background:'none', border:'none', cursor:'pointer', padding:0 }}>✕</button>}
+          </label>
+          <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }} title="Pin an explicit start date. A pinned stage no longer reflows from its predecessors until you unpin it.">
+            📌 Pinned start
+            <input type="date" value={st.pinned_start || ''} onChange={e => onUpdate({ pinned_start: e.target.value || null })}
+              style={{ ...inputS, fontSize:10, borderColor: st.pinned_start ? '#c4b5fd' : '#e0e0e0' }} />
+            {st.pinned_start && <button onClick={() => onUpdate({ pinned_start: null })} title="Unpin — return to computed scheduling" style={{ fontSize:11, color:'#bbb', background:'none', border:'none', cursor:'pointer', padding:0 }}>✕</button>}
+          </label>
+        </div>
+      )}
     </div>
   )
 }
@@ -5162,6 +5276,9 @@ function QualificationCard({ qual, tasks, onOpen, onDragStart, onDragEnd, draggi
   const bg = flagBg(qual.color), border = flagBorder(qual.color)
   const owners = qual.owners || []
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
+  const { projectedEnd } = stagesTotal ? computeSchedule({ start_date: qual.start_date }, linked, today()) : { projectedEnd: null }
+  const dueDate = parseDueDate(qual.due), projSlipped = dueDate && projectedEnd && fromISODate(projectedEnd) > dueDate
+  const projLabel = projectedEnd ? fromISODate(projectedEnd).toLocaleDateString('en-US', { month:'short', year:'numeric' }) : null
   return (
     <div
       draggable
@@ -5184,7 +5301,10 @@ function QualificationCard({ qual, tasks, onOpen, onDragStart, onDragEnd, draggi
           <div style={{ height:5, background:'#eee', borderRadius:3, overflow:'hidden' }}>
             <div style={{ width:`${pct}%`, height:'100%', background:'linear-gradient(90deg,#4f46e5,#7c3aed)' }} />
           </div>
-          <div style={{ fontSize:10, color:'#aaa', marginTop:3 }}>{stagesDone}/{stagesTotal} stage{stagesTotal!==1?'s':''} complete</div>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:6, marginTop:3 }}>
+            <span style={{ fontSize:10, color:'#aaa' }}>{stagesDone}/{stagesTotal} stage{stagesTotal!==1?'s':''} complete</span>
+            {projLabel && <span title={projSlipped ? 'Projected completion is past the due date' : 'Projected completion'} style={{ fontSize:10, fontWeight:500, color: projSlipped ? '#B23B3B' : '#7c6f9c', whiteSpace:'nowrap' }}>Projected: {projLabel}{projSlipped ? ' ⚠' : ''}</span>}
+          </div>
         </div>
       )}
       <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap' }}>
@@ -5218,7 +5338,8 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
   const linkedTasks = isEdit ? tasks.filter(t => t.qualification_id === qual.id).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)) : []
   const taskDomains = [...new Set([...(domains||[]), 'Supplier Qualification'])]
   // Live schedule + cross-track subtask list for the dependency picker (recomputed as durations/deps/start change)
-  const sched = computeSchedule({ start_date: f.start_date }, linkedTasks, today())
+  const { schedule: sched, projectedEnd } = computeSchedule({ start_date: f.start_date }, linkedTasks, today())
+  const dueDate = parseDueDate(f.due), projSlipped = dueDate && projectedEnd && fromISODate(projectedEnd) > dueDate
   const allSubs = linkedTasks.flatMap(t => (Array.isArray(t.subtasks) ? t.subtasks : []).map(s => ({ id: s.id, title: s.title, taskId: t.id, trackShort: (t.title || '').split(' ')[0] })))
   const openAddStage = () => { setTaskForm({ title:'', status:'active', substatus:'not_started', domain:'Supplier Qualification', owners:f.owners, qualification_id:qual.id, notes:[], subtasks:[], attachments:[], project_id:null, escalation_id:null }); setIsEditTask(false) }
   const openEditStage = t => { setTaskForm({...t}); setIsEditTask(true) }
@@ -5230,6 +5351,15 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
           <input autoFocus value={f.name} onChange={e => set('name', e.target.value)} placeholder="Qualification name..."
             style={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom:6, color:'#111', background:'transparent', padding:0 }} />
           <TimestampMeta created={qual.created_at} updated={qual.updated_at} />
+          {isEdit && projectedEnd && (
+            <div style={{ display:'inline-flex', alignItems:'center', gap:6, marginTop:2, marginBottom:2, fontSize:11, padding:'3px 10px', borderRadius:20,
+              background: projSlipped ? '#FCEBEB' : '#EAF3DE', color: projSlipped ? '#791F1F' : '#27500A', border:`0.5px solid ${projSlipped ? '#F09595' : '#97C459'}` }}
+              title={projSlipped ? `Projected completion is past the due date (${f.due})` : 'Projected completion based on the current schedule'}>
+              <span style={{ fontWeight:600 }}>Projected</span>
+              {fromISODate(projectedEnd).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}
+              {projSlipped && <span style={{ fontWeight:600 }}>· past due</span>}
+            </div>
+          )}
 
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
             <div><label style={FIELD_LABEL}>Supplier</label>
@@ -5368,9 +5498,21 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
 // ─── Qualification Gantt ──────────────────────────────────────────────────────
 function QualificationGantt({ qual, tasks, onUpdateSubtask, onUpdateQual, isMobile }) {
   const [selected, setSelected] = useState(null) // { taskId, subId }
+  const [, setDragTick] = useState(0)             // forces re-render during a bar drag
+  const dragRef = useRef(null)                    // live drag state (mutable, avoids stale closures)
+  const suppressClickRef = useRef(0)              // timestamp: ignore the click that follows a committed drag
+  const bodyRef = useRef(null)                    // timeline body, for pixel→date mapping
+  const bump = () => setDragTick(t => t + 1)
+  // Escape cancels an in-flight drag
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape' && dragRef.current) { dragRef.current = null; suppressClickRef.current = Date.now(); setDragTick(t => t + 1) } }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const linkedTasks = tasks.filter(t => t.qualification_id === qual.id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
   const todayISO = today()
-  const sched = computeSchedule({ start_date: qual.start_date }, linkedTasks, todayISO)
+  const { schedule: sched, critical, projectedEnd } = computeSchedule({ start_date: qual.start_date }, linkedTasks, todayISO)
+  const dueDate = parseDueDate(qual.due), projSlipped = dueDate && projectedEnd && fromISODate(projectedEnd) > dueDate
   const allSubs = linkedTasks.flatMap(t => (Array.isArray(t.subtasks) ? t.subtasks : []).map(s => ({ id: s.id, title: s.title, taskId: t.id, trackShort: (t.title || '').split(' ')[0] })))
 
   const TRACK_COLORS = ['#4f46e5', '#0891b2', '#db2777']
@@ -5425,18 +5567,70 @@ function QualificationGantt({ qual, tasks, onUpdateSubtask, onUpdateQual, isMobi
     if (rr < l) { const t = l; l = rr; rr = t }
     const w = na ? 0 : Math.max(MIN_BAR, rr - l)
     const overdue = !done && !na && s.plannedEnd <= todayISO
-    geo[r.st.id] = { l, r: l + w, w, na, done, overdue, color: done ? DONE_C : (overdue ? OVERDUE_C : r.color), y: tops[i] + ROW_H / 2 }
+    const crit = !!s.critical
+    // slack float bar: from the bar's end out to the latest allowable end (only for non-critical, non-done stages with float)
+    const slackX = (!done && !na && s.slack > 0 && s.latestEnd) ? Math.max(l + w, xOf(s.latestEnd)) : null
+    geo[r.st.id] = { l, r: l + w, w, na, done, overdue, crit, slackX, color: done ? DONE_C : (overdue ? OVERDUE_C : r.color), y: tops[i] + ROW_H / 2 }
   })
+  // Orthogonal (right-angle) connectors: out from the predecessor end, down/up a vertical channel, into the successor start.
   const depLines = []
+  const STUB = 8, chanUse = {}
   rows.forEach(r => {
     if (r.type !== 'sub') return
     const g = geo[r.st.id]; if (!g) return
     ;(r.st.depends_on || []).forEach(pid => {
       const pg = geo[pid]; if (!pg) return
-      const x1 = pg.r, y1 = pg.y, x2 = g.l, y2 = g.y, dx = Math.max(10, Math.min(36, Math.abs(x2 - x1) / 2))
-      depLines.push(`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`)
+      const x1 = pg.r, y1 = pg.y, x2 = g.l, y2 = g.y
+      let chX = x2 >= x1 ? x1 + Math.max(STUB, Math.min((x2 - x1) * 0.5, 40)) : x1 + STUB
+      const bucket = Math.round(chX / 8); const used = chanUse[bucket] || 0; chanUse[bucket] = used + 1
+      chX += used * 4                                                       // fan out overlapping vertical channels
+      const onCrit = critical.has(pid) && critical.has(r.st.id)            // both endpoints on the driving chain
+      depLines.push({ d: `M ${x1} ${y1} H ${chX} V ${y2} H ${x2}`, crit: onCrit })
     })
   })
+
+  // ── Drag-to-adjust: right edge → duration, left edge → pinned start ──
+  const addBizG = (d, n) => { const x = new Date(d); if (n <= 0) return x; let c = 0; while (c < n) { x.setDate(x.getDate() + 1); if (isWeekday(x)) c++ } return x }
+  const bizForwardG = d => { const x = new Date(d); while (!isWeekday(x)) x.setDate(x.getDate() + 1); return x }
+  const bizBetweenG = (a, b) => { if (toISODate(b) < toISODate(a)) return -bizBetweenG(b, a); let c = 0; const x = new Date(a); while (toISODate(x) < toISODate(b)) { x.setDate(x.getDate() + 1); if (isWeekday(x)) c++ } return c }
+  const dateOfX = px => { const days = Math.max(0, Math.round(px / DAY_W)); const d = new Date(rangeStartD); d.setDate(d.getDate() + days); return toISODate(d) }
+  const EDGE = 8
+  const edgeAt = (e, el) => { const rect = el.getBoundingClientRect(); const off = e.clientX - rect.left; const z = Math.min(EDGE, rect.width * 0.4); return off <= z ? 'left' : off >= rect.width - z ? 'right' : 'body' }
+  const onBarPointerDown = (e, r) => {
+    const edge = edgeAt(e, e.currentTarget)
+    if (edge === 'body') return                                            // body → let onClick open the editor
+    e.stopPropagation()
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
+    const dur = Math.max(1, Number(r.st.duration) || 1)
+    dragRef.current = { subId: r.st.id, taskId: r.taskId, edge, startISO: r.sched.plannedStart, duration: dur,
+      curDur: dur, curISO: r.st.pinned_start || r.sched.plannedStart, moved: false, x: e.clientX, y: e.clientY }
+    bump()
+  }
+  const onBarPointerMove = (e, r) => {
+    const d = dragRef.current
+    if (!d || d.subId !== r.st.id) {                                       // not dragging: show resize cursor near edges
+      if (e.pointerType === 'mouse') { const z = edgeAt(e, e.currentTarget); e.currentTarget.style.cursor = z === 'body' ? 'pointer' : 'ew-resize' }
+      return
+    }
+    e.preventDefault(); d.moved = true; d.x = e.clientX; d.y = e.clientY
+    const dropISO = dateOfX(e.clientX - (bodyRef.current?.getBoundingClientRect().left || 0))
+    if (d.edge === 'right') d.curDur = Math.max(1, bizBetweenG(fromISODate(d.startISO), fromISODate(dropISO)))
+    else d.curISO = toISODate(bizForwardG(fromISODate(dropISO)))
+    bump()
+  }
+  const onBarPointerUp = (e, r) => {
+    const d = dragRef.current
+    if (d && d.subId === r.st.id) {
+      if (d.moved) {
+        suppressClickRef.current = Date.now()                              // the click that follows a drag must not open the editor
+        if (d.edge === 'right' && d.curDur !== d.duration) onUpdateSubtask(d.taskId, d.subId, { duration: d.curDur })
+        else if (d.edge === 'left' && d.curISO !== d.startISO) onUpdateSubtask(d.taskId, d.subId, { pinned_start: d.curISO })
+      }
+      dragRef.current = null; bump()
+    }
+  }
+  const onBarClick = (r) => { if (Date.now() - suppressClickRef.current < 350) return; setSelected({ taskId: r.taskId, subId: r.st.id }) }
+  const drag = dragRef.current
 
   const selSub = selected ? (linkedTasks.find(t => t.id === selected.taskId)?.subtasks || []).find(s => s.id === selected.subId) : null
   const legend = (c, l) => <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }}><span style={{ width:11, height:8, borderRadius:2, background:c, flexShrink:0 }} />{l}</span>
@@ -5448,8 +5642,17 @@ function QualificationGantt({ qual, tasks, onUpdateSubtask, onUpdateQual, isMobi
           <span style={{ fontSize:10, fontWeight:600, color:'#a99fc0', textTransform:'uppercase', letterSpacing:'0.06em' }}>Start</span>
           <div style={{ width:150 }}><DatePickerISO value={qual.start_date || ''} onChange={v => onUpdateQual(qual.id, { start_date: v || null })} /></div>
         </div>
+        {projectedEnd && (
+          <div style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, padding:'3px 10px', borderRadius:20,
+            background: projSlipped ? '#FCEBEB' : '#EAF3DE', color: projSlipped ? '#791F1F' : '#27500A', border:`0.5px solid ${projSlipped ? '#F09595' : '#97C459'}` }}
+            title={projSlipped ? `Projected completion is past the due date (${qual.due})` : 'Projected completion based on the current schedule'}>
+            <span style={{ fontWeight:600 }}>Projected</span>{fmtGD(projectedEnd)} '{String(fromISODate(projectedEnd).getFullYear()).slice(-2)}{projSlipped ? ' · past due' : ''}
+          </div>
+        )}
         <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
           {legend(TRACK_COLORS[0], 'On track')}{legend(DONE_C, 'Done')}{legend(OVERDUE_C, 'Overdue')}
+          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }}><span style={{ width:12, height:3, background:'#6d28d9', borderRadius:2 }} />Critical path</span>
+          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }}><span style={{ width:12, height:3, borderRadius:2, background:'repeating-linear-gradient(90deg,#4f46e566 0 3px,transparent 3px 6px)' }} />Slack</span>
           <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, color:'#888' }}><span style={{ width:2, height:11, background:'#E24B4A' }} />Today</span>
         </div>
       </div>
@@ -5492,21 +5695,52 @@ function QualificationGantt({ qual, tasks, onUpdateSubtask, onUpdateQual, isMobi
                 </div>
               ))}
             </div>
-            <div style={{ position:'relative', height:bodyH }}>
+            <div ref={bodyRef} style={{ position:'relative', height:bodyH }}>
               {weekLines.map((x, wi) => <div key={'w'+wi} style={{ position:'absolute', left:x, top:0, width:1, height:bodyH, background:'#f5f5f5' }} />)}
               {months.map((mo, mi) => <div key={'m'+mi} style={{ position:'absolute', left:mo.x, top:0, width:1, height:bodyH, background:'#ececec' }} />)}
               {rows.map((r, i) => r.type === 'track' ? <div key={'tb'+i} style={{ position:'absolute', left:0, top:tops[i], width:timelineW, height:TH_H, background:'#faf9f7', borderBottom:'0.5px solid #f0f0f0' }} /> : null)}
               {todayX >= 0 && todayX <= timelineW && <div style={{ position:'absolute', left:todayX, top:0, width:1.5, height:bodyH, background:'#E24B4A', zIndex:2 }} />}
+              {/* Projected completion marker */}
+              {projectedEnd && (() => { const px = xOf(projectedEnd); if (px < 0 || px > timelineW) return null
+                return <div title={`Projected completion ${fmtGD(projectedEnd)}${projSlipped ? ' · past due' : ''}`} style={{ position:'absolute', left:px, top:0, width:2, height:bodyH, background: projSlipped ? '#E24B4A' : '#7c3aed', opacity:0.75, zIndex:2 }} /> })()}
               <svg width={timelineW} height={bodyH} style={{ position:'absolute', left:0, top:0, pointerEvents:'none', zIndex:1 }}>
-                {depLines.map((d, di) => <path key={di} d={d} stroke="#b7a6e8" strokeWidth="1" fill="none" opacity="0.55" />)}
+                <defs>
+                  <marker id="qg-arrow-n" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 z" fill="#b7a6e8" /></marker>
+                  <marker id="qg-arrow-c" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3.5 L0,7 z" fill="#6d28d9" /></marker>
+                </defs>
+                {depLines.filter(d => !d.crit).map((d, di) => <path key={'n'+di} d={d.d} stroke="#c9bced" strokeWidth="1" fill="none" opacity="0.55" markerEnd="url(#qg-arrow-n)" />)}
+                {depLines.filter(d => d.crit).map((d, di) => <path key={'c'+di} d={d.d} stroke="#6d28d9" strokeWidth="2" fill="none" opacity="0.9" markerEnd="url(#qg-arrow-c)" />)}
               </svg>
               {rows.map((r, i) => {
                 if (r.type !== 'sub') return null
-                const g = geo[r.st.id]; if (!g) return null
+                let g = geo[r.st.id]; if (!g) return null
                 if (g.na) return <div key={'na'+i} title="N/A" style={{ position:'absolute', left:g.l - 3, top:tops[i] + ROW_H/2 - 1, width:6, height:2, background:'#ccc', zIndex:3 }} />
-                return <div key={'b'+i} onClick={() => setSelected({ taskId:r.taskId, subId:r.st.id })} title={`${r.st.title}  ·  ${r.sched ? (r.sched.actualEnd ? 'done '+fmtGD(r.sched.actualEnd) : fmtGD(r.sched.plannedStart)+' → '+fmtGD(r.sched.plannedEnd)) : ''}`}
-                  style={{ position:'absolute', left:g.l, top:tops[i] + (ROW_H - BAR_H)/2, width:g.w, height:BAR_H, background:g.color, borderRadius:4, cursor:'pointer', zIndex:3, boxShadow:'0 1px 2px rgba(0,0,0,0.12)', outline: selected?.subId === r.st.id ? '2px solid #7c3aed' : 'none', outlineOffset:1 }} />
+                const y = tops[i] + (ROW_H - BAR_H)/2
+                const pinned = !!r.st.pinned_start
+                // Live drag preview: recompute this bar's geometry from the in-flight edge
+                const dg = drag && drag.subId === r.st.id && drag.moved ? drag : null
+                if (dg) {
+                  if (dg.edge === 'right') { const endISO = toISODate(addBizG(fromISODate(dg.startISO), dg.curDur)); const l = xOf(dg.startISO), rr = xOf(endISO); g = { ...g, l, r: rr, w: Math.max(MIN_BAR, rr - l) } }
+                  else { const endISO = toISODate(addBizG(fromISODate(dg.curISO), dg.duration)); const l = xOf(dg.curISO), rr = xOf(endISO); g = { ...g, l, r: rr, w: Math.max(MIN_BAR, rr - l) } }
+                }
+                return <Fragment key={'b'+i}>
+                  {g.slackX != null && g.slackX > g.r && !dg && <div title={`${r.sched.slack} business days of slack`} style={{ position:'absolute', left:g.r, top:tops[i] + ROW_H/2 - 1.5, width:g.slackX - g.r, height:3, background:`repeating-linear-gradient(90deg, ${r.color}66 0 3px, transparent 3px 6px)`, borderRadius:2, zIndex:2 }} />}
+                  <div onPointerDown={e => onBarPointerDown(e, r)} onPointerMove={e => onBarPointerMove(e, r)} onPointerUp={e => onBarPointerUp(e, r)} onClick={() => onBarClick(r)}
+                    title={`${r.st.title}  ·  ${r.sched ? (r.sched.actualEnd ? 'done '+fmtGD(r.sched.actualEnd) : fmtGD(r.sched.plannedStart)+' → '+fmtGD(r.sched.plannedEnd)) : ''}${pinned ? '  · 📌 pinned start' : ''}${g.crit ? '  · critical path' : (r.sched?.slack ? '  · +'+r.sched.slack+'d slack' : '')}  ·  drag edges to adjust`}
+                    style={{ position:'absolute', left:g.l, top:y, width:g.w, height:BAR_H, background:g.color, borderRadius:4, cursor:'pointer', zIndex: dg ? 5 : 3, touchAction:'pan-y', boxShadow: dg ? '0 2px 6px rgba(0,0,0,0.25)' : (g.crit ? '0 1px 3px rgba(109,40,217,0.4)' : '0 1px 2px rgba(0,0,0,0.12)'), border: g.crit ? '1.5px solid #4c1d95' : 'none', borderLeft: pinned ? '3px solid #4c1d95' : (g.crit ? '1.5px solid #4c1d95' : 'none'), boxSizing:'border-box', opacity: dg ? 0.85 : 1, outline: selected?.subId === r.st.id ? '2px solid #7c3aed' : 'none', outlineOffset:1 }} />
+                  {pinned && <button onClick={e => { e.stopPropagation(); onUpdateSubtask(r.taskId, r.st.id, { pinned_start: null }) }}
+                    title={`Pinned start ${r.st.pinned_start} — click to unpin`}
+                    style={{ position:'absolute', left:g.l - 6, top:tops[i] + ROW_H/2 - BAR_H/2 - 8, fontSize:10, lineHeight:1, background:'none', border:'none', cursor:'pointer', padding:0, zIndex:6 }}>📌</button>}
+                </Fragment>
               })}
+              {/* Live drag tooltip */}
+              {drag && drag.moved && (
+                <div style={{ position:'fixed', left:drag.x + 14, top:drag.y + 14, zIndex:400, background:'#111', color:'white', fontSize:11, padding:'4px 8px', borderRadius:6, pointerEvents:'none', whiteSpace:'nowrap', boxShadow:'0 2px 8px rgba(0,0,0,0.3)' }}>
+                  {drag.edge === 'right'
+                    ? `${drag.curDur} bd · ends ${fmtGD(toISODate(addBizG(fromISODate(drag.startISO), drag.curDur)))}`
+                    : `📌 ${fmtGD(drag.curISO)} → ${fmtGD(toISODate(addBizG(fromISODate(drag.curISO), drag.duration)))} · ${drag.duration} bd`}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -5887,7 +6121,7 @@ export default function App() {
         subtasks: (t.subtasks || []).map((s, j) => { const o = (s && typeof s === 'object'); return {
           id: (o && s.id) || `st${i}${j}`, title: o ? (s.title || '') : s,
           duration: o ? (s.duration ?? 1) : 1, depends_on: (o && Array.isArray(s.depends_on)) ? s.depends_on : [],
-          done: false, na: false, completed_date: null,
+          done: false, na: false, completed_date: null, percent: 0, expected_end: null, pinned_start: null,
         } }),
         color: data.color||'', sort_order: i + 1, updated_at: new Date().toISOString(),
       }))
