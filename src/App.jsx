@@ -632,9 +632,9 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
             </div>
           )}
 
-          {/* Status + Priority + Due */}
+          {/* Progress + Priority + Due */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
-            <div><label style={FIELD_LABEL}>Status</label>
+            <div><label style={FIELD_LABEL}>Progress</label>
               <select value={f.substatus||''} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
                 {SUBSTATUS.filter(s => s.key !== 'canceled').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select></div>
@@ -2809,7 +2809,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
         <div style={{ display:'grid', gridTemplateColumns:GRID, gap:isMobile?6:8, padding:'8px 12px', background:'#f7f7f5', borderBottom:'0.5px solid #e5e5e5', alignItems:'center' }}>
           <span />
           <H col="title" label="Task" />
-          <div style={{ display:'flex', flexDirection:'column', gap:3 }}><H col="status" label="Status" />
+          <div style={{ display:'flex', flexDirection:'column', gap:3 }}><H col="status" label="Progress" />
             <select value={colFilters.status} onChange={e => setColFilters(f => ({ ...f, status:e.target.value }))} style={selStyle}>
               <option value="">All</option>{COLS.map(c => <option key={c.key} value={c.key}>{c.lbl}</option>)}
             </select></div>
@@ -2849,7 +2849,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
     <div style={{ userSelect: drag ? 'none' : undefined }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
         <div style={{ display:'flex', gap:1, background:'#ede9fe', borderRadius:10, padding:3 }}>
-          {[{k:'domain',l:'Domain'},{k:'status',l:'Status'},{k:'owner',l:'Owner'},{k:'project',l:'Project'}].map(g => pill(groupBy, g.k, g.l, () => setGroupBy(g.k)))}
+          {[{k:'domain',l:'Domain'},{k:'status',l:'Progress'},{k:'owner',l:'Owner'},{k:'project',l:'Project'}].map(g => pill(groupBy, g.k, g.l, () => setGroupBy(g.k)))}
         </div>
         {/* Member filter — multi-select show/hide (same pattern as the Holidays dropdown) */}
         <div style={{ position:'relative' }}>
@@ -3013,7 +3013,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
         <div style={{ borderTop:'0.5px solid #ececec', paddingTop:14, marginTop: (todayTasks.length > 0 || escalations.length > 0) ? 4 : 0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
             <span style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-              {{ domain:'Domains', status:'Statuses', owner:'Owners', project:'Projects & Bundles' }[groupBy]}
+              {{ domain:'Domains', status:'Progress', owner:'Owners', project:'Projects & Bundles' }[groupBy]}
             </span>
             {groupBy === 'domain' && onAddDomain && linAddIconBtn(() => setAddingDomain(true))}
           </div>
@@ -3895,7 +3895,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
   const coreFields = (
     <>
       <div style={{ display:'grid', gridTemplateColumns: f.status === 'waiting' ? '1fr 1fr' : '1fr', gap:8, marginBottom:10 }}>
-        <div style={f.status === 'waiting' ? undefined : { maxWidth:200 }}><label style={FIELD_LABEL}>Task status</label>
+        <div style={f.status === 'waiting' ? undefined : { maxWidth:200 }}><label style={FIELD_LABEL}>Status</label>
           <select value={f.status || 'active'} onChange={e => set('status', e.target.value)} style={FIELD_SELECT}>
             <option value="active">Active</option>
             <option value="waiting">Waiting</option>
@@ -3908,7 +3908,7 @@ function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 5
         )}
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
-        <div><label style={FIELD_LABEL}>Status</label>
+        <div><label style={FIELD_LABEL}>Progress</label>
           <select value={f.substatus||'not_started'} onChange={e => set('substatus', e.target.value)} style={FIELD_SELECT}>
             {SUBSTATUS.filter(s => s.key && s.key !== 'canceled' && s.key !== 'waiting').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select></div>
@@ -7098,7 +7098,7 @@ export default function App() {
             const COL_GRID = isMobile ? '20px 1fr auto auto' : '24px 1fr 110px 90px 80px 80px'
             const TableHeader = () => (
               <div style={{ display:'grid', gridTemplateColumns:COL_GRID, gap:isMobile?6:0, background:'#f7f7f5', borderBottom:'0.5px solid #e5e5e5', padding:'6px 12px', alignItems:'center' }}>
-                {(isMobile ? ['', 'Task', 'Status', 'Due'] : ['', 'Task', 'Status', 'Domain', 'Due', 'Owner']).map((h, i) => (
+                {(isMobile ? ['', 'Task', 'Progress', 'Due'] : ['', 'Task', 'Progress', 'Domain', 'Due', 'Owner']).map((h, i) => (
                   <span key={i} style={{ fontSize:10, fontWeight:600, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.06em' }}>{h}</span>
                 ))}
               </div>
