@@ -1,18 +1,7 @@
 import { addCalDays, calDaysBetween } from './dates.js'
 
-export const AUDIT_SEVERITIES = [
-  { key: 'findings_critical',       abbr: 'C', color: '#991b1b' },
-  { key: 'findings_major',          abbr: 'M', color: '#c2410c' },
-  { key: 'findings_minor',          abbr: 'm', color: '#a16207' },
-  { key: 'findings_recommendation', abbr: 'R', color: '#57534e' },
-]
-
-export function findingsSummary(a) {
-  return AUDIT_SEVERITIES.map(s => ({ ...s, n: Number(a[s.key]) || 0 })).filter(s => s.n > 0)
-}
-
 // ─── Audit clock engine ─────────────────────────────────────────────────────
-// Deliberately independent of computeSchedule: audits have a linear 7-state lifecycle, no dependency
+// Deliberately independent of computeSchedule: audits have a linear lifecycle, no dependency
 // graph between stages, and their clocks run on calendar days (not business days). "Waiting on" per
 // state lives in AUDIT_STATUSES; this only computes which clock (if any) is currently live and its
 // days remaining/overdue. Clocks are computed on the fly from stored dates — nothing is stamped.
@@ -21,6 +10,13 @@ export function computeAuditClock(audit, todayISO) {
   if (audit.status === 'pending_report' && audit.end_date) { dueDate = addCalDays(audit.end_date, 30); label = 'Report due' }
   else if (audit.status === 'pending_capa_response' && audit.report_issued_date) { dueDate = addCalDays(audit.report_issued_date, 30); label = 'CAPA response due' }
   else if (audit.status === 'capa_in_progress' && audit.capa_closure_due) { dueDate = audit.capa_closure_due; label = 'CAPA closure due' } // stored value, not derived
+  // Agenda reminder: live once within 30 calendar days of the scheduled audit date, until sent. Due date
+  // is 20 days out (the near edge of the "20-30 days before" window) — comfortably before it, then urgent
+  // once inside it, danger once past it. Only relevant before the audit has actually started.
+  else if (['to_schedule', 'scheduled'].includes(audit.status) && audit.start_date && !audit.agenda_sent_date) {
+    const windowStart = addCalDays(audit.start_date, -30)
+    if (todayISO >= windowStart) { dueDate = addCalDays(audit.start_date, -20); label = 'Agenda due' }
+  }
   if (!dueDate) return null
   const daysRemaining = calDaysBetween(todayISO, dueDate)
   const tone = daysRemaining < 0 ? 'danger' : daysRemaining <= 5 ? 'warn' : 'normal'

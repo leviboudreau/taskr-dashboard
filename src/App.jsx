@@ -16,7 +16,7 @@ import { Placeholder } from '@tiptap/extensions'
 import { COLORS, RADIUS, SPACE } from './lib/theme.js'
 import { toISODate, fromISODate, today, isWeekday, addCalDays, calDaysBetween } from './lib/dates.js'
 import { computeSchedule } from './lib/schedule.js'
-import { AUDIT_SEVERITIES, findingsSummary, computeAuditClock, clockText, clockPhrase, auditUrgencyKey, auditUrgencyCompare } from './lib/audits.js'
+import { computeAuditClock, clockText, clockPhrase, auditUrgencyKey, auditUrgencyCompare } from './lib/audits.js'
 import { upgradeLegacyNoteHtml } from './lib/noteHtml.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -101,11 +101,12 @@ const AUDIT_STATUSES = [
 ]
 const AUDIT_TYPES = [{ key: 'supplier', lbl: 'Supplier' }, { key: 'corporate', lbl: 'Corporate' }]
 const AUDIT_BUSINESSES = ['Hard Capsules', 'Dosage Form Solutions', 'Distributed Ingredients', 'UC-II', 'Arabinogalactan']
-// Statuses at/after which an audit has actually happened — findings become meaningful, dates become "history"
-const AUDIT_CONDUCTED_STATUSES = ['pending_report', 'pending_capa_response', 'capa_in_progress', 'closed']
 // The audit's timeline as a linear progression. Each step is "live" (editable, emphasised) exactly when the
 // audit's status matches one of its liveStatuses; otherwise it's "past" (has a date) or "future" (doesn't).
+// agenda_sent and conducted are both live across to_schedule/scheduled — sending the agenda is prep work
+// that happens during the same window as locking in the audit's own dates, not a separate gate.
 const AUDIT_STEPS = [
+  { key: 'agenda_sent',      label: 'Agenda sent',               dateFields: [{ key:'agenda_sent_date' }],       liveStatuses: ['to_schedule', 'scheduled'] },
   { key: 'conducted',        label: 'Audit conducted',          dateFields: [{ key:'start_date', label:'Start' }, { key:'end_date', label:'End' }], liveStatuses: ['to_schedule', 'scheduled', 'in_progress'] },
   { key: 'report_issued',    label: 'Report issued',            dateFields: [{ key:'report_issued_date' }],     liveStatuses: ['pending_report'] },
   { key: 'capa_received',    label: 'CAPA response received',   dateFields: [{ key:'response_received_date' }], liveStatuses: ['pending_capa_response'] },
@@ -5263,6 +5264,12 @@ function QualificationCard({ qual, tasks, onOpen, onDragStart, onDragEnd, draggi
 // ─── Read-first inline-edit primitives (click text → input, blur/Enter commits) ──
 // All three bind live (value/onChange) rather than deferring to a commit-on-blur draft — a draft would risk
 // losing an in-progress edit if the user clicks Save before the field blurs. "editing" only toggles the view.
+// All three collapsed/display states below share one keyboard contract: tabIndex so Tab actually
+// reaches them (they're plain <span>s, not natively focusable), role="button" since a click/Enter/Space
+// enters edit mode, and an onKeyDown so keyboard users aren't mouse-only. Without this, most of a
+// read-first form is invisible to Tab — reachable only by clicking, which is what "tabbing works" was about.
+const inlineActivate = (setEditing) => e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditing(true) } }
+
 function InlineText({ value, onChange, placeholder = '—', display, editingDefault = false, inputStyle, textStyle }) {
   const [editing, setEditing] = useState(editingDefault)
   if (editing) {
@@ -5271,7 +5278,7 @@ function InlineText({ value, onChange, placeholder = '—', display, editingDefa
       placeholder={placeholder} style={inputStyle} />
   }
   return (
-    <span onClick={() => setEditing(true)} title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
+    <span onClick={() => setEditing(true)} onKeyDown={inlineActivate(setEditing)} tabIndex={0} role="button" title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
       {display !== undefined ? display : (value || <span style={{ color: '#ccc' }}>{placeholder}</span>)}
     </span>
   )
@@ -5287,7 +5294,7 @@ function InlineSelect({ value, options, onChange, display, placeholder = '—', 
   }
   const label = options.find(o => o.value === value)?.label
   return (
-    <span onClick={() => setEditing(true)} title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
+    <span onClick={() => setEditing(true)} onKeyDown={inlineActivate(setEditing)} tabIndex={0} role="button" title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
       {display !== undefined ? display : (label || <span style={{ color: '#ccc' }}>{placeholder}</span>)}
     </span>
   )
@@ -5310,7 +5317,7 @@ function InlineDate({ value, onChange, iso = false, placeholder = '—', textSty
   }
   const display = value ? (iso ? fromISODate(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : value) : null
   return (
-    <span onClick={() => setEditing(true)} title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
+    <span onClick={() => setEditing(true)} onKeyDown={inlineActivate(setEditing)} tabIndex={0} role="button" title="Click to edit" style={{ cursor: 'pointer', ...textStyle }}>
       {display || <span style={{ color: '#ccc' }}>{placeholder}</span>}
     </span>
   )
@@ -5960,8 +5967,7 @@ function QualificationsTab({ qualifications, tasks, templates, domains, members,
   )
 }
 
-// ─── Audit findings + auditor input helpers ──────────────────────────────────
-// findingsSummary now lives in src/lib/audits.js (imported at the top of this file).
+// ─── Auditor input helper ─────────────────────────────────────────────────────
 const capFirst = s => s ? s[0].toUpperCase() + s.slice(1) : s
 
 function AuditorsInput({ value, onChange, suggestions = [] }) {
@@ -5993,8 +5999,6 @@ function AuditorsInput({ value, onChange, suggestions = [] }) {
 function AuditListRow({ audit: a, onOpen }) {
   const todayISO = today()
   const clock = computeAuditClock(a, todayISO)
-  const conducted = AUDIT_CONDUCTED_STATUSES.includes(a.status) || (a.end_date && a.end_date < todayISO)
-  const findings = findingsSummary(a)
   const auditors = [a.lead_auditor, ...(Array.isArray(a.auditors) ? a.auditors : [])].filter(Boolean)
   const statusMeta = AUDIT_STATUSES.find(s => s.key === a.status)
   const displayName = a.name || [a.type === 'corporate' ? a.business : a.supplier, a.site].filter(Boolean).join(' — ') || 'Untitled audit'
@@ -6027,16 +6031,6 @@ function AuditListRow({ audit: a, onOpen }) {
         </span>
       </div>
       {clockNode && <div style={{ flexShrink:0 }}>{clockNode}</div>}
-      {conducted && findings.length > 0 && (
-        <div style={{ flexShrink:0, display:'flex', alignItems:'center', fontSize:10, fontWeight:600 }}>
-          {findings.map((fd, i) => (
-            <span key={fd.key} style={{ display:'inline-flex', alignItems:'center' }}>
-              {i > 0 && <span style={{ color:'#ccc', margin:'0 4px' }}>·</span>}
-              <span style={{ color:fd.color }}>{fd.n}{fd.abbr}</span>
-            </span>
-          ))}
-        </div>
-      )}
       {auditors.length > 0 && <div style={{ flexShrink:0 }}><OwnerStack owners={auditors} /></div>}
     </div>
   )
@@ -6053,8 +6047,7 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
     report_issued_date: audit.report_issued_date || '', response_received_date: audit.response_received_date || '',
     response_approved_date: audit.response_approved_date || '', capa_closure_due: audit.capa_closure_due || '',
     capa_closed_date: audit.capa_closed_date || '', closed_date: audit.closed_date || '',
-    findings_critical: audit.findings_critical || 0, findings_major: audit.findings_major || 0,
-    findings_minor: audit.findings_minor || 0, findings_recommendation: audit.findings_recommendation || 0,
+    agenda_sent_date: audit.agenda_sent_date || '',
     notes: Array.isArray(audit.notes) ? audit.notes : [],
     attachments: Array.isArray(audit.attachments) ? audit.attachments : [],
   })
@@ -6066,8 +6059,6 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
   const todayISO = today()
   const clock = computeAuditClock(f, todayISO)
   const statusMeta = AUDIT_STATUSES.find(s => s.key === f.status)
-  const findings = findingsSummary(f)
-  const conducted = AUDIT_CONDUCTED_STATUSES.includes(f.status) || (f.end_date && f.end_date < todayISO)
 
   // ── Identity is derived, not free text (BUG FIX): Supplier = supplier + site, Corporate = site + business.
   // Falls back to whatever's already stored so a pre-existing record never renders a blank title.
@@ -6093,12 +6084,7 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
   const stripCards = []
   if (clock) stripCards.push(['clock', metricCard(clock.label, clockText(clock), { tone: clock.tone, title: `Due ${clock.dueDate}` })])
   if (statusMeta?.waitingOn) stripCards.push(['waiting', metricCard('Waiting on', capFirst(statusMeta.waitingOn))])
-  if (conducted) stripCards.push(['findings', metricCard('Findings', findings.length ? findings.map(fd => `${fd.n}${fd.abbr}`).join(' · ') : 'None recorded')])
 
-  const findingInput = (label, key, color) => (
-    <div><label style={{ ...FIELD_LABEL, color }}>{label}</label>
-      <input type="number" min={0} value={f[key]} onChange={e => set(key, Math.max(0, parseInt(e.target.value) || 0))} style={FIELD_INPUT} /></div>
-  )
   const fmtStepDate = iso => iso ? fromISODate(iso).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : ''
 
   return (
@@ -6158,7 +6144,7 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
 
           {/* 3. Timeline — a progression: past steps are done (✓, click to correct), one live step is the
                 editable input, future steps are just a dimmed label. Never a wall of empty date fields. */}
-          <div style={{ marginBottom:4 }}>
+          <div style={{ marginBottom:14 }}>
             <div style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>Timeline</div>
             <div style={{ border:'0.5px solid #eee', borderRadius:8, overflow:'hidden' }}>
               {AUDIT_STEPS.map((step, i) => {
@@ -6166,6 +6152,7 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
                 const hasDate = step.dateFields.some(df => f[df.key])
                 const state = isLive ? 'live' : hasDate ? 'past' : 'future'
                 const showClock = clock && (
+                  (step.key === 'agenda_sent' && ['to_schedule', 'scheduled'].includes(f.status)) ||
                   (step.key === 'report_issued' && f.status === 'pending_report') ||
                   (step.key === 'capa_approved' && f.status === 'pending_capa_response') ||
                   (step.key === 'capa_closed' && f.status === 'capa_in_progress')
@@ -6222,19 +6209,6 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
               })}
             </div>
           </div>
-
-          {/* Findings — only once the audit has actually happened; zeroed counts on an unscheduled audit are noise */}
-          {conducted && (
-            <div style={{ marginTop:14, marginBottom:4 }}>
-              <div style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>Findings</div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8 }}>
-                {findingInput('Critical', 'findings_critical', '#991b1b')}
-                {findingInput('Major', 'findings_major', '#c2410c')}
-                {findingInput('Minor', 'findings_minor', '#a16207')}
-                {findingInput('Recommendation', 'findings_recommendation', '#57534e')}
-              </div>
-            </div>
-          )}
 
           {/* 4. Metadata — collapsed disclosure (open by default only while creating) */}
           <CollapsibleSection title="Details, notes, attachments" summary={metaSummary} defaultOpen={!isEdit}>
@@ -6576,7 +6550,15 @@ export default function App() {
     setLoading(false)
   }, [session])
 
-  useEffect(() => { loadData() }, [loadData])
+  // loadData's identity changes whenever `session` does — notably on the token refresh Supabase fires
+  // when a backgrounded tab regains focus. Only the true first call should show the loading screen;
+  // every subsequent one (silent) must not, or the whole tree unmounts and any open form's in-progress
+  // edits vanish. hasLoadedOnceRef, not a state flag, so it can't itself trigger a re-run of this effect.
+  const hasLoadedOnceRef = useRef(false)
+  useEffect(() => {
+    loadData(hasLoadedOnceRef.current)
+    hasLoadedOnceRef.current = true
+  }, [loadData])
 
   // Merge a preference change into the user's prefs blob (pure state update); the effect below persists it
   const savePref = useCallback((section, key, value) => {
@@ -6595,15 +6577,15 @@ export default function App() {
 
   useEffect(() => {
     const ch = supabase.channel('app-changes')
-      .on('postgres_changes', { event:'*', schema:'public', table:'tasks' }, () => loadData())
-      .on('postgres_changes', { event:'*', schema:'public', table:'calendar_events' }, () => loadData())
-      .on('postgres_changes', { event:'*', schema:'public', table:'qualifications' }, () => loadData())
-      .on('postgres_changes', { event:'*', schema:'public', table:'audits' }, () => loadData())
-      .on('postgres_changes', { event:'*', schema:'public', table:'notes' }, () => loadData())
-      .on('postgres_changes', { event:'*', schema:'public', table:'note_groups' }, () => loadData())
-      .on('postgres_changes', { event:'*', schema:'public', table:'projects' }, () => loadData())
-      .on('postgres_changes', { event:'*', schema:'public', table:'escalations' }, () => loadData())
-      .on('postgres_changes', { event:'*', schema:'public', table:'follow_ups' }, () => loadData())
+      .on('postgres_changes', { event:'*', schema:'public', table:'tasks' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'calendar_events' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'qualifications' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'audits' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'notes' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'note_groups' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'projects' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'escalations' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'follow_ups' }, () => loadData(true))
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [loadData])
@@ -6684,7 +6666,7 @@ export default function App() {
     }
     if (error) { console.error('[TASKr] saveTask error', error); return }
     setForm(null)
-    await loadData()
+    await loadData(true)
   }
 
   const saveTaskSilent = async (data, editId = null) => {
@@ -6702,7 +6684,7 @@ export default function App() {
   const deleteTask = async id => {
     const { error } = await supabase.from('tasks').delete().eq('id', id)
     if (error) { console.error('[TASKr] deleteTask error', error); return }
-    setForm(null); await loadData()
+    setForm(null); await loadData(true)
   }
 
   const deleteTaskSilent = async id => {
@@ -6742,7 +6724,7 @@ export default function App() {
     const { error } = await supabase.from('projects').delete().eq('id', id)
     if (error) { console.error('[TASKr] deleteProject error', error); alert(`Could not delete project: ${error.message}`); return }
     if (activeProject === id) setActiveProject(null)
-    await loadData()
+    await loadData(true)
   }
 
   // ── Supplier Qualifications ──────────────────────────────────────────────
@@ -6821,8 +6803,7 @@ export default function App() {
       report_issued_date: data.report_issued_date || null, response_received_date: data.response_received_date || null,
       response_approved_date: data.response_approved_date || null, capa_closure_due: data.capa_closure_due || null,
       capa_closed_date: data.capa_closed_date || null, closed_date: data.closed_date || null,
-      findings_critical: data.findings_critical || 0, findings_major: data.findings_major || 0,
-      findings_minor: data.findings_minor || 0, findings_recommendation: data.findings_recommendation || 0,
+      agenda_sent_date: data.agenda_sent_date || null,
       notes: data.notes || [], attachments: data.attachments || [],
     }
   }
@@ -7061,12 +7042,12 @@ export default function App() {
   const restoreTask = async (task) => {
     const subtasks = (task.subtasks||[]).map(s => ({ ...s, done: false }))
     await supabase.from('tasks').update({ substatus: 'not_started', subtasks, updated_at: new Date().toISOString() }).eq('id', task.id)
-    await loadData()
+    await loadData(true)
   }
 
   const moveTask = async (id, newSubstatus) => {
     await supabase.from('tasks').update({ substatus: newSubstatus, updated_at: new Date().toISOString() }).eq('id', id)
-    await loadData()
+    await loadData(true)
   }
 
   const quickComplete = async (id, complete) => {

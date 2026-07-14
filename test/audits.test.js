@@ -1,12 +1,12 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { toISODate, fromISODate } from '../src/lib/dates.js'
-import { computeAuditClock, clockPhrase, auditUrgencyCompare, findingsSummary } from '../src/lib/audits.js'
+import { toISODate, fromISODate, addCalDays } from '../src/lib/dates.js'
+import { computeAuditClock, clockPhrase, auditUrgencyCompare } from '../src/lib/audits.js'
 
 const TODAY = '2026-07-13'
 
 describe('computeAuditClock', () => {
-  test('no live clock outside the three clock-bearing statuses', () => {
+  test('no live clock with no dates set at all', () => {
     for (const status of ['to_schedule', 'scheduled', 'in_progress', 'closed']) {
       assert.equal(computeAuditClock({ status }, TODAY), null, `${status} -> no clock`)
     }
@@ -51,6 +51,39 @@ describe('computeAuditClock', () => {
     assert.equal(computeAuditClock({ status: 'capa_in_progress' }, TODAY), null)
   })
 
+  describe('agenda-send reminder', () => {
+    test('live once within 30 calendar days of a scheduled start_date, due 20 days out', () => {
+      const c = computeAuditClock({ status: 'scheduled', start_date: addCalDays(TODAY, 25) }, TODAY)
+      assert.equal(c.label, 'Agenda due')
+      assert.equal(c.dueDate, addCalDays(TODAY, 5), 'due date is start_date - 20, i.e. 5 days from today here')
+      assert.equal(c.daysRemaining, 5)
+      assert.equal(c.tone, 'warn')
+    })
+    test('not live yet when the audit is more than 30 days out', () => {
+      assert.equal(computeAuditClock({ status: 'scheduled', start_date: addCalDays(TODAY, 45) }, TODAY), null)
+    })
+    test('overdue (danger) once past the 20-days-out mark without having sent it', () => {
+      const c = computeAuditClock({ status: 'scheduled', start_date: addCalDays(TODAY, 10) }, TODAY)
+      assert.ok(c.daysRemaining < 0)
+      assert.equal(c.tone, 'danger')
+    })
+    test('clears once agenda_sent_date is set, even inside the window', () => {
+      assert.equal(computeAuditClock({ status: 'scheduled', start_date: addCalDays(TODAY, 25), agenda_sent_date: TODAY }, TODAY), null)
+    })
+    test('also live during to_schedule (not just scheduled)', () => {
+      const c = computeAuditClock({ status: 'to_schedule', start_date: addCalDays(TODAY, 20) }, TODAY)
+      assert.equal(c.label, 'Agenda due')
+    })
+    test('not live once the audit is underway or later — sending an agenda is moot by then', () => {
+      for (const status of ['in_progress', 'pending_report', 'pending_capa_response', 'capa_in_progress', 'closed']) {
+        assert.equal(computeAuditClock({ status, start_date: addCalDays(TODAY, 10) }, TODAY), null, `${status} -> no agenda clock`)
+      }
+    })
+    test('no clock without a start_date to compute the window from', () => {
+      assert.equal(computeAuditClock({ status: 'scheduled' }, TODAY), null)
+    })
+  })
+
   test('tone thresholds: danger < 0, warn 0-5, normal 6+', () => {
     const plusDays = n => toISODate((() => { const d = fromISODate(TODAY); d.setDate(d.getDate() + n); return d })())
     assert.equal(computeAuditClock({ status: 'capa_in_progress', capa_closure_due: plusDays(5) }, TODAY).tone, 'warn')
@@ -80,22 +113,12 @@ describe('auditUrgencyCompare', () => {
       { id: 'B', status: 'pending_capa_response', report_issued_date: '2026-04-01', created_at: '2026-01-02' }, // tier0, more overdue
       { id: 'C', status: 'capa_in_progress', capa_closure_due: '2026-07-16', created_at: '2026-01-03' }, // tier1, 3d remaining
       { id: 'D', status: 'pending_report', end_date: '2026-06-20', created_at: '2026-01-04' },          // tier1, 7d remaining
-      { id: 'E', status: 'scheduled', start_date: '2026-07-20', created_at: '2026-01-05' },              // tier2
-      { id: 'F', status: 'scheduled', start_date: '2026-08-01', created_at: '2026-01-06' },              // tier2
+      { id: 'E', status: 'scheduled', start_date: '2026-09-01', created_at: '2026-01-05' },              // tier2 (>30d out, agenda clock not live yet)
+      { id: 'F', status: 'scheduled', start_date: '2026-10-01', created_at: '2026-01-06' },              // tier2
       { id: 'G', status: 'to_schedule', created_at: '2026-01-07' },                                      // tier3
       { id: 'H', status: 'to_schedule', created_at: '2026-02-01' },                                      // tier3
     ]
     const sorted = [...rows].sort(auditUrgencyCompare(TODAY)).map(a => a.id)
     assert.deepEqual(sorted, ['B', 'A', 'C', 'D', 'E', 'F', 'G', 'H'])
-  })
-})
-
-describe('findingsSummary', () => {
-  test('omits zero-count severities and keeps the rest with their abbr', () => {
-    const s = findingsSummary({ findings_critical: 2, findings_major: 0, findings_minor: 1, findings_recommendation: 0 })
-    assert.deepEqual(s.map(f => [f.key, f.n, f.abbr]), [['findings_critical', 2, 'C'], ['findings_minor', 1, 'm']])
-  })
-  test('all zero -> empty array', () => {
-    assert.deepEqual(findingsSummary({}), [])
   })
 })
