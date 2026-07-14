@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import { supabase } from './supabase'
 import DOMPurify from 'dompurify'
-import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory, Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight, Flag } from 'lucide-react'
+import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory, Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight, Flag, ClipboardCheck } from 'lucide-react'
 import { useEditor, EditorContent, Node as TiptapNode, Extension as TiptapExtension } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TextStyle, Color, FontSize } from '@tiptap/extension-text-style'
@@ -80,6 +80,37 @@ const QUAL_COLS = [
   { key: 'in_progress', lbl: 'In progress' },
   { key: 'on_hold',     lbl: 'On hold' },
   { key: 'complete',    lbl: 'Complete' },
+]
+// Audit lifecycle — separate from qualifications: no dependency graph, no Gantt, calendar-day clocks not business-day.
+const AUDIT_STATUSES = [
+  { key: 'to_schedule',            lbl: 'To Schedule',            waitingOn: 'Levi, to book it' },
+  { key: 'scheduled',              lbl: 'Scheduled',               waitingOn: 'the audit date' },
+  { key: 'in_progress',            lbl: 'In Progress',             waitingOn: 'the audit itself' },
+  { key: 'pending_report',         lbl: 'Pending Report',          waitingOn: 'Levi, to issue the report' },
+  { key: 'pending_capa_response',  lbl: 'Pending CAPA Response',   waitingOn: 'the auditee, to send a CAPA plan' },
+  { key: 'capa_in_progress',       lbl: 'CAPA In Progress',        waitingOn: 'the auditee, to implement the actions' },
+  { key: 'closed',                 lbl: 'Closed',                  waitingOn: null },
+]
+const AUDIT_TYPES = [{ key: 'supplier', lbl: 'Supplier' }, { key: 'corporate', lbl: 'Corporate' }]
+const AUDIT_BUSINESSES = ['Hard Capsules', 'Dosage Form Solutions', 'Distributed Ingredients', 'UC-II', 'Arabinogalactan']
+const AUDIT_SEVERITIES = [
+  { key: 'findings_critical',       abbr: 'C', color: '#991b1b' },
+  { key: 'findings_major',          abbr: 'M', color: '#c2410c' },
+  { key: 'findings_minor',          abbr: 'm', color: '#a16207' },
+  { key: 'findings_recommendation', abbr: 'R', color: '#57534e' },
+]
+// Statuses at/after which an audit has actually happened — findings become meaningful, dates become "history"
+const AUDIT_CONDUCTED_STATUSES = ['pending_report', 'pending_capa_response', 'capa_in_progress', 'closed']
+// The audit's timeline as a linear progression. Each step is "live" (editable, emphasised) exactly when the
+// audit's status matches one of its liveStatuses; otherwise it's "past" (has a date) or "future" (doesn't).
+const AUDIT_STEPS = [
+  { key: 'conducted',        label: 'Audit conducted',          dateFields: [{ key:'start_date', label:'Start' }, { key:'end_date', label:'End' }], liveStatuses: ['to_schedule', 'scheduled', 'in_progress'] },
+  { key: 'report_issued',    label: 'Report issued',            dateFields: [{ key:'report_issued_date' }],     liveStatuses: ['pending_report'] },
+  { key: 'capa_received',    label: 'CAPA response received',   dateFields: [{ key:'response_received_date' }], liveStatuses: ['pending_capa_response'] },
+  { key: 'capa_approved',    label: 'CAPA response approved',   dateFields: [{ key:'response_approved_date' }], liveStatuses: ['pending_capa_response'] },
+  { key: 'capa_closure_due', label: 'CAPA closure due',         dateFields: [{ key:'capa_closure_due' }],       liveStatuses: ['pending_capa_response'] },
+  { key: 'capa_closed',      label: 'CAPA closed',               dateFields: [{ key:'capa_closed_date' }],       liveStatuses: ['capa_in_progress'] },
+  { key: 'audit_closed',     label: 'Audit closed',              dateFields: [{ key:'closed_date' }],            liveStatuses: ['capa_in_progress'] },
 ]
 
 // US federal holiday rules — type:'fixed'|'nth'|'last', dow: JS day-of-week 0=Sun
@@ -1523,11 +1554,12 @@ function BriefingTab() {
       // Delete today's existing row first
       await supabase.from('briefings').delete().eq('date', todayISO)
 
-      const [{ data: tasks }, { data: calRaw }, { data: qualsRaw }, { data: qualTasksRaw }] = await Promise.all([
+      const [{ data: tasks }, { data: calRaw }, { data: qualsRaw }, { data: qualTasksRaw }, { data: auditsRaw }] = await Promise.all([
         supabase.from('tasks').select('*').in('status', ['active', 'waiting']),
         supabase.from('calendar_events').select('*'),
         supabase.from('qualifications').select('*'),
         supabase.from('tasks').select('*').not('qualification_id', 'is', null), // unfiltered by status — computeSchedule needs every track task
+        supabase.from('audits').select('*').neq('status', 'closed'), // closed audits have no live clock and nothing to report
       ])
 
       // Qualification-linked track tasks are represented richly in the Qualifications section below;
@@ -1619,6 +1651,21 @@ function BriefingTab() {
         return parts.join(' | ')
       }).join('\n')
 
+      // Audits — separate lifecycle from qualifications (no dependency graph, calendar-day clocks).
+      // Only non-closed audits were fetched, since a closed audit has no live clock and nothing to report.
+      const auditLines = (auditsRaw || []).map(a => {
+        const subject = a.type === 'corporate' ? a.business : a.supplier
+        const statusLbl = AUDIT_STATUSES.find(s => s.key === a.status)?.lbl || a.status
+        const clock = computeAuditClock(a, todayISO)
+        const parts = [`- ${a.name}`]
+        parts.push(`type: ${a.type === 'corporate' ? 'Corporate' : 'Supplier'}`)
+        parts.push(`${a.type === 'corporate' ? 'business' : 'supplier'}: ${subject || 'n/a'}`)
+        if (a.site) parts.push(`site: ${a.site}`)
+        parts.push(`status: ${statusLbl}`)
+        parts.push(clock ? `${clock.label}: ${clockText(clock)}${clock.tone === 'danger' ? ' [OVERDUE]' : ''}` : 'clock: none running')
+        return parts.join(' | ')
+      }).join('\n')
+
       const horizonLines = horizonEvents.length
         ? horizonEvents.map(ev => `- ${ev.start_date} ${ev.title}${ev.type==='travel'?' (travel)':''}`).join('\n') : ''
 
@@ -1636,7 +1683,7 @@ Waiting tasks (blocked on someone or something outside Levi's control — each l
 on and how many days it's been waiting; briefing-worthiness is entirely about that day count, not the content.
 A wait of a couple of days is completely normal and not worth mentioning. A wait stretching toward a week or
 more, especially with no owner chasing it, is worth a nudge):
-${waitingLines}${qualLines ? `\n\nSupplier qualifications:\n${qualLines}` : ''}${horizonLines ? `\n\nUpcoming (next 14 days):\n${horizonLines}` : ''}
+${waitingLines}${qualLines ? `\n\nSupplier qualifications:\n${qualLines}` : ''}${auditLines ? `\n\nAudits (open, i.e. not yet closed):\n${auditLines}` : ''}${horizonLines ? `\n\nUpcoming (next 14 days):\n${horizonLines}` : ''}
 
 Format the briefing exactly in this order with these section headers:
 
@@ -1650,13 +1697,16 @@ One motivational or leadership quote relevant to quality, leadership, or the nat
 One genuinely interesting fact on any topic. Keep it to 2-3 sentences. Make it something worth remembering.
 
 ## Action required
-Tasks flagged red, substatus at_risk, or with open subtasks; qualification stages that are overdue; any qualification whose projected completion has slipped past its due date; and any waiting task whose wait has stretched to an unreasonable length (use judgment — roughly a week or more with no sign of movement, longer if it's waiting on something that's normally slow). For each item lead with the task, stage, or qualification name in bold, then one sentence on why it needs attention and what the next action is — for a stale wait, that action is usually "follow up with X." If nothing qualifies, omit this section entirely.
+Tasks flagged red, substatus at_risk, or with open subtasks; qualification stages that are overdue; any qualification whose projected completion has slipped past its due date; any waiting task whose wait has stretched to an unreasonable length (use judgment — roughly a week or more with no sign of movement, longer if it's waiting on something that's normally slow); and any audit whose clock is breached or imminent — an overdue report, a CAPA response past its 30-day window, or a CAPA closure date about to be missed. These audit clocks are exactly the kind of thing that should wake Levi up in the morning, so treat "[OVERDUE]" or a small days-remaining figure on an audit as high-priority. For each item lead with the task, stage, qualification, or audit name in bold, then one sentence on why it needs attention and what the next action is — for a stale wait, that action is usually "follow up with X." If nothing qualifies, omit this section entirely.
 
 ## Qualifications
 Only include this section if supplier qualification data was provided above. Summarize each qualification's status and projected completion, and call out anything overdue or slipping past its due date — reference the critical path driver by name when a qualification's timeline is being driven by a specific stage. If no qualification data was provided, omit this section entirely.
 
+## Audits
+Only include this section if audit data was provided above. Per audit, give its name, type, supplier or business plus site, status, and its live clock with days remaining or overdue. If no clock is currently running for an audit, just note its status. If no audit data was provided, omit this section entirely.
+
 ## Suggestions
-3 to 5 opinionated, specific bullets on what Levi should focus on, follow up on, or decide today. Go beyond the active task list — use the "days since last update" figures to call out active tasks that have gone genuinely stale (not just old), use the "waiting N days" figures to flag waits worth a check-in even if they don't rise to Action required, flag a qualification stage or critical path driver worth checking on, note if a team member may need a check-in, or call out a strategic initiative that's stalling. Be direct and useful, not generic.
+3 to 5 opinionated, specific bullets on what Levi should focus on, follow up on, or decide today. Go beyond the active task list — use the "days since last update" figures to call out active tasks that have gone genuinely stale (not just old), use the "waiting N days" figures to flag waits worth a check-in even if they don't rise to Action required, flag a qualification stage or critical path driver worth checking on, flag an audit clock that's getting close even if it hasn't breached yet, note if a team member may need a check-in, or call out a strategic initiative that's stalling. Be direct and useful, not generic.
 
 ## On your calendar
 Bullet list of today's events with times and duration. If none, write "No meetings scheduled — good day to focus."
@@ -1665,7 +1715,7 @@ Bullet list of today's events with times and duration. If none, write "No meetin
 Anything with a due date in the next 14 days, upcoming travel, or recurring deadlines (KQM Data Entry, KQM Report). Format as a simple dated list.
 
 Important rules:
-- You MUST include every section above using the exact ## headers shown. Never omit Quote of the day or Did you know — they are always required. Qualifications and Action required are the only sections you may omit, and only when their conditions say to.
+- You MUST include every section above using the exact ## headers shown. Never omit Quote of the day or Did you know — they are always required. Qualifications, Audits, and Action required are the only sections you may omit, and only when their conditions say to.
 - Use actual task, stage, and qualification titles, not generic descriptions.
 - Keep the full briefing under 650 words.`
 
@@ -5247,6 +5297,47 @@ function computeSchedule(qualification, trackTasks, todayISO) {
   return { schedule, critical, projectedEnd }
 }
 
+// ─── Audit clock engine ─────────────────────────────────────────────────────
+// Deliberately independent of computeSchedule: audits have a linear 7-state lifecycle, no dependency
+// graph between stages, and their clocks run on calendar days (not business days). "Waiting on" per
+// state lives in AUDIT_STATUSES; this only computes which clock (if any) is currently live and its
+// days remaining/overdue. Clocks are computed on the fly from stored dates — nothing is stamped.
+const addCalDays = (iso, n) => { const d = fromISODate(iso); d.setDate(d.getDate() + n); return toISODate(d) }
+const calDaysBetween = (fromISO, toISO) => Math.round((fromISODate(toISO) - fromISODate(fromISO)) / 86400000)
+function computeAuditClock(audit, todayISO) {
+  let dueDate = null, label = null
+  if (audit.status === 'pending_report' && audit.end_date) { dueDate = addCalDays(audit.end_date, 30); label = 'Report due' }
+  else if (audit.status === 'pending_capa_response' && audit.report_issued_date) { dueDate = addCalDays(audit.report_issued_date, 30); label = 'CAPA response due' }
+  else if (audit.status === 'capa_in_progress' && audit.capa_closure_due) { dueDate = audit.capa_closure_due; label = 'CAPA closure due' } // stored value, not derived
+  if (!dueDate) return null
+  const daysRemaining = calDaysBetween(todayISO, dueDate)
+  const tone = daysRemaining < 0 ? 'danger' : daysRemaining <= 5 ? 'warn' : 'normal'
+  return { label, dueDate, daysRemaining, tone }
+}
+const clockText = c => c ? (c.daysRemaining < 0 ? `${-c.daysRemaining}d overdue` : c.daysRemaining === 0 ? 'due today' : `${c.daysRemaining}d remaining`) : null
+// Fuller phrasing for the audits list row, e.g. "Report 12 days overdue" / "CAPA response due in 6 days"
+const clockPhrase = c => {
+  if (!c) return null
+  const label = c.label.replace(/ due$/, '')
+  if (c.daysRemaining < 0) return `${label} ${-c.daysRemaining} day${-c.daysRemaining === 1 ? '' : 's'} overdue`
+  if (c.daysRemaining === 0) return `${label} due today`
+  return `${label} due in ${c.daysRemaining} day${c.daysRemaining === 1 ? '' : 's'}`
+}
+// Urgency sort for the audits list: breached (most overdue first) > live (soonest first) >
+// no clock but scheduled (soonest start_date first) > no clock, unscheduled (creation order).
+const auditUrgencyKey = (a, todayISO) => {
+  const clock = computeAuditClock(a, todayISO)
+  if (clock && clock.tone === 'danger') return [0, clock.daysRemaining]
+  if (clock) return [1, clock.daysRemaining]
+  if (a.start_date) return [2, a.start_date]
+  return [3, a.created_at || '']
+}
+const auditUrgencyCompare = todayISO => (a, b) => {
+  const ka = auditUrgencyKey(a, todayISO), kb = auditUrgencyKey(b, todayISO)
+  if (ka[0] !== kb[0]) return ka[0] - kb[0]
+  return ka[0] <= 1 ? ka[1] - kb[1] : String(ka[1]).localeCompare(String(kb[1]))
+}
+
 // Parse a due date (MM/DD/YY from DatePicker, or ISO) to a Date for comparison; null if empty/invalid
 function parseDueDate(s) {
   if (!s) return null
@@ -5568,8 +5659,9 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
         <div style={{ ...MODAL_CARD, maxWidth:640 }}>
           <ModalCloseButton onClick={onClose} />
 
-          {/* 1. Header — compact, read-first */}
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, paddingRight:30 }}>
+          {/* 1. Header — compact, read-first. paddingRight clears the close button's full footprint
+              (26px + 10px margin = 36px) with room to spare, so owner pips never collide with it. */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, paddingRight:44 }}>
             <div style={{ flex:1, minWidth:0 }}>
               <InlineText value={f.name} onChange={v => set('name', v)} editingDefault={!isEdit} placeholder="Qualification name..."
                 inputStyle={{ width:'100%', fontSize:18, fontWeight:700, border:'none', outline:'none', color:'#111', background:'transparent', padding:0, fontFamily:'inherit' }}
@@ -5577,7 +5669,7 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
               {subtitle && <div title={subtitle} style={{ fontSize:11, color:'#999', marginTop:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{subtitle}</div>}
             </div>
             {isEdit && (f.owners||[]).length > 0 && (
-              <div style={{ display:'flex', gap:4, flexShrink:0, paddingTop:2 }}>
+              <div style={{ display:'flex', gap:4, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:100, paddingTop:2 }}>
                 {f.owners.map(o => <OwnerPip key={o} name={o} />)}
               </div>
             )}
@@ -6108,6 +6200,419 @@ function QualificationsTab({ qualifications, tasks, templates, domains, members,
   )
 }
 
+// ─── Audit findings + auditor input helpers ──────────────────────────────────
+function findingsSummary(a) {
+  return AUDIT_SEVERITIES.map(s => ({ ...s, n: Number(a[s.key]) || 0 })).filter(s => s.n > 0)
+}
+const capFirst = s => s ? s[0].toUpperCase() + s.slice(1) : s
+
+function AuditorsInput({ value, onChange, suggestions = [] }) {
+  const [draft, setDraft] = useState('')
+  const listId = useRef(`aud-sugg-${Math.random().toString(36).slice(2)}`).current
+  const add = () => { const v = draft.trim(); if (v && !value.includes(v)) onChange([...value, v]); setDraft('') }
+  return (
+    <div>
+      {value.length > 0 && (
+        <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginBottom:6 }}>
+          {value.map(n => (
+            <span key={n} style={{ fontSize:11, background:'#f0edff', color:'#5b3fa0', padding:'3px 9px', borderRadius:20, display:'inline-flex', alignItems:'center', gap:5 }}>
+              {n}
+              <button onClick={() => onChange(value.filter(x => x !== n))} style={{ background:'none', border:'none', cursor:'pointer', color:'#a99fc0', fontSize:11, padding:0, lineHeight:1 }}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input list={listId} value={draft} onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+        onBlur={add}
+        placeholder="Type a name, press Enter…" style={FIELD_INPUT} />
+      <datalist id={listId}>{suggestions.map(s => <option key={s} value={s} />)}</datalist>
+    </div>
+  )
+}
+
+// ─── Audit List Row ─────────────────────────────────────────────────────────
+function AuditListRow({ audit: a, onOpen }) {
+  const todayISO = today()
+  const clock = computeAuditClock(a, todayISO)
+  const conducted = AUDIT_CONDUCTED_STATUSES.includes(a.status) || (a.end_date && a.end_date < todayISO)
+  const findings = findingsSummary(a)
+  const auditors = [a.lead_auditor, ...(Array.isArray(a.auditors) ? a.auditors : [])].filter(Boolean)
+  const statusLbl = AUDIT_STATUSES.find(s => s.key === a.status)?.lbl || a.status
+  const displayName = a.name || [a.type === 'corporate' ? a.business : a.supplier, a.site].filter(Boolean).join(' — ') || 'Untitled audit'
+  const typeStyle = a.type === 'corporate' ? { background:'#EEEDFE', color:'#3C3489' } : { background:'#E6F1FB', color:'#0C447C' }
+  const fmtShort = iso => iso ? fromISODate(iso).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : ''
+
+  const urgencyColor = clock?.tone === 'danger' ? '#E24B4A' : clock?.tone === 'warn' ? '#F0A500' : '#e5e5e5'
+  let clockNode = null
+  if (a.status === 'closed') {
+    if (a.closed_date) clockNode = <span style={{ fontSize:11, color:'#999' }}>Closed {fmtShort(a.closed_date)}</span>
+  } else if (clock) {
+    clockNode = <span style={{ fontSize:11, fontWeight:600, color: clock.tone === 'danger' ? '#791F1F' : clock.tone === 'warn' ? '#78350f' : '#555' }}>{clockPhrase(clock)}</span>
+  } else if (a.start_date) {
+    clockNode = <span style={{ fontSize:11, color:'#999' }}>Audit {fmtShort(a.start_date)}</span>
+  }
+
+  return (
+    <div onClick={() => onOpen(a)}
+      style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px', background:'white', borderRadius:8,
+        border:'0.5px solid #ebebeb', borderLeft:`3px solid ${urgencyColor}`, cursor:'pointer', marginBottom:6, flexWrap:'wrap', boxSizing:'border-box' }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = '#d8d8d8'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = '#ebebeb'}>
+      <div style={{ flex:'1 1 220px', minWidth:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2, flexWrap:'wrap' }}>
+          <span style={{ fontSize:9, fontWeight:500, padding:'2px 6px', borderRadius:20, whiteSpace:'nowrap', flexShrink:0, ...typeStyle }}>{a.type === 'corporate' ? 'Corporate' : 'Supplier'}</span>
+          <span style={{ fontSize:13, fontWeight:600, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{displayName}</span>
+        </div>
+        <div style={{ fontSize:11, color:'#999' }}>{statusLbl}</div>
+      </div>
+      {clockNode && <div style={{ flexShrink:0 }}>{clockNode}</div>}
+      {conducted && findings.length > 0 && (
+        <div style={{ flexShrink:0, display:'flex', alignItems:'center', fontSize:10, fontWeight:600 }}>
+          {findings.map((fd, i) => (
+            <span key={fd.key} style={{ display:'inline-flex', alignItems:'center' }}>
+              {i > 0 && <span style={{ color:'#ccc', margin:'0 4px' }}>·</span>}
+              <span style={{ color:fd.color }}>{fd.n}{fd.abbr}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {auditors.length > 0 && <div style={{ flexShrink:0 }}><OwnerStack owners={auditors} /></div>}
+    </div>
+  )
+}
+
+// ─── Audit Form / Detail ────────────────────────────────────────────────────
+function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
+  const [f, setF] = useState({
+    type: audit.type || 'supplier',
+    supplier: audit.supplier || '', business: audit.business || '', site: audit.site || '',
+    status: audit.status || 'to_schedule', priority: audit.priority || '', color: audit.color || '',
+    lead_auditor: audit.lead_auditor || '', auditors: Array.isArray(audit.auditors) ? audit.auditors : [],
+    start_date: audit.start_date || '', end_date: audit.end_date || '',
+    report_issued_date: audit.report_issued_date || '', response_received_date: audit.response_received_date || '',
+    response_approved_date: audit.response_approved_date || '', capa_closure_due: audit.capa_closure_due || '',
+    capa_closed_date: audit.capa_closed_date || '', closed_date: audit.closed_date || '',
+    findings_critical: audit.findings_critical || 0, findings_major: audit.findings_major || 0,
+    findings_minor: audit.findings_minor || 0, findings_recommendation: audit.findings_recommendation || 0,
+    notes: Array.isArray(audit.notes) ? audit.notes : [],
+    attachments: Array.isArray(audit.attachments) ? audit.attachments : [],
+  })
+  const [newNote, setNewNote] = useState('')
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+  const addNote = () => { const text = newNote.trim(); if (!text) return; set('notes', [...f.notes, { id:'n'+Date.now(), text, ts:Date.now() }]); setNewNote('') }
+  const removeNote = id => setF(p => ({ ...p, notes: p.notes.filter(n => n.id !== id) }))
+
+  const todayISO = today()
+  const clock = computeAuditClock(f, todayISO)
+  const statusMeta = AUDIT_STATUSES.find(s => s.key === f.status)
+  const findings = findingsSummary(f)
+  const conducted = AUDIT_CONDUCTED_STATUSES.includes(f.status) || (f.end_date && f.end_date < todayISO)
+
+  // ── Identity is derived, not free text (BUG FIX): Supplier = supplier + site, Corporate = site + business.
+  // Falls back to whatever's already stored so a pre-existing record never renders a blank title.
+  const derivedName = f.type === 'corporate'
+    ? [f.site, f.business].filter(Boolean).join(' — ')
+    : [f.supplier.trim(), f.site].filter(Boolean).join(' — ')
+  const displayName = derivedName || audit.name || 'New audit'
+  const canSave = f.type === 'corporate' ? !!(f.site && f.business) : !!(f.supplier.trim() && f.site)
+
+  const auditors = [f.lead_auditor, ...f.auditors].filter(Boolean)
+  const notesCount = f.notes.length, attCount = f.attachments.length
+  const metaSummary = [notesCount ? `${notesCount} note${notesCount!==1?'s':''}` : 'no notes', isEdit ? `${attCount} file${attCount!==1?'s':''}` : null].filter(Boolean).join(' · ')
+
+  const metricCard = (label, value, opts = {}) => (
+    <div title={opts.title} style={{ padding:'8px 10px', borderRadius:8, minWidth:0, boxSizing:'border-box',
+      background: opts.tone === 'danger' ? '#FCEBEB' : opts.tone === 'warn' ? '#FEF3E2' : '#faf9f7',
+      border: `0.5px solid ${opts.tone === 'danger' ? '#F09595' : opts.tone === 'warn' ? '#F5C177' : '#eee'}` }}>
+      <div style={{ fontSize:9, fontWeight:600, color:'#a99fc0', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:3 }}>{label}</div>
+      <div style={{ fontSize:13, fontWeight:600, color: opts.tone === 'danger' ? '#791F1F' : opts.tone === 'warn' ? '#78350f' : '#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{value}</div>
+    </div>
+  )
+  // Only render the strip cards that actually carry information — an empty "Clock: —" tells you nothing.
+  const stripCards = []
+  if (clock) stripCards.push(['clock', metricCard(clock.label, clockText(clock), { tone: clock.tone, title: `Due ${clock.dueDate}` })])
+  if (statusMeta?.waitingOn) stripCards.push(['waiting', metricCard('Waiting on', capFirst(statusMeta.waitingOn))])
+  if (conducted) stripCards.push(['findings', metricCard('Findings', findings.length ? findings.map(fd => `${fd.n}${fd.abbr}`).join(' · ') : 'None recorded')])
+
+  const findingInput = (label, key, color) => (
+    <div><label style={{ ...FIELD_LABEL, color }}>{label}</label>
+      <input type="number" min={0} value={f[key]} onChange={e => set(key, Math.max(0, parseInt(e.target.value) || 0))} style={FIELD_INPUT} /></div>
+  )
+  const fmtStepDate = iso => iso ? fromISODate(iso).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : ''
+
+  return (
+    <>
+      <style>{`@media (max-width: 480px) { .aform-status-strip { grid-template-columns: repeat(1, 1fr) !important; } }`}</style>
+      <div style={{ ...MODAL_OVERLAY, zIndex:50 }}>
+        <div style={{ ...MODAL_CARD, maxWidth:640 }}>
+          <ModalCloseButton onClick={onClose} />
+
+          {/* 1. Header — derived identity (not free text), the fix for the name/supplier/site desync bug */}
+          {/* paddingRight clears the close button's full footprint (26px + 10px margin = 36px) with room to spare,
+              so the auditor pips at the row's end never collide with it, including when several pips stack up. */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, paddingRight:44, marginBottom:12 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:18, fontWeight:700, color:'#111', lineHeight:1.3, marginBottom:10, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={displayName}>
+                {displayName}
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, maxWidth:380 }}>
+                {f.type === 'corporate' ? (
+                  <>
+                    <div><label style={FIELD_LABEL}>Site *</label>
+                      <InlineSelect value={f.site} onChange={v => set('site', v)} editingDefault={!isEdit}
+                        options={[{ value:'', label:'— choose —' }, ...QUAL_SITES.map(s => ({ value:s, label:s }))]}
+                        textStyle={{ display:'block', fontSize:13, color: f.site ? '#333' : '#ccc', padding:'6px 0' }} /></div>
+                    <div><label style={FIELD_LABEL}>Business *</label>
+                      <InlineSelect value={f.business} onChange={v => set('business', v)}
+                        options={[{ value:'', label:'— choose —' }, ...AUDIT_BUSINESSES.map(b => ({ value:b, label:b }))]}
+                        textStyle={{ display:'block', fontSize:13, color: f.business ? '#333' : '#ccc', padding:'6px 0' }} /></div>
+                  </>
+                ) : (
+                  <>
+                    <div><label style={FIELD_LABEL}>Supplier *</label>
+                      <InlineText value={f.supplier} onChange={v => set('supplier', v)} editingDefault={!isEdit} placeholder="Supplier name"
+                        inputStyle={FIELD_INPUT} textStyle={{ display:'block', fontSize:13, color: f.supplier ? '#333' : '#ccc', padding:'6px 0' }} /></div>
+                    <div><label style={FIELD_LABEL}>Site *</label>
+                      {/* Free text — a supplier's site is wherever they are, not one of our own nine plants */}
+                      <InlineText value={f.site} onChange={v => set('site', v)} placeholder="City, or site name"
+                        inputStyle={FIELD_INPUT} textStyle={{ display:'block', fontSize:13, color: f.site ? '#333' : '#ccc', padding:'6px 0' }} /></div>
+                  </>
+                )}
+              </div>
+            </div>
+            {isEdit && auditors.length > 0 && (
+              <div style={{ display:'flex', gap:4, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:100, paddingTop:2 }}>
+                {auditors.map(o => <OwnerPip key={o} name={o} />)}
+              </div>
+            )}
+          </div>
+          <TimestampMeta created={audit.created_at} updated={audit.updated_at} />
+
+          {/* 2. Status strip — only the cards that actually carry information */}
+          {isEdit && stripCards.length > 0 && (
+            <div className="aform-status-strip" style={{ display:'grid', gridTemplateColumns:`repeat(${stripCards.length}, 1fr)`, gap:8, marginBottom:14 }}>
+              {stripCards.map(([k, card]) => <Fragment key={k}>{card}</Fragment>)}
+            </div>
+          )}
+
+          {/* 3. Timeline — a progression: past steps are done (✓, click to correct), one live step is the
+                editable input, future steps are just a dimmed label. Never a wall of empty date fields. */}
+          <div style={{ marginBottom:4 }}>
+            <div style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>Timeline</div>
+            <div style={{ border:'0.5px solid #eee', borderRadius:8, overflow:'hidden' }}>
+              {AUDIT_STEPS.map((step, i) => {
+                const isLive = step.liveStatuses.includes(f.status)
+                const hasDate = step.dateFields.some(df => f[df.key])
+                const state = isLive ? 'live' : hasDate ? 'past' : 'future'
+                const showClock = clock && (
+                  (step.key === 'report_issued' && f.status === 'pending_report') ||
+                  (step.key === 'capa_approved' && f.status === 'pending_capa_response') ||
+                  (step.key === 'capa_closed' && f.status === 'capa_in_progress')
+                )
+                return (
+                  <Fragment key={step.key}>
+                    <div style={{ padding:'9px 12px', borderTop: i > 0 ? '0.5px solid #f0f0f0' : 'none', boxSizing:'border-box',
+                      background: state === 'live' ? '#faf9ff' : 'transparent',
+                      borderLeft: state === 'live' ? '2.5px solid #7c3aed' : '2.5px solid transparent',
+                      opacity: state === 'future' ? 0.55 : 1 }}>
+                      {state === 'future' && <span style={{ fontSize:12, color:'#bbb' }}>{step.label}</span>}
+                      {state === 'past' && (
+                        <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap', fontSize:12 }}>
+                          <span style={{ color:'#2f9e44', flexShrink:0 }}>✓</span>
+                          <span style={{ color:'#555', flexShrink:0 }}>{step.label} —</span>
+                          {step.dateFields.map((df, di) => (
+                            <span key={df.key} style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
+                              {di > 0 && <span style={{ color:'#bbb' }}>to</span>}
+                              <InlineDate value={f[df.key]} onChange={v => set(df.key, v)} iso
+                                textStyle={{ color:'#555', cursor:'pointer', borderBottom:'1px dotted #ccc' }} />
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {state === 'live' && (
+                        <div>
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6, flexWrap:'wrap' }}>
+                            <span style={{ fontSize:12, fontWeight:600, color:'#4c1d95' }}>{step.label}</span>
+                            {showClock && (
+                              <span style={{ fontSize:11, fontWeight:600, display:'inline-flex', alignItems:'center', gap:4,
+                                color: clock.tone === 'danger' ? '#791F1F' : clock.tone === 'warn' ? '#78350f' : '#7c6f9c' }}>
+                                ⏳ {clock.label} — due {fmtStepDate(clock.dueDate)} · {clockText(clock)}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+                            {step.dateFields.map(df => (
+                              <div key={df.key}>
+                                {df.label && <div style={{ fontSize:9, color:'#a99fc0', marginBottom:2, textTransform:'uppercase', letterSpacing:'0.05em' }}>{df.label}</div>}
+                                <DatePickerISO value={f[df.key]} onChange={v => set(df.key, v)} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {step.key === 'capa_received' && (
+                      <div style={{ padding:'6px 12px', borderTop:'0.5px solid #f0f0f0', background:'#fafafa', fontSize:10, color:'#aaa', lineHeight:1.5 }}>
+                        Receiving a CAPA plan doesn't advance the audit — approving it is what moves this to CAPA In Progress.
+                      </div>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Findings — only once the audit has actually happened; zeroed counts on an unscheduled audit are noise */}
+          {conducted && (
+            <div style={{ marginTop:14, marginBottom:4 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>Findings</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8 }}>
+                {findingInput('Critical', 'findings_critical', '#991b1b')}
+                {findingInput('Major', 'findings_major', '#c2410c')}
+                {findingInput('Minor', 'findings_minor', '#a16207')}
+                {findingInput('Recommendation', 'findings_recommendation', '#57534e')}
+              </div>
+            </div>
+          )}
+
+          {/* 4. Metadata — collapsed disclosure (open by default only while creating) */}
+          <CollapsibleSection title="Details, notes, attachments" summary={metaSummary} defaultOpen={!isEdit}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+              <div><label style={FIELD_LABEL}>Type</label>
+                <InlineSelect value={f.type} onChange={v => set('type', v)} options={AUDIT_TYPES.map(t => ({ value:t.key, label:t.lbl }))}
+                  textStyle={{ display:'block', fontSize:13, color:'#333', padding:'7px 0' }} /></div>
+              <div><label style={FIELD_LABEL}>Status</label>
+                <InlineSelect value={f.status} onChange={v => set('status', v)} options={AUDIT_STATUSES.map(s => ({ value:s.key, label:s.lbl }))}
+                  textStyle={{ display:'block', fontSize:13, color:'#333', padding:'7px 0' }} /></div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10, alignItems:'start' }}>
+              <div><label style={FIELD_LABEL}>Priority</label>
+                <InlineSelect value={f.priority} onChange={v => set('priority', v)} options={[{ value:'', label:'Normal' }, { value:'high', label:'High' }]}
+                  textStyle={{ display:'block', fontSize:13, color:'#333', padding:'7px 0' }} /></div>
+              <div><label style={FIELD_LABEL}>Flag color</label>
+                <div style={{ display:'flex', gap:5, alignItems:'center', height:32, flexWrap:'wrap' }}>
+                  {FLAG_COLORS.map(fc => <button key={fc.key} title={fc.label} onClick={() => set('color', fc.key)} style={{ width:fc.key?18:13, height:fc.key?18:13, borderRadius:'50%', background:fc.hex, border:f.color===fc.key?'2.5px solid #111':'2px solid transparent', cursor:'pointer', padding:0 }} />)}
+                </div></div>
+            </div>
+
+            <div style={{ marginBottom:10 }}>
+              <label style={FIELD_LABEL}>Lead auditor</label>
+              <input list="aud-lead-suggestions" value={f.lead_auditor} onChange={e => set('lead_auditor', e.target.value)}
+                placeholder="Name…" style={FIELD_INPUT} />
+              <datalist id="aud-lead-suggestions">{members.map(m => <option key={m} value={m} />)}</datalist>
+            </div>
+            <div style={{ marginBottom:10 }}>
+              <label style={FIELD_LABEL}>Auditors</label>
+              <AuditorsInput value={f.auditors} onChange={v => set('auditors', v)} suggestions={members} />
+            </div>
+
+            <div style={{ borderTop:'0.5px solid #f0f0f0', paddingTop:12, marginBottom:4 }}>
+              <label style={FIELD_LABEL}>Notes</label>
+              {f.notes.map(n => (
+                <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
+                  <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
+                  <span style={{ flex:1 }}>{n.text}</span>
+                  <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+                </div>
+              ))}
+              <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                <input value={newNote} onChange={e=>setNewNote(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addNote()}} placeholder="Add a note..." style={{ flex:1, fontSize:12, padding:'6px 9px', border:'0.5px solid #ddd', borderRadius:6 }} />
+                <button onClick={addNote} style={{ ...BTN_PRIMARY, fontSize:12, borderRadius:6, padding:'0 14px' }}>Add</button>
+              </div>
+            </div>
+
+            {isEdit && (
+              <AttachmentSection
+                attachments={f.attachments}
+                entityPath={`audits/${audit.id}`}
+                onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
+                onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
+              />
+            )}
+          </CollapsibleSection>
+
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:12 }}>
+            <div>{isEdit && <ConfirmDeleteButton onConfirm={() => { onDelete(audit.id); onClose() }} style={{ fontSize:12, color:'#E24B4A', background:'none', border:'0.5px solid #fcc', borderRadius:8, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>Delete audit</ConfirmDeleteButton>}</div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={onClose} style={{ fontSize:12, background:'none', color:'#888', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
+              <button onClick={() => { if (canSave) { onSave({ ...f, name: derivedName || audit.name || '' }, isEdit ? audit.id : null); onClose() } }}
+                disabled={!canSave} title={canSave ? undefined : (f.type === 'corporate' ? 'Site and Business are required' : 'Supplier and Site are required')}
+                style={{ ...BTN_PRIMARY, fontSize:12, padding:'6px 16px', opacity:canSave?1:0.4, cursor:canSave?'pointer':'not-allowed' }}>Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ─── Audits Tab ─────────────────────────────────────────────────────────────
+function AuditsTab({ audits, members, isMobile, onAdd, onSave, onDelete }) {
+  const [form, setForm] = useState(null) // { audit, isEdit } | null
+  const [search, setSearch] = useState('')
+  const [showClosed, setShowClosed] = useState(false)
+
+  const q = search.trim().toLowerCase()
+  const match = a => !q || [a.name, a.supplier, a.business, a.site, a.lead_auditor].some(v => (v||'').toLowerCase().includes(q))
+  const visible = audits.filter(match)
+  const openAudits = visible.filter(a => a.status !== 'closed')
+  const closedAudits = visible.filter(a => a.status === 'closed')
+  const todayISO = today()
+  const sortedOpen = [...openAudits].sort(auditUrgencyCompare(todayISO))
+  const sortedClosed = [...closedAudits].sort((a, b) => (b.closed_date || b.updated_at || '').localeCompare(a.closed_date || a.updated_at || ''))
+
+  const openNew = () => setForm({ audit: { type:'supplier', status:'to_schedule' }, isEdit:false })
+  const openEdit = a => setForm({ audit:a, isEdit:true })
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+        <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+          <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search audits…"
+            style={{ fontSize:11, padding:'4px 8px 4px 26px', border:'0.5px solid #c4b5fd', borderRadius:10, background:'white', height:28, outline:'none', width:isMobile?140:200, color:'#333', boxSizing:'border-box' }} />
+        </div>
+        <button onClick={openNew} style={{ fontSize:12, background:'#111', color:'white', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', marginLeft:'auto' }}>+ New Audit</button>
+      </div>
+
+      {audits.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'48px 0', color:'#bbb', fontSize:13 }}>No audits yet — click <strong>+ New Audit</strong> to start tracking one.</div>
+      ) : (
+        <>
+          {sortedOpen.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'32px 0', color:'#bbb', fontSize:13 }}>No open audits{q ? ' match your search' : ''}.</div>
+          ) : (
+            <div>{sortedOpen.map(a => <AuditListRow key={a.id} audit={a} onOpen={openEdit} />)}</div>
+          )}
+
+          {closedAudits.length > 0 && (
+            <div style={{ marginTop:16 }}>
+              <button onClick={() => setShowClosed(o => !o)}
+                style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:500, color:'#888', background:'none', border:'none', cursor:'pointer', padding:'4px 0', fontFamily:'inherit' }}>
+                <span style={{ fontSize:9, display:'inline-block', transform: showClosed ? 'rotate(90deg)' : 'none', transition:'transform 0.15s' }}>▸</span>
+                Closed ({closedAudits.length})
+              </button>
+              {showClosed && (
+                <div style={{ marginTop:8 }}>
+                  {sortedClosed.map(a => <AuditListRow key={a.id} audit={a} onOpen={openEdit} />)}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {form && (
+        <AuditForm audit={form.audit} isEdit={form.isEdit} members={members}
+          onSave={(data, id) => id ? onSave(data, id) : onAdd(data)}
+          onDelete={onDelete} onClose={() => setForm(null)} />
+      )}
+    </div>
+  )
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -6143,6 +6648,7 @@ export default function App() {
   const [qualTemplates, setQualTemplates] = useState([])
   const [qualifications, setQualifications] = useState([])
   const [qualificationTemplates, setQualificationTemplates] = useState([])
+  const [audits, setAudits] = useState([])
   const [userPrefs, setUserPrefs] = useState({}) // per-user UI prefs (e.g. Tasks-page layout), synced across devices
   const prefsDirtyRef = useRef(false) // true once the user has changed a pref this session (gates the write-back effect)
   const [loading, setLoading] = useState(true)
@@ -6191,7 +6697,7 @@ export default function App() {
   const loadData = useCallback(async (silent = false) => {
     if (!session) return
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }, { data: qualificationsData }, { data: qualificationTemplatesData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }, { data: qualificationsData }, { data: qualificationTemplatesData }, { data: auditsData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*').order('sort_order', { ascending: true }),
@@ -6205,6 +6711,7 @@ export default function App() {
       supabase.from('calendars').select('*').order('sort_order', { ascending: true }),
       supabase.from('qualifications').select('*').order('sort_order', { ascending: true }),
       supabase.from('qualification_templates').select('*').order('sort_order', { ascending: true }),
+      supabase.from('audits').select('*').order('sort_order', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) { setDomains(domainsData.map(d => d.name)); setDomainRows(domainsData) }
@@ -6218,6 +6725,7 @@ export default function App() {
     setQualTemplates(qualTemplatesData || [])
     setQualifications((qualificationsData || []).map(q => ({ ...q, owners: q.owners||[], notes: q.notes||[], attachments: q.attachments||[] })))
     setQualificationTemplates(qualificationTemplatesData || []) // empty until the qualification_templates table exists
+    setAudits((auditsData || []).map(a => ({ ...a, auditors: a.auditors||[], notes: a.notes||[], attachments: a.attachments||[] })))
     setNoteGroups(noteGroupsData || [])
     // Load per-user prefs once on the full (non-silent) load, so silent refreshes never clobber in-flight layout edits
     if (!silent) {
@@ -6443,6 +6951,44 @@ export default function App() {
     const updated_at = new Date().toISOString()
     setQualifications(prev => prev.map(q => q.id === id ? { ...q, ...patch, updated_at } : q))
     await supabase.from('qualifications').update({ ...patch, updated_at }).eq('id', id)
+  }
+
+  // ── Audits ── separate lifecycle from qualifications: no template, no linked tasks, no schedule engine.
+  // Name is always derived from the structured identity fields (supplier+site, or site+business) — never
+  // trust a passed-in free-text name, so the identity/name desync bug can't reappear through another path.
+  const buildAuditPayload = data => {
+    const type = data.type || 'supplier'
+    const supplier = type === 'corporate' ? '' : (data.supplier || '')
+    const business = type === 'corporate' ? (data.business || '') : ''
+    const site = data.site || ''
+    const derivedName = type === 'corporate' ? [site, business].filter(Boolean).join(' — ') : [supplier.trim(), site].filter(Boolean).join(' — ')
+    return {
+      name: derivedName || data.name || '', type, supplier, business, site,
+      status: data.status || 'to_schedule', priority: data.priority || '', color: data.color || '',
+      lead_auditor: data.lead_auditor || '', auditors: Array.isArray(data.auditors) ? data.auditors : [],
+      start_date: data.start_date || null, end_date: data.end_date || null,
+      report_issued_date: data.report_issued_date || null, response_received_date: data.response_received_date || null,
+      response_approved_date: data.response_approved_date || null, capa_closure_due: data.capa_closure_due || null,
+      capa_closed_date: data.capa_closed_date || null, closed_date: data.closed_date || null,
+      findings_critical: data.findings_critical || 0, findings_major: data.findings_major || 0,
+      findings_minor: data.findings_minor || 0, findings_recommendation: data.findings_recommendation || 0,
+      notes: data.notes || [], attachments: data.attachments || [],
+    }
+  }
+  const addAudit = async data => {
+    const maxOrder = audits.length ? Math.max(...audits.map(a => a.sort_order||0)) : 0
+    const { error } = await supabase.from('audits').insert({ ...buildAuditPayload(data), sort_order: maxOrder+1 })
+    if (error) { console.error('[TASKr] addAudit error', error); alert(`Could not save audit: ${error.message}`); return }
+    await loadData(true)
+  }
+  const saveAudit = async (data, id) => {
+    const { error } = await supabase.from('audits').update({ ...buildAuditPayload(data), updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) { console.error('[TASKr] saveAudit error', error); alert(`Could not save audit: ${error.message}`); return }
+    await loadData(true)
+  }
+  const deleteAudit = async id => {
+    await supabase.from('audits').delete().eq('id', id)
+    await loadData(true)
   }
 
   const addEscalation = async title => {
@@ -6883,6 +7429,7 @@ export default function App() {
             { key:'notes', label:'Notes', Icon:NotebookPen },
             { key:'calendar', label:'Calendar', Icon:CalendarDays },
             { key:'qualifications', label:'Qualifications', Icon:Factory },
+            { key:'audits', label:'Audits', Icon:ClipboardCheck },
             { key:'settings', label:'Settings', Icon:Settings },
           ].map(({ key, label, Icon }) => (
             <button key={key} onClick={() => switchTab(key)}
@@ -7315,6 +7862,18 @@ export default function App() {
           onDeleteTask={deleteTaskSilent}
           onUpdateSubtask={updateSubtask}
           onUpdateQual={updateQualificationFields}
+        />
+      )}
+
+      {/* ── Audits ── */}
+      {tab === 'audits' && (
+        <AuditsTab
+          audits={audits}
+          members={memberNames}
+          isMobile={isMobile}
+          onAdd={addAudit}
+          onSave={saveAudit}
+          onDelete={deleteAudit}
         />
       )}
 
