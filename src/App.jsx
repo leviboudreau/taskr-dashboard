@@ -1149,19 +1149,18 @@ const NoteImage = TiptapImage.extend({
   },
 }).configure({ allowBase64: true })
 
-// Table cell that keeps its fill color
-const FillTableCell = TableCell.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      backgroundColor: {
-        default: null,
-        parseHTML: el => (el.style && el.style.backgroundColor) || null,
-        renderHTML: attrs => attrs.backgroundColor ? { style: `background-color:${attrs.backgroundColor}` } : {},
-      },
-    }
+// Table cell/header that keep their fill color. Both need this — a <th> (e.g. a table's header row,
+// like the Audit Notes template's gold header) loses its background on parse if only TableCell is
+// extended, since TipTap's base TableHeader node doesn't declare a backgroundColor attribute either.
+const bgColorAttr = {
+  backgroundColor: {
+    default: null,
+    parseHTML: el => (el.style && el.style.backgroundColor) || null,
+    renderHTML: attrs => attrs.backgroundColor ? { style: `background-color:${attrs.backgroundColor}` } : {},
   },
-})
+}
+const FillTableCell = TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...bgColorAttr } } })
+const FillTableHeader = TableHeader.extend({ addAttributes() { return { ...this.parent?.(), ...bgColorAttr } } })
 
 // Tab indents inside lists (Shift-Tab outdents). In tables the Table extension owns Tab; outside
 // any list we return false so Tab isn't trapped (default focus behaviour) and never injects spaces.
@@ -1227,7 +1226,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
       Subscript, Superscript,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Table.configure({ resizable: true }),
-      TableRow, TableHeader, FillTableCell,
+      TableRow, FillTableHeader, FillTableCell,
       TaskList, TaskItem.configure({ nested: true }),
       NoteImage, MentionChip, TabKeymap,
       Placeholder.configure({ placeholder: 'Start writing…' }),
@@ -3096,17 +3095,19 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
 }
 
 // ─── Notes Section (wrapper with sub-tabs) ────────────────────────────────────
-function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, onReorderNotes, onReorderGroups, onDuplicateNote, members = [], openId, onOpenIdHandled }) {
-  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} onMoveNote={onMoveNote} onReorderNotes={onReorderNotes} onReorderGroups={onReorderGroups} onDuplicate={onDuplicateNote} members={members} openId={openId} onOpenIdHandled={onOpenIdHandled} />
+function NotesSection({ notes, onSaveNote, onDeleteNote, noteGroups, onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, onReorderNotes, onReorderGroups, onDuplicateNote, members = [], templates = [], audits = [], onOpenAudit, openId, onOpenIdHandled }) {
+  return <NotesTab notes={notes} onSave={onSaveNote} onDelete={onDeleteNote} groups={noteGroups} onSaveGroup={onSaveGroup} onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup} onMoveNote={onMoveNote} onReorderNotes={onReorderNotes} onReorderGroups={onReorderGroups} onDuplicate={onDuplicateNote} members={members} templates={templates} audits={audits} onOpenAudit={onOpenAudit} openId={openId} onOpenIdHandled={onOpenIdHandled} />
 }
 
 // ─── Notes Tab ───────────────────────────────────────────────────────────────
-function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, onReorderNotes, onReorderGroups, onDuplicate, members = [], openId, onOpenIdHandled }) {
+function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameGroup, onDeleteGroup, onMoveNote, onReorderNotes, onReorderGroups, onDuplicate, members = [], templates = [], audits = [], onOpenAudit, openId, onOpenIdHandled }) {
   const [selectedId, setSelectedId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [dirty, setDirty] = useState(false)
   const [copied, setCopied] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false)
+  const templateMenuRef = useRef(null)
   const [sortKey, setSortKey] = useState('date')
   const [sortDir, setSortDir] = useState('desc')
   const [search, setSearch] = useState('')
@@ -3319,9 +3320,16 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
 
   const handleSelect = n => {
     if (dirty) onSave(draft, selectedId)
-    setSelectedId(n.id); setDraft({ title: n.title, body: n.body || '' }); setDirty(false)
+    setSelectedId(n.id); setDraft({ title: n.title, body: n.body || '', audit_id: n.audit_id || null }); setDirty(false)
     if (isMobileNotes) setMobileView('editor')
   }
+
+  useEffect(() => {
+    if (!templateMenuOpen) return
+    const h = e => { if (templateMenuRef.current && !templateMenuRef.current.contains(e.target)) setTemplateMenuOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [templateMenuOpen])
 
   // Deep-link from GlobalSearch: open the matching note (clearing any group filter so it's reachable
   // regardless of which group it lives in), then let the parent clear the request
@@ -3340,8 +3348,18 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   const handleNew = async (groupId) => {
     const title = `Note — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`
     const gId = groupId !== undefined ? groupId : (activeGroupId === undefined ? null : activeGroupId)
-    const newId = await onSave({ title, body: '', group_id: gId }, null)
-    if (newId) { setSelectedId(newId); setDraft({ title, body: '' }); setDirty(false) }
+    const newId = await onSave({ title, body: '', group_id: gId, audit_id: null }, null)
+    if (newId) { setSelectedId(newId); setDraft({ title, body: '', audit_id: null }); setDirty(false) }
+    if (isMobileNotes) setMobileView('editor')
+  }
+
+  // A copy of the template's body — editing the note must never write back to the template, so this
+  // only ever reads template.body once, at creation time.
+  const handleNewFromTemplate = async (template) => {
+    const title = `${template.name} — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`
+    const gId = activeGroupId === undefined ? null : activeGroupId
+    const newId = await onSave({ title, body: template.body || '', group_id: gId, audit_id: null }, null)
+    if (newId) { setSelectedId(newId); setDraft({ title, body: template.body || '', audit_id: null }); setDirty(false) }
     if (isMobileNotes) setMobileView('editor')
   }
 
@@ -3409,7 +3427,28 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
       <div style={{ padding:'8px 12px', borderBottom:'0.5px solid #f0f0f0' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:7 }}>
           <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>{activeGroupLabel}</span>
-          <button onClick={() => handleNew()} style={{ ...BTN_PRIMARY, fontSize:11, borderRadius:6, padding:'6px 12px' }}>+ New</button>
+          <div style={{ display:'flex', gap:4 }}>
+            <button onClick={() => handleNew()} style={{ ...BTN_PRIMARY, fontSize:11, borderRadius:6, padding:'6px 12px' }}>+ New</button>
+            {templates.length > 0 && (
+              <div ref={templateMenuRef} style={{ position:'relative' }}>
+                <button onClick={() => setTemplateMenuOpen(o => !o)} title="New from template"
+                  style={{ ...BTN_GHOST, fontSize:11, borderRadius:6, padding:'6px 8px' }}>▾</button>
+                {templateMenuOpen && (
+                  <div style={{ position:'absolute', top:'calc(100% + 4px)', right:0, background:'white', border:'0.5px solid #e5e5e5', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.10)', zIndex:200, minWidth:160, padding:6 }}>
+                    <div style={{ fontSize:9, fontWeight:600, color:'#a99fc0', textTransform:'uppercase', letterSpacing:'0.06em', padding:'4px 8px' }}>New from template</div>
+                    {templates.map(t => (
+                      <div key={t.id} onClick={() => { handleNewFromTemplate(t); setTemplateMenuOpen(false) }}
+                        style={{ fontSize:12, color:'#333', padding:'6px 8px', borderRadius:6, cursor:'pointer', whiteSpace:'nowrap' }}
+                        onMouseEnter={e => e.currentTarget.style.background='#f7f7f5'}
+                        onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                        {t.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notes…"
           style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'7px 10px', border:'0.5px solid #e0e0e0', borderRadius:6, outline:'none', marginBottom:6, color:'#333' }} />
@@ -3651,6 +3690,23 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                   <span>Created {fmtDT(noteRecord.created_at)}</span>
                   {noteRecord.updated_at && noteRecord.updated_at !== noteRecord.created_at && <span>· Edited {fmtDT(noteRecord.updated_at)}</span>}
                   <span title="Drag the note onto a group in the sidebar to move it" style={{ fontSize:10, color:'#7c3aed', background:'#ede9fe', border:'0.5px solid #ddd6fe', borderRadius:20, padding:'1px 9px', display:'inline-flex', alignItems:'center', gap:4 }}>{crumb}</span>
+                  {audits.length > 0 && (() => {
+                    const linkedAudit = draft.audit_id ? audits.find(a => a.id === draft.audit_id) : null
+                    return linkedAudit ? (
+                      <span onClick={() => onOpenAudit?.(linkedAudit.id)} title="Open this audit"
+                        style={{ fontSize:10, color:'#0C447C', background:'#E6F1FB', border:'0.5px solid #85B7EB', borderRadius:20, padding:'1px 9px', display:'inline-flex', alignItems:'center', gap:5, cursor: onOpenAudit ? 'pointer' : 'default' }}>
+                        🔍 {linkedAudit.name}
+                        <span onClick={e => { e.stopPropagation(); setDraft(p => ({...p, audit_id:null})); setDirty(true) }} title="Unlink audit" style={{ color:'#85B7EB', fontWeight:600 }}>✕</span>
+                      </span>
+                    ) : (
+                      <select value="" onChange={e => { if (e.target.value) { setDraft(p => ({...p, audit_id:e.target.value})); setDirty(true) } }}
+                        title="Link this note to an audit"
+                        style={{ fontSize:10, color:'#aaa', background:'white', border:'0.5px solid #e5e5e5', borderRadius:20, padding:'1px 9px', outline:'none', cursor:'pointer' }}>
+                        <option value="">Link to audit…</option>
+                        {audits.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                    )
+                  })()}
                 </div>
               ) : null
             })()}
@@ -6037,7 +6093,7 @@ function AuditListRow({ audit: a, onOpen }) {
 }
 
 // ─── Audit Form / Detail ────────────────────────────────────────────────────
-function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
+function AuditForm({ audit, isEdit, members, notes = [], onOpenNote, onSave, onDelete, onClose }) {
   const [f, setF] = useState({
     type: audit.type || 'supplier',
     supplier: audit.supplier || '', business: audit.business || '', site: audit.site || '',
@@ -6071,6 +6127,9 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
   const auditors = [f.lead_auditor, ...f.auditors].filter(Boolean)
   const notesCount = f.notes.length, attCount = f.attachments.length
   const metaSummary = [notesCount ? `${notesCount} note${notesCount!==1?'s':''}` : 'no notes', isEdit ? `${attCount} file${attCount!==1?'s':''}` : null].filter(Boolean).join(' · ')
+  // Notes (the Notes-tab kind, linked via notes.audit_id) — not to be confused with f.notes above,
+  // this audit's own embedded text notes. Read-only here; the link itself is set from the note's side.
+  const linkedNotes = isEdit ? notes.filter(n => n.audit_id === audit.id) : []
 
   const metricCard = (label, value, opts = {}) => (
     <div title={opts.title} style={{ padding:'8px 10px', borderRadius:8, minWidth:0, boxSizing:'border-box',
@@ -6210,6 +6269,25 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
             </div>
           </div>
 
+          {/* Linked notes — read-only; the link is set from the note's side (Notes tab). Only shown
+              when there's something to show, matching the rest of this form's "no empty noise" rule. */}
+          {linkedNotes.length > 0 && (
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>Notes</div>
+              <div style={{ border:'0.5px solid #eee', borderRadius:8, overflow:'hidden' }}>
+                {linkedNotes.map((n, i) => (
+                  <div key={n.id} onClick={() => onOpenNote?.(n.id)}
+                    style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderTop: i > 0 ? '0.5px solid #f0f0f0' : 'none', cursor: onOpenNote ? 'pointer' : 'default' }}
+                    onMouseEnter={e => onOpenNote && (e.currentTarget.style.background = '#faf9fb')}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <span style={{ fontSize:12, color:'#333', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title || 'Untitled'}</span>
+                    {onOpenNote && <span style={{ fontSize:11, color:'#c4b5fd', flexShrink:0 }}>↗</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 4. Metadata — collapsed disclosure (open by default only while creating) */}
           <CollapsibleSection title="Details, notes, attachments" summary={metaSummary} defaultOpen={!isEdit}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
@@ -6283,7 +6361,7 @@ function AuditForm({ audit, isEdit, members, onSave, onDelete, onClose }) {
 }
 
 // ─── Audits Tab ─────────────────────────────────────────────────────────────
-function AuditsTab({ audits, members, isMobile, onAdd, onSave, onDelete, openId, onOpenIdHandled }) {
+function AuditsTab({ audits, notes = [], members, isMobile, onAdd, onSave, onDelete, onOpenNote, openId, onOpenIdHandled }) {
   const [form, setForm] = useState(null) // { audit, isEdit } | null
   const [search, setSearch] = useState('')
   const [showClosed, setShowClosed] = useState(false)
@@ -6347,7 +6425,7 @@ function AuditsTab({ audits, members, isMobile, onAdd, onSave, onDelete, openId,
       )}
 
       {form && (
-        <AuditForm audit={form.audit} isEdit={form.isEdit} members={members}
+        <AuditForm audit={form.audit} isEdit={form.isEdit} members={members} notes={notes} onOpenNote={onOpenNote}
           onSave={(data, id) => id ? onSave(data, id) : onAdd(data)}
           onDelete={onDelete} onClose={() => setForm(null)} />
       )}
@@ -6455,6 +6533,7 @@ export default function App() {
   const [escalations, setEscalations] = useState([])
   const [notes, setNotes] = useState([])
   const [noteGroups, setNoteGroups] = useState([])
+  const [noteTemplates, setNoteTemplates] = useState([])
   const [followUps, setFollowUps] = useState([])
   const [calEvents, setCalEvents] = useState([])
   const [calendarList, setCalendarList] = useState([])
@@ -6511,7 +6590,7 @@ export default function App() {
   const loadData = useCallback(async (silent = false) => {
     if (!session) return
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }, { data: qualificationsData }, { data: qualificationTemplatesData }, { data: auditsData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }, { data: qualificationsData }, { data: qualificationTemplatesData }, { data: auditsData }, { data: noteTemplatesData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*').order('sort_order', { ascending: true }),
@@ -6526,6 +6605,7 @@ export default function App() {
       supabase.from('qualifications').select('*').order('sort_order', { ascending: true }),
       supabase.from('qualification_templates').select('*').order('sort_order', { ascending: true }),
       supabase.from('audits').select('*').order('sort_order', { ascending: true }),
+      supabase.from('note_templates').select('*').order('sort_order', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) { setDomains(domainsData.map(d => d.name)); setDomainRows(domainsData) }
@@ -6541,6 +6621,7 @@ export default function App() {
     setQualificationTemplates(qualificationTemplatesData || []) // empty until the qualification_templates table exists
     setAudits((auditsData || []).map(a => ({ ...a, auditors: a.auditors||[], notes: a.notes||[], attachments: a.attachments||[] })))
     setNoteGroups(noteGroupsData || [])
+    setNoteTemplates(noteTemplatesData || [])
     // Load per-user prefs once on the full (non-silent) load, so silent refreshes never clobber in-flight layout edits
     if (!silent) {
       const { data: prefRow } = await supabase.from('user_prefs').select('prefs').eq('user_id', session.user.id).maybeSingle()
@@ -6583,6 +6664,7 @@ export default function App() {
       .on('postgres_changes', { event:'*', schema:'public', table:'audits' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'notes' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'note_groups' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'note_templates' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'projects' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'escalations' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'follow_ups' }, () => loadData(true))
@@ -6898,6 +6980,7 @@ export default function App() {
     const payload = { title: data.title, body, updated_at: new Date().toISOString() }
     if ('group_id' in data) payload.group_id = data.group_id ?? null
     if ('attachments' in data) payload.attachments = Array.isArray(data.attachments) ? data.attachments : []
+    if ('audit_id' in data) payload.audit_id = data.audit_id || null
     let newId = null
     if (id) {
       let { error } = await supabase.from('notes').update(payload).eq('id', id)
@@ -7743,11 +7826,13 @@ export default function App() {
       {tab === 'audits' && (
         <AuditsTab
           audits={audits}
+          notes={notes}
           members={memberNames}
           isMobile={isMobile}
           onAdd={addAudit}
           onSave={saveAudit}
           onDelete={deleteAudit}
+          onOpenNote={id => { switchTab('notes'); setPendingOpen({ type:'note', id }) }}
           openId={pendingOpen?.type === 'audit' ? pendingOpen.id : null}
           onOpenIdHandled={() => setPendingOpen(null)}
         />
@@ -7756,6 +7841,8 @@ export default function App() {
       {/* ── Notes ── */}
       {tab === 'notes' && (
         <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} onMoveNote={moveNote} onReorderNotes={reorderNotes} onReorderGroups={reorderNoteGroups} onDuplicateNote={duplicateNote} members={memberNames}
+          templates={noteTemplates} audits={audits}
+          onOpenAudit={id => { switchTab('audits'); setPendingOpen({ type:'audit', id }) }}
           openId={pendingOpen?.type === 'note' ? pendingOpen.id : null}
           onOpenIdHandled={() => setPendingOpen(null)} />
       )}
@@ -7779,7 +7866,7 @@ export default function App() {
           onReorderDomain={reorderDomain}
           teamData={teamData}
           calendarList={calendarList}
-          onUpdate={loadData}
+          onUpdate={() => loadData(true)}
           isMobile={isMobile}
         />
       )}
@@ -8002,6 +8089,116 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
             <div style={{ fontSize:11, color:'#aaa', marginTop:1 }}>{t.tasks?.length || 0} tasks</div>
           </div>
           <div style={{ display:'flex', gap:6 }}>
+            <button onClick={() => startEdit(t)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#444' }}>Edit</button>
+            <ConfirmDeleteButton onConfirm={() => deleteTemplate(t.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#A32D2D' }}>Delete</ConfirmDeleteButton>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Note Templates ────────────────────────────────────────────────────────────
+// Same list/add/rename/delete/reorder chrome as QualTemplateSettings, but a template here is rich text
+// (note_templates.body, HTML) rather than a task list — editing it reuses RichTextEditor verbatim, the
+// same editor notes themselves use, so a table's cell fills etc. round-trip identically either way.
+function NoteTemplateSettings({ onUpdate, members = [] }) {
+  const [templates, setTemplates] = useState([])
+  const [editId, setEditId] = useState(null) // id | 'new' | null
+  const [draftName, setDraftName] = useState('')
+  const [draftBody, setDraftBody] = useState('')
+
+  const refresh = async () => {
+    const { data } = await supabase.from('note_templates').select('*').order('sort_order', { ascending: true })
+    if (data) setTemplates(data)
+  }
+  useEffect(() => { refresh() }, [])
+
+  const startNew = () => { setDraftName(''); setDraftBody(''); setEditId('new') }
+  const startEdit = t => { setDraftName(t.name); setDraftBody(t.body || ''); setEditId(t.id) }
+  const cancel = () => { setEditId(null); setDraftName(''); setDraftBody('') }
+
+  const saveDraft = async () => {
+    const name = draftName.trim()
+    if (!name) return
+    const payload = { name, body: draftBody }
+    let error
+    if (editId === 'new') {
+      const maxOrder = templates.length ? Math.max(...templates.map(t => t.sort_order || 0)) : 0
+      ;({ error } = await supabase.from('note_templates').insert({ ...payload, sort_order: maxOrder + 1 }))
+    } else {
+      ;({ error } = await supabase.from('note_templates').update(payload).eq('id', editId))
+    }
+    if (error) { console.error('[TASKr] NoteTemplateSettings.saveDraft error', error); alert(`Could not save template: ${error.message}`); return }
+    await refresh()
+    onUpdate?.()
+    cancel()
+  }
+
+  const deleteTemplate = async id => {
+    const { error } = await supabase.from('note_templates').delete().eq('id', id)
+    if (error) { console.error('[TASKr] NoteTemplateSettings.deleteTemplate error', error); alert(`Could not delete template: ${error.message}`); return }
+    await refresh()
+    onUpdate?.()
+  }
+
+  const reorder = async (id, dir) => {
+    const sorted = [...templates].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    const i = sorted.findIndex(t => t.id === id), j = i + dir
+    if (i < 0 || j < 0 || j >= sorted.length) return
+    const a = sorted[i], b = sorted[j]
+    const results = await Promise.all([
+      supabase.from('note_templates').update({ sort_order: b.sort_order }).eq('id', a.id),
+      supabase.from('note_templates').update({ sort_order: a.sort_order }).eq('id', b.id),
+    ])
+    const error = results.find(r => r.error)?.error
+    if (error) { console.error('[TASKr] NoteTemplateSettings.reorder error', error); alert(`Could not reorder templates: ${error.message}`); return }
+    await refresh()
+    onUpdate?.()
+  }
+
+  const sortedTemplates = [...templates].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+        <div>
+          <div style={{ fontSize:14, fontWeight:500, color:'#111', marginBottom:2 }}>Note Templates</div>
+          <div style={{ fontSize:12, color:'#aaa' }}>Reusable rich-text starting points for new notes.</div>
+        </div>
+        {editId === null && <button onClick={startNew} style={{ ...BTN_PRIMARY, fontSize:12, padding:'6px 14px' }}>+ New template</button>}
+      </div>
+
+      {editId !== null && (
+        <div style={{ background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:10, padding:14, marginBottom:16 }}>
+          <input value={draftName} onChange={e => setDraftName(e.target.value)}
+            placeholder="Template name..."
+            style={{ width:'100%', boxSizing:'border-box', fontSize:14, fontWeight:500, border:'none', borderBottom:'1.5px solid #111', outline:'none', background:'transparent', padding:'4px 0', marginBottom:14, fontFamily:'inherit' }} />
+
+          <div style={{ fontSize:11, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Body</div>
+          <div style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, overflow:'hidden', marginBottom:14 }}>
+            <RichTextEditor key={editId} initialValue={draftBody} onChange={setDraftBody} members={members} />
+          </div>
+
+          <div style={{ display:'flex', gap:6 }}>
+            <button onClick={saveDraft} style={{ ...BTN_PRIMARY, fontSize:12, padding:'6px 16px' }}>Save template</button>
+            <button onClick={cancel} style={{ ...BTN_GHOST, padding:'6px 14px' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {sortedTemplates.length === 0 && editId === null && (
+        <div style={{ fontSize:12, color:'#ccc', padding:'12px 0' }}>No templates yet.</div>
+      )}
+      {sortedTemplates.map((t, i) => (
+        <div key={t.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, marginBottom:6 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:11, color:'#ccc', minWidth:16 }}>{i + 1}</span>
+            <div style={{ fontSize:13, fontWeight:500, color:'#111' }}>{t.name}</div>
+          </div>
+          <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+            <button onClick={() => reorder(t.id, -1)} disabled={i === 0} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'4px 8px', cursor: i===0 ? 'default' : 'pointer', color: i===0 ? '#e0e0e0' : '#aaa' }}>↑</button>
+            <button onClick={() => reorder(t.id, 1)} disabled={i === sortedTemplates.length - 1} style={{ fontSize:11, background:'none', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'4px 8px', cursor: i===sortedTemplates.length-1 ? 'default' : 'pointer', color: i===sortedTemplates.length-1 ? '#e0e0e0' : '#aaa' }}>↓</button>
             <button onClick={() => startEdit(t)} style={{ fontSize:11, background:'none', border:'0.5px solid #ddd', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#444' }}>Edit</button>
             <ConfirmDeleteButton onConfirm={() => deleteTemplate(t.id)} style={{ fontSize:11, background:'none', border:'0.5px solid #F09595', borderRadius:6, padding:'4px 10px', cursor:'pointer', color:'#A32D2D' }}>Delete</ConfirmDeleteButton>
           </div>
@@ -8428,6 +8625,7 @@ function SettingsPage({ domains, domainRows, onAddDomain, onRenameDomain, onDele
     { key: 'calendars', label: 'Calendars', icon: '📅' },
     { key: 'templates', label: 'Templates', icon: '📋' },
     { key: 'qualtemplates', label: 'Qual Templates', icon: '🏭' },
+    { key: 'notetemplates', label: 'Note Templates', icon: '📝' },
   ]
 
   return (
@@ -8456,6 +8654,7 @@ function SettingsPage({ domains, domainRows, onAddDomain, onRenameDomain, onDele
         {section === 'calendars' && <CalendarSettings calendars={calendarList} onUpdate={onUpdate} />}
         {section === 'templates' && <QualTemplateSettings onUpdate={onUpdate} />}
         {section === 'qualtemplates' && <QualTemplateSettings onUpdate={onUpdate} table="qualification_templates" title="Qualification Templates" subtitle="Stages, durations and dependencies auto-created when you qualify a supplier." scheduled />}
+        {section === 'notetemplates' && <NoteTemplateSettings onUpdate={onUpdate} />}
       </div>
     </div>
   )
