@@ -2477,6 +2477,8 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const matchSearch = t => !q || (t.title || '').toLowerCase().includes(q) || (Array.isArray(t.notes) && t.notes.some(n => (n.text || '').toLowerCase().includes(q)))
   const activeTasks = tasks.filter(t => tss(t) !== 'canceled' && (showDone || tss(t) !== 'complete') && ownerMatch(t) && matchSearch(t))
     .slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+  const matchEscSearch = e => !q || (e.title || '').toLowerCase().includes(q) || (Array.isArray(e.notes) && e.notes.some(n => (n.text || '').toLowerCase().includes(q)))
+  const visibleEscalations = escalations.filter(matchEscSearch)
   const trashTasks = tasks.filter(t => t.substatus === 'canceled')
 
   // Per-view manual ordering (client-side, keyed per list so it never touches the global board order)
@@ -2686,7 +2688,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       bgDragRef.current = null
-      cont.style.cursor = numCols > 3 ? 'grab' : 'default'; cont.style.userSelect = ''
+      cont.style.cursor = numCols > 4 ? 'grab' : 'default'; cont.style.userSelect = ''
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -2996,11 +2998,11 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
             )
           })()}
           <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
-            <SectionCard label="Escalations" count={escalations.length} accent="#7c3aed" bg="#ede9fe" border="#c4b5fd" minId="sec:esc" v={v} onAdd={onAddEscalation ? () => setAddingEsc(true) : undefined}>
-              {(() => { const el = orderList('escalations', escalations); return el.map(e => <EscRow key={e.id} e={e} v={v} escList={el} />) })()}
-              {escalations.length === 0 && !addingEsc && <div style={{ fontSize:12, color:'#c9b8e8', textAlign:'center', padding:'8px 0' }}>No escalations</div>}
+            <SectionCard label="Escalations" count={visibleEscalations.length} accent="#7c3aed" bg="#ede9fe" border="#c4b5fd" minId="sec:esc" v={v} onAdd={onAddEscalation ? () => setAddingEsc(true) : undefined}>
+              {(() => { const el = orderList('escalations', visibleEscalations); return el.map(e => <EscRow key={e.id} e={e} v={v} escList={el} />) })()}
+              {visibleEscalations.length === 0 && !addingEsc && <div style={{ fontSize:12, color:'#c9b8e8', textAlign:'center', padding:'8px 0' }}>{q ? 'No escalations match your search' : 'No escalations'}</div>}
               {addingEsc && (
-                <div style={{ marginTop: escalations.length ? 4 : 0 }}>
+                <div style={{ marginTop: visibleEscalations.length ? 4 : 0 }}>
                   <input autoFocus value={newEscTitle} onChange={e => setNewEscTitle(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddEsc(); if (e.key === 'Escape') { setAddingEsc(false); setNewEscTitle('') } }}
                     placeholder="Escalation title…"
@@ -3061,7 +3063,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
         </div>
       ) : (
         <div ref={containerRef} onPointerDown={onContainerPointerDown}
-          style={{ display:'flex', gap:12, alignItems:'flex-start', overflowX: numCols > 3 ? 'auto' : 'visible', WebkitOverflowScrolling:'touch', cursor: numCols > 3 ? 'grab' : 'default', paddingBottom: numCols > 3 ? 6 : 0 }}>
+          style={{ display:'flex', gap:12, alignItems:'flex-start', overflowX: numCols > 4 ? 'auto' : 'visible', WebkitOverflowScrolling:'touch', cursor: numCols > 4 ? 'grab' : 'default', paddingBottom: numCols > 4 ? 6 : 0 }}>
           {displayCols.map((colKeys, ci) => {
             const items = []
             const showInd = i => drag && dropTarget && dropTarget.col === ci && dropTarget.index === i
@@ -3072,7 +3074,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
             })
             return (
               <div key={ci} data-lcol
-                style={{ ...(numCols > 3 ? { flex:'0 0 280px', width:280 } : { flex:1, minWidth:0 }), display:'flex', flexDirection:'column', gap:12, minHeight:80, borderRadius:12, padding:2, outline: (drag && dropTarget && dropTarget.col === ci) ? '2px dashed #c4b5fd' : '2px solid transparent', transition:'outline-color 0.12s' }}>
+                style={{ ...(numCols > 4 ? { flex:'0 0 280px', width:280 } : { flex:1, minWidth:0 }), display:'flex', flexDirection:'column', gap:12, minHeight:80, borderRadius:12, padding:2, outline: (drag && dropTarget && dropTarget.col === ci) ? '2px dashed #c4b5fd' : '2px solid transparent', transition:'outline-color 0.12s' }}>
                 {items.length ? items : <div style={{ minHeight:40 }} />}
               </div>
             )
