@@ -14,10 +14,11 @@ import TiptapImage from '@tiptap/extension-image'
 import TextAlign from '@tiptap/extension-text-align'
 import { Placeholder } from '@tiptap/extensions'
 import { COLORS, RADIUS, SPACE } from './lib/theme.js'
-import { toISODate, fromISODate, today, isWeekday, addCalDays, calDaysBetween } from './lib/dates.js'
+import { toISODate, fromISODate, today, isWeekday, addCalDays, calDaysBetween, fmtTs, fmtDateTime, formatDue, parseDueDate } from './lib/dates.js'
 import { computeSchedule } from './lib/schedule.js'
 import { computeAuditClock, clockText, clockPhrase, auditUrgencyKey, auditUrgencyCompare } from './lib/audits.js'
 import { upgradeLegacyNoteHtml } from './lib/noteHtml.js'
+import { tss, capFirst, flagBg, flagBorder } from './lib/format.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
@@ -208,15 +209,12 @@ const CAL_HOUR_H = 56
 const CAL_TOTAL_H = (CAL_END_HOUR - CAL_START_HOUR) * CAL_HOUR_H
 
 // ─── Pure Helpers ─────────────────────────────────────────────────────────────
-const flagBg = c => ({ red: '#FCEBEB', orange: '#FFF0E8', yellow: '#FEFCE8', green: '#EAF3DE', blue: '#E6F1FB', violet: '#EEEDFE' }[c] || null)
-const flagBorder = c => ({ red: '#E24B4A', orange: '#F97316', yellow: '#EAB308', green: '#639922', blue: '#378ADD', violet: '#7F77DD' }[c] || null)
+// flagBg, flagBorder, fmtTs, fmtDateTime now live in src/lib/format.js / src/lib/dates.js (imported above).
 const evTypeBg = ev => ev.type==='travel'?'#FAEEDA':ev.type==='audit'?'#EDE9FE':ev.type==='vacation'?'#DCFCE7':ev.type==='holiday'?'#f0fdf4':(flagBg(ev.color)||'#E6F1FB')
 const evTypeBdr = ev => ev.type==='travel'?'#FAC775':ev.type==='audit'?'#A78BFA':ev.type==='vacation'?'#6EE7B7':ev.type==='holiday'?'#86efac':(flagBorder(ev.color)||'#85B7EB')
 const evTypeTc = ev => ev.type==='travel'?'#633806':ev.type==='audit'?'#5B21B6':ev.type==='vacation'?'#065F46':ev.type==='holiday'?'#15803d':'#0C447C'
 const evTypeIcon = ev => ev.type==='travel'?'✈ ':ev.type==='audit'?'🔍 ':ev.type==='vacation'?'🌴 ':ev.type==='holiday'?'★ ':''
 const subStyle = k => SUBSTATUS.find(s => s.key === k) || SUBSTATUS[0]
-const fmtTs = ts => { const d = new Date(ts); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) }
-const fmtDateTime = iso => { if (!iso) return '—'; const d = new Date(iso); return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) + ' · ' + d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) }
 
 // ─── Shared modal / form styling (matches the app's menu + pill language) ──────
 const MODAL_OVERLAY = { position:'fixed', inset:0, background:'rgba(40,30,60,0.32)', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'max(30px, env(safe-area-inset-top))', paddingBottom:'env(safe-area-inset-bottom)', paddingLeft:'env(safe-area-inset-left)', paddingRight:'env(safe-area-inset-right)' }
@@ -1914,7 +1912,6 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
   const pendingFor = p => followUps.filter(f => f.person === p && !f.done).length
   const itemsFor = p => followUps.filter(f => f.person === p && (showDone || !f.done))
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || (new Date(a.created_at) - new Date(b.created_at)))
-  const tss = t => t.status === 'waiting' ? 'waiting' : (t.substatus || (t.status === 'done' ? 'complete' : 'not_started'))
   const tasksFor = p => tasks.filter(t => (t.owners||[]).includes(p) && tss(t) !== 'complete' && tss(t) !== 'canceled')
   const visiblePeople = activePerson ? [activePerson] : allPeople
 
@@ -2475,7 +2472,6 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const dragTaskRef = useRef(null)                // id of the block being dragged — a task id, or `proj:<pid>` for a cluster (for reorder detection)
   const dragEntRef = useRef(null)                 // id of escalation being dragged (for reorder)
 
-  const tss = t => t.status === 'waiting' ? 'waiting' : (t.substatus || (t.status === 'done' ? 'complete' : 'not_started'))
   const ownerMatch = t => { if (hiddenOwners.size === 0) return true; const o = t.owners || []; return o.some(n => !hiddenOwners.has(n)) }
   const q = search.trim().toLowerCase()
   const matchSearch = t => !q || (t.title || '').toLowerCase().includes(q) || (Array.isArray(t.notes) && t.notes.some(n => (n.text || '').toLowerCase().includes(q)))
@@ -3789,7 +3785,7 @@ function NoteItem({ note, onDelete, onSave }) {
 // ─── Task Form ────────────────────────────────────────────────────────────────
 const DUE_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DUE_MONTHS_LONG = MONTH_NAMES
-function formatDue(d) { const dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0'), yy=String(d.getFullYear()).slice(-2); return `${mm}/${dd}/${yy}` }
+// formatDue now lives in src/lib/dates.js (imported above).
 
 function DatePicker({ value, onChange, initialMonth, minDate }) {
   const [open, setOpen] = useState(false)
@@ -5147,13 +5143,7 @@ function ChangePassword({ onClose }) {
 // clockText, clockPhrase, auditUrgencyKey/Compare) now live in src/lib/schedule.js and src/lib/audits.js
 // — imported at the top of this file. Extracted so they're unit-testable without a DOM/JSX toolchain.
 
-// Parse a due date (MM/DD/YY from DatePicker, or ISO) to a Date for comparison; null if empty/invalid
-function parseDueDate(s) {
-  if (!s) return null
-  const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
-  if (m) { const yy = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]); return new Date(yy, Number(m[1]) - 1, Number(m[2])) }
-  const d = new Date(s); return isNaN(d) ? null : d
-}
+// parseDueDate now lives in src/lib/dates.js (imported above).
 
 // One editable subtask row (done · duration · N/A · dependencies · completed date)
 function QualSubtaskRow({ st, allSubs, sched, onUpdate }) {
@@ -6024,7 +6014,7 @@ function QualificationsTab({ qualifications, tasks, templates, domains, members,
 }
 
 // ─── Auditor input helper ─────────────────────────────────────────────────────
-const capFirst = s => s ? s[0].toUpperCase() + s.slice(1) : s
+// capFirst now lives in src/lib/format.js (imported above).
 
 function AuditorsInput({ value, onChange, suggestions = [] }) {
   const [draft, setDraft] = useState('')
