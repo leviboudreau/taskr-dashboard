@@ -439,7 +439,7 @@ function TaskCard({ task, onEdit, onDragStart, onDragEnd, dragging, compact, onT
   const completedSubs = subtasks.filter(s => s.done).length
   const owners = task.owners || ['Levi']
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
-  const linkedEntity = entityMap[task.project_id] || entityMap[task.escalation_id] || null
+  const linkedEntity = entityMap[task.project_id] || entityMap[task.escalation_id] || entityMap[task.supplier_quality_issue_id] || null
 
   return (
     <div style={{ position:'relative' }}>
@@ -585,10 +585,15 @@ function ConfirmDeleteButton({ onConfirm, children = 'Delete', style: btnStyle =
   )
 }
 
-// ─── Detail Popup (Project / Escalation) ─────────────────────────────────────
+// ─── Detail Popup (Project / Escalation / Supplier Quality Issue) ─────────────
 function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, onSaveEntity, onSaveTask, onDeleteTask, members = MEMBERS }) {
   const isProject = entityType === 'project'
+  const isSqi = entityType === 'sqi'
+  const idField = isProject ? 'project_id' : isSqi ? 'supplier_quality_issue_id' : 'escalation_id'
+  const typeLabel = isProject ? 'project' : isSqi ? 'supplier quality issue' : 'escalation'
+  const entityPathPrefix = isProject ? 'projects' : isSqi ? 'supplier-quality-issues' : 'escalations'
   const RED = '#c0392b'
+  const titleColor = isProject ? '#111' : isSqi ? '#b45309' : RED
 
   const [f, setF] = useState({
     title:    entity.title    || '',
@@ -619,27 +624,25 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
     setEditingNoteId(null); setEditNoteText('')
   }
 
-  const linkedTasks = isProject
-    ? tasks.filter(t => t.project_id === entity.id)
-    : tasks.filter(t => t.escalation_id === entity.id)
+  const linkedTasks = tasks.filter(t => t[idField] === entity.id)
 
   const [taskForm, setTaskForm] = useState(null)
   const [isEditTask, setIsEditTask] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [importSearch, setImportSearch] = useState('')
   const openAddTask = () => {
-    setTaskForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], attachments:[], project_id:isProject?entity.id:null, escalation_id:!isProject?entity.id:null })
+    setTaskForm({ title:'', status:'active', domain:'', owners:['Levi'], due:'', priority:'', color:'', notes:[], today:false, substatus:'', subtasks:[], attachments:[], project_id:null, escalation_id:null, supplier_quality_issue_id:null, [idField]:entity.id })
     setIsEditTask(false)
   }
   const openEditTask = t => { setTaskForm({...t}); setIsEditTask(true) }
   const linkTask = async t => {
-    const updated = { ...t, project_id: isProject ? entity.id : t.project_id, escalation_id: !isProject ? entity.id : t.escalation_id }
+    const updated = { ...t, [idField]: entity.id }
     await onSaveTask(updated, t.id)
     setImportOpen(false); setImportSearch('')
   }
   const importableTasks = tasks
     .filter(t => t.substatus !== 'canceled' && t.status !== 'canceled')
-    .filter(t => isProject ? t.project_id !== entity.id : t.escalation_id !== entity.id)
+    .filter(t => t[idField] !== entity.id)
     .filter(t => !importSearch || t.title.toLowerCase().includes(importSearch.toLowerCase()))
 
   return (
@@ -650,8 +653,8 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
           {/* Title */}
           <input autoFocus type="text" value={f.title} onChange={e => set('title', e.target.value)}
-            placeholder={isProject ? 'Project title...' : 'Escalation title...'}
-            style={{ width:'100%', boxSizing:'border-box', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: 6, color:isProject?'#111':RED, background:'transparent', padding:'0 40px 0 0' }} />
+            placeholder={isProject ? 'Project title...' : isSqi ? 'Supplier quality issue title...' : 'Escalation title...'}
+            style={{ width:'100%', boxSizing:'border-box', fontSize:18, fontWeight:700, border:'none', outline:'none', marginBottom: 6, color:titleColor, background:'transparent', padding:'0 40px 0 0' }} />
           <TimestampMeta created={entity.created_at} updated={entity.updated_at} />
           {entity.template_name && (
             <div style={{ marginBottom:14 }}>
@@ -725,7 +728,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
 
           <AttachmentSection
             attachments={f.attachments}
-            entityPath={isProject ? `projects/${entity.id}` : `escalations/${entity.id}`}
+            entityPath={`${entityPathPrefix}/${entity.id}`}
             onAdd={att => setF(p => ({ ...p, attachments: [...p.attachments, att] }))}
             onRemove={id => setF(p => ({ ...p, attachments: p.attachments.filter(a => a.id !== id) }))}
           />
@@ -775,7 +778,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
                       <span style={{ width:6, height:6, borderRadius:'50%', background:subStyle(t.substatus).bg||'#e5e5e5', border:`1px solid ${subStyle(t.substatus).border||'#ccc'}`, flexShrink:0 }} />
                       <span style={{ flex:1, fontSize:12, color:'#111' }}>{t.title}</span>
                       {t.domain && <span style={{ fontSize:9, background:'#E6F1FB', color:'#0C447C', padding:'1px 6px', borderRadius:20, border:'0.5px solid #85B7EB', flexShrink:0 }}>{t.domain}</span>}
-                      {(t.project_id || t.escalation_id) && <span style={{ fontSize:9, color:'#bbb', flexShrink:0 }}>linked</span>}
+                      {(t.project_id || t.escalation_id || t.supplier_quality_issue_id) && <span style={{ fontSize:9, color:'#bbb', flexShrink:0 }}>linked</span>}
                     </div>
                   ))}
                 </div>
@@ -787,7 +790,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:16, borderTop:'0.5px solid #f0f0f0', paddingTop:12 }}>
             <ConfirmDeleteButton onConfirm={() => { onDelete(entity.id); onClose() }}
               style={{ fontSize:12, color:'#A32D2D', background:'none', border:'0.5px solid #F09595', borderRadius:8, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit' }}>
-              Delete {isProject ? 'project' : 'escalation'}
+              Delete {typeLabel}
             </ConfirmDeleteButton>
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={onClose}
@@ -1982,7 +1985,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
     const standalone = []
     const byLink = {}
     pt.forEach(t => {
-      const lid = t.project_id || t.escalation_id || t.qualification_id
+      const lid = t.project_id || t.escalation_id || t.supplier_quality_issue_id || t.qualification_id
       if (lid && entityMap[lid]) (byLink[lid] = byLink[lid] || []).push(t)
       else standalone.push(t)
     })
@@ -2250,7 +2253,7 @@ function Row({ t, hideLinked, listTasks, listId, v, gridReorder }) {
   const done = v.tss(t) === 'complete'
   const owners = t.owners || []
   const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
-  const linked = v.entityMap[t.project_id] || v.entityMap[t.escalation_id] || null
+  const linked = v.entityMap[t.project_id] || v.entityMap[t.escalation_id] || v.entityMap[t.supplier_quality_issue_id] || null
   const hideLink = hideLinked || v.groupBy === 'project'
   const fb = flagBorder(t.color)
   const subs = Array.isArray(t.subtasks) ? t.subtasks : []
@@ -2282,7 +2285,7 @@ function Row({ t, hideLinked, listTasks, listId, v, gridReorder }) {
           {notes.length > 0 && <button onClick={e => { e.stopPropagation(); v.toggleNotes(t.id) }} title="Notes"
             style={{ fontSize:10, color: notesOpen?'#7c3aed':'#aaa', background: notesOpen?'#ede9fe':'none', border:'none', borderRadius:6, padding:'1px 5px', cursor:'pointer', fontFamily:'inherit', display:'inline-flex', alignItems:'center', gap:3 }}><StickyNote size={11} strokeWidth={2} /> {notes.length}</button>}
           {v.groupBy !== 'status' && <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap' }}>{ss.label}</span>}
-          {!hideLink && linked && <span style={{ fontSize:10, fontWeight:500, background:linked.type==='project'?'#EAF3DE':'#FCEBEB', color:linked.type==='project'?'#27500A':'#791F1F', padding:'2px 7px', borderRadius:20, border:`0.5px solid ${linked.type==='project'?'#97C459':'#F09595'}`, whiteSpace:'nowrap', maxWidth:130, overflow:'hidden', textOverflow:'ellipsis' }}>{linked.name}</span>}
+          {!hideLink && linked && <span style={{ fontSize:10, fontWeight:500, background:linked.type==='project'?'#EAF3DE':linked.type==='sqi'?'#FFF0E8':'#FCEBEB', color:linked.type==='project'?'#27500A':linked.type==='sqi'?'#9A3412':'#791F1F', padding:'2px 7px', borderRadius:20, border:`0.5px solid ${linked.type==='project'?'#97C459':linked.type==='sqi'?'#F97316':'#F09595'}`, whiteSpace:'nowrap', maxWidth:130, overflow:'hidden', textOverflow:'ellipsis' }}>{linked.name}</span>}
           {v.groupBy !== 'domain' && t.domain && <Badge type="domain">{t.domain}</Badge>}
           {t.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, border:'0.5px solid #F09595', whiteSpace:'nowrap' }}>High</span>}
           {v.groupBy !== 'owner' && showOwners && <OwnerStack owners={owners} />}
@@ -2368,6 +2371,69 @@ function EscRow({ e, v, escList }) {
   )
 }
 
+function SqiRow({ s, v, sqiList }) {
+  const ss = subStyle(s.substatus || 'not_started')
+  const owners = s.owners || []
+  const showOwners = !(owners.length === 1 && owners[0] === 'Levi')
+  const sqiTasks = v.tasks.filter(t => t.supplier_quality_issue_id === s.id && v.tss(t) !== 'canceled' && (v.showDone || v.tss(t) !== 'complete') && v.ownerMatch(t)).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+  const notes = Array.isArray(s.notes) ? s.notes : []
+  const fb = flagBorder(s.color)
+  const id = `sqi:${s.id}`
+  const open = !v.isMin(id)
+  const noteKey = `sqinotes:${s.id}`
+  const notesOpen = v.openNotes.has(noteKey)
+  const list = sqiList || []
+  const listIds = list.map(x => x.id)
+  const sqiEntDrop = v.sqiEntDrop
+  const entInd = pos => <div style={{ height:3, borderRadius:2, background:'linear-gradient(90deg,#f97316,#fb923c)', margin: pos === 'before' ? '0 0 4px' : '4px 0 0' }} />
+  return (
+    <div
+      onDragOver={ev => { const d = v.dragSqiRef.current; if (d && d !== s.id && listIds.includes(d)) { ev.preventDefault(); const r = ev.currentTarget.getBoundingClientRect(); v.setSqiEntDrop({ overId: s.id, pos: ev.clientY < r.top + r.height / 2 ? 'before' : 'after' }) } }}
+      onDrop={ev => { const d = v.dragSqiRef.current; if (d && listIds.includes(d)) { ev.preventDefault(); v.reorderTo(list, d, s.id, sqiEntDrop?.pos || 'before', 'sqi') } v.dragSqiRef.current = null; v.setSqiEntDrop(null) }}
+      style={{ background:'transparent' }}>
+      {sqiEntDrop && sqiEntDrop.overId === s.id && sqiEntDrop.pos === 'before' && entInd('before')}
+      <div style={{ background:'white', borderRadius:8, border:'0.5px solid #ebebeb', borderLeft: fb ? `3px solid ${fb}` : '0.5px solid #ebebeb', marginBottom:4, padding:'8px 10px' }}>
+      <div draggable onDragStart={ev => { v.dragSqiRef.current = s.id; ev.dataTransfer.setData('text/ent', s.id); ev.dataTransfer.effectAllowed = 'move' }}
+        onDragEnd={() => { v.dragSqiRef.current = null; v.setSqiEntDrop(null) }}
+        onDoubleClick={() => v.onOpenSupplierQualityIssue && v.onOpenSupplierQualityIssue(s)} title="Drag to reorder · double-click to open"
+        style={{ display:'flex', alignItems:'center', gap:10, cursor:'grab' }}>
+        <span style={{ flex:1, minWidth:0, fontSize:12, fontWeight:500, color:'#222', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical', overflow:'hidden', lineHeight:1.3 }}>{s.title}</span>
+        <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:'52%' }}>
+          {sqiTasks.length > 0 && <span style={{ fontSize:10, color:'#aaa' }}>{sqiTasks.length} task{sqiTasks.length!==1?'s':''}</span>}
+          {notes.length > 0 && <button onClick={ev => { ev.stopPropagation(); v.toggleNotes(noteKey) }} title="Notes"
+            style={{ fontSize:10, color: notesOpen?'#c2410c':'#aaa', background: notesOpen?'#FFF0E8':'none', border:'none', borderRadius:6, padding:'1px 5px', cursor:'pointer', fontFamily:'inherit', display:'inline-flex', alignItems:'center', gap:3 }}><StickyNote size={11} strokeWidth={2} /> {notes.length}</button>}
+          {s.substatus && <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap' }}>{ss.label}</span>}
+          {s.domain && <Badge type="domain">{s.domain}</Badge>}
+          {s.priority === 'high' && <span style={{ fontSize:9, fontWeight:500, background:'#FCEBEB', color:'#791F1F', padding:'2px 6px', borderRadius:20, border:'0.5px solid #F09595', whiteSpace:'nowrap' }}>High</span>}
+          {showOwners && <OwnerStack owners={owners} />}
+          {s.due && <Badge type="due">{s.due}</Badge>}
+        </div>
+        {linHeaderRight(v.onAddTask && linAddIconBtn(() => v.onAddTask({ supplier_quality_issue_id: s.id })), chevronBtn(open, () => v.toggleMin(id)))}
+      </div>
+      {open && sqiTasks.length > 0 && (() => {
+        const sqiListId = `sqi:${s.id}`
+        const ordered = v.orderList(sqiListId, sqiTasks)
+        return (
+          <div style={{ marginTop:8 }}>
+            {ordered.map(t => <Row key={t.id} t={t} listTasks={ordered} listId={sqiListId} v={v} />)}
+          </div>
+        )
+      })()}
+      {notesOpen && notes.length > 0 && (
+        <div style={{ background:'#f7f7f5', border:'0.5px solid #ececec', borderRadius:8, padding:'8px 10px', marginTop:8 }}>
+          {notes.map(n => (
+            <div key={n.id} style={{ fontSize:11, color:'#555', lineHeight:1.5, marginBottom:4 }}>
+              <span style={{ color:'#bbb', marginRight:6, fontSize:10 }}>{fmtTs(n.ts)}</span>{n.text}
+            </div>
+          ))}
+        </div>
+      )}
+      </div>
+      {sqiEntDrop && sqiEntDrop.overId === s.id && sqiEntDrop.pos === 'after' && entInd('after')}
+    </div>
+  )
+}
+
 function SectionCard({ label, count, accent, bg = '#f7f7f5', border, minId, children, v, onAdd }) {
   const open = !minId || !v.isMin(minId)
   return (
@@ -2420,7 +2486,7 @@ function CategoryCard({ g, onGrab, ghost, v, renderTasks }) {
   )
 }
 
-function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}, memberNames = [], escalations = [], isMobile = false, prefs = {}, savePref = () => {}, onEdit, onComplete, onOpenEscalation, onOpenProject, onOpenQualification, onUpdateTasks, onRestoreTask, onDeleteTask, onAddTask, onAddEscalation, onAddDomain, onUpdateDomainMeta, onOpenClassic }) {
+function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}, memberNames = [], escalations = [], supplierQualityIssues = [], isMobile = false, prefs = {}, savePref = () => {}, onEdit, onComplete, onOpenEscalation, onOpenSupplierQualityIssue, onOpenProject, onOpenQualification, onUpdateTasks, onRestoreTask, onDeleteTask, onAddTask, onAddEscalation, onAddSupplierQualityIssue, onAddDomain, onUpdateDomainMeta, onOpenClassic }) {
   const [groupBy, setGroupByState] = useState(() => prefs.group ?? localStorage.getItem('taskr-linear-group') ?? 'domain')
   const setGroupBy = k => { setGroupByState(k); savePref('group', k); try { localStorage.setItem('taskr-linear-group', k) } catch {} }
   const [showDone, setShowDone] = useState(false)
@@ -2433,6 +2499,13 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
     const title = newEscTitle.trim()
     if (title && onAddEscalation) onAddEscalation(title)
     setNewEscTitle(''); setAddingEsc(false)
+  }
+  const [addingSqi, setAddingSqi] = useState(false)
+  const [newSqiTitle, setNewSqiTitle] = useState('')
+  const handleAddSqi = () => {
+    const title = newSqiTitle.trim()
+    if (title && onAddSupplierQualityIssue) onAddSupplierQualityIssue(title)
+    setNewSqiTitle(''); setAddingSqi(false)
   }
   const [addingDomain, setAddingDomain] = useState(false)
   const [newDomainTitle, setNewDomainTitle] = useState('')
@@ -2466,11 +2539,13 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const [dropTarget, setDropTarget] = useState(null) // { col, index }
   const [rowDrop, setRowDrop] = useState(null)    // { overId, pos } — within-list reorder indicator (tasks + project/bundle clusters share this)
   const [entDrop, setEntDrop] = useState(null)    // { overId, pos } — escalation reorder indicator
+  const [sqiEntDrop, setSqiEntDrop] = useState(null) // { overId, pos } — supplier quality issue reorder indicator
   const containerRef = useRef(null)
   const dragRef = useRef(null)
   const dropRef = useRef(null)
   const dragTaskRef = useRef(null)                // id of the block being dragged — a task id, or `proj:<pid>` for a cluster (for reorder detection)
   const dragEntRef = useRef(null)                 // id of escalation being dragged (for reorder)
+  const dragSqiRef = useRef(null)                 // id of supplier quality issue being dragged (for reorder)
 
   const ownerMatch = t => { if (hiddenOwners.size === 0) return true; const o = t.owners || []; return o.some(n => !hiddenOwners.has(n)) }
   const q = search.trim().toLowerCase()
@@ -2479,6 +2554,8 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
     .slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
   const matchEscSearch = e => !q || (e.title || '').toLowerCase().includes(q) || (Array.isArray(e.notes) && e.notes.some(n => (n.text || '').toLowerCase().includes(q)))
   const visibleEscalations = escalations.filter(matchEscSearch)
+  const matchSqiSearch = s => !q || (s.title || '').toLowerCase().includes(q) || (Array.isArray(s.notes) && s.notes.some(n => (n.text || '').toLowerCase().includes(q)))
+  const visibleSqi = supplierQualityIssues.filter(matchSqiSearch)
   const trashTasks = tasks.filter(t => t.substatus === 'canceled')
 
   // Per-view manual ordering (client-side, keyed per list so it never touches the global board order)
@@ -2697,7 +2774,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const todayTasks = activeTasks.filter(t => t.today)
 
   // Context handed to the module-scope building blocks (Row/EscRow/SectionCard/CategoryCard)
-  const v = { tss, entityMap, groupBy, openNotes, rowDrop, onEdit, dragTaskRef, setRowDrop, clearOutlines, reorderTo, onComplete, toggleNotes, tasks, showDone, ownerMatch, isMin, toggleMin, onOpenEscalation, orderList, isMobile, onOpenProject, handleSectionDrop, onAddTask, addPrefill, dragEntRef, entDrop, setEntDrop, domainMeta, onUpdateDomainMeta, hideDomain, colorEditKey, setColorEditKey }
+  const v = { tss, entityMap, groupBy, openNotes, rowDrop, onEdit, dragTaskRef, setRowDrop, clearOutlines, reorderTo, onComplete, toggleNotes, tasks, showDone, ownerMatch, isMin, toggleMin, onOpenEscalation, onOpenSupplierQualityIssue, orderList, isMobile, onOpenProject, handleSectionDrop, onAddTask, addPrefill, dragEntRef, entDrop, setEntDrop, dragSqiRef, sqiEntDrop, setSqiEntDrop, domainMeta, onUpdateDomainMeta, hideDomain, colorEditKey, setColorEditKey }
 
   // Within a category, cluster tasks that belong to a project/bundle/qualification into a titled container
   const renderTasks = (list, sectionKey) => {
@@ -2766,6 +2843,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
   const allCollapsibleIds = [
     ...(todayTasks.length ? ['sec:today'] : []),
     ...(escalations.length ? ['sec:esc'] : []),
+    ...(supplierQualityIssues.length ? ['sec:sqi'] : []),
     ...groups.map(g => `cat:${groupBy}:${g.key}`),
     ...clusterIds,
   ]
@@ -2777,9 +2855,10 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
     setMinimized(n); persistMin(n)
   }
 
-  // Collapse / expand just the projects, bundles & escalations
+  // Collapse / expand just the projects, bundles, escalations & supplier quality issues
   const projEscIds = [
     ...escalations.map(e => `esc:${e.id}`),
+    ...supplierQualityIssues.map(s => `sqi:${s.id}`),
     ...(groupBy === 'project'
       ? groups.filter(g => g.key !== '__none').map(g => `cat:project:${g.key}`)
       : clusterIds),
@@ -2965,14 +3044,14 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
 
       {!showTrash && listView && renderListView()}
 
-      {/* Today (2 cols) + Escalations (1 col) — one row, linear formatting */}
+      {/* Today + Escalations + Supplier Quality Issues — one row, equally distributed, linear formatting */}
       {!listView && !showTrash && (
         <div style={{ display:'flex', flexDirection:isMobile?'column':'row', gap:12, marginBottom:12, alignItems:'flex-start' }}>
           {todayTasks.length > 0 && (() => {
             const td = orderList('today', todayTasks)
             const inToday = id => td.some(x => x.id === id)
             return (
-            <div style={{ flex: isMobile ? '1 1 auto' : 2, minWidth:0, width:isMobile?'100%':undefined }}>
+            <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
               <SectionCard label="Today" count={todayTasks.length} accent="#E24B4A" bg="#fdf2f1" border="#f2d9d5" minId="sec:today" v={v} onAdd={onAddTask ? () => onAddTask({ today: true }) : undefined}>
                 <div
                   onDragOver={e => { const d = dragTaskRef.current || e.dataTransfer.getData('text/task'); if (inToday(d)) e.preventDefault() }}
@@ -3015,11 +3094,29 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
               )}
             </SectionCard>
           </div>
+          <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
+            <SectionCard label="Supplier Quality Issues" count={visibleSqi.length} accent="#f97316" bg="#FFF0E8" border="#F97316" minId="sec:sqi" v={v} onAdd={onAddSupplierQualityIssue ? () => setAddingSqi(true) : undefined}>
+              {(() => { const sl = orderList('sqi', visibleSqi); return sl.map(s => <SqiRow key={s.id} s={s} v={v} sqiList={sl} />) })()}
+              {visibleSqi.length === 0 && !addingSqi && <div style={{ fontSize:12, color:'#f0b58a', textAlign:'center', padding:'8px 0' }}>{q ? 'No supplier quality issues match your search' : 'No supplier quality issues'}</div>}
+              {addingSqi && (
+                <div style={{ marginTop: visibleSqi.length ? 4 : 0 }}>
+                  <input autoFocus value={newSqiTitle} onChange={e => setNewSqiTitle(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddSqi(); if (e.key === 'Escape') { setAddingSqi(false); setNewSqiTitle('') } }}
+                    placeholder="Supplier quality issue title…"
+                    style={{ width:'100%', boxSizing:'border-box', fontSize:13, padding:'7px 9px', border:'1.5px solid #f97316', borderRadius:8, outline:'none', fontFamily:'inherit' }} />
+                  <div style={{ display:'flex', gap:4, marginTop:4 }}>
+                    <button onClick={handleAddSqi} style={{ ...BTN_PRIMARY, flex:1, fontSize:11, padding:'5px 0' }}>Add</button>
+                    <button onClick={() => { setAddingSqi(false); setNewSqiTitle('') }} style={{ ...BTN_GHOST, flex:1, fontSize:11, padding:'5px 0' }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          </div>
         </div>
       )}
 
       {!listView && !showTrash && (
-        <div style={{ borderTop:'0.5px solid #ececec', paddingTop:14, marginTop: (todayTasks.length > 0 || escalations.length > 0) ? 4 : 0 }}>
+        <div style={{ borderTop:'0.5px solid #ececec', paddingTop:14, marginTop: (todayTasks.length > 0 || escalations.length > 0 || supplierQualityIssues.length > 0) ? 4 : 0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
             <span style={{ fontSize:11, fontWeight:600, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>
               {{ domain:'Domains', status:'Progress', owner:'Owners', project:'Projects & Bundles' }[groupBy]}
@@ -3954,7 +4051,7 @@ function SubtaskRow({ st, onChange, onDelete }) {
 
 function TaskForm({ task, isEdit, onSave, onDelete, onClose, domains, zIndex = 50, members = MEMBERS, defaultOwner, lockedDomain = null }) {
   const defaultOwners = defaultOwner ? [defaultOwner] : ['Levi']
-  const EMPTY = { title:'', status:'active', domain:'', owners:defaultOwners, due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, qualification_id:null, attachments:[], waiting_on:'' }
+  const EMPTY = { title:'', status:'active', domain:'', owners:defaultOwners, due:'', priority:'', color:'', notes:[], today:false, substatus:'not_started', subtasks:[], project_id:null, escalation_id:null, supplier_quality_issue_id:null, qualification_id:null, attachments:[], waiting_on:'' }
   const tempId = useRef(crypto.randomUUID())
   const [f, setF] = useState({ ...EMPTY, ...task, owners:Array.isArray(task?.owners)?task.owners:defaultOwners, notes:Array.isArray(task?.notes)?task.notes:[], subtasks:Array.isArray(task?.subtasks)?task.subtasks:[], attachments:Array.isArray(task?.attachments)?task.attachments:[] })
   const [newNote, setNewNote] = useState('')
@@ -6523,6 +6620,7 @@ export default function App() {
   const [domainRows, setDomainRows] = useState([]) // full domain records (incl. color/text_color) for the Linear page
   const [projects, setProjects] = useState([])
   const [escalations, setEscalations] = useState([])
+  const [supplierQualityIssues, setSupplierQualityIssues] = useState([])
   const [notes, setNotes] = useState([])
   const [noteGroups, setNoteGroups] = useState([])
   const [noteTemplates, setNoteTemplates] = useState([])
@@ -6539,7 +6637,7 @@ export default function App() {
   const [tab, setTab] = useState(() => { const saved = localStorage.getItem('taskr-tab'); return (saved && saved !== 'tasks') ? saved : 'linear' })
   const switchTab = t => { setTab(t); localStorage.setItem('taskr-tab', t) }
   const [activeEscalation, setActiveEscalation] = useState(null)
-  const [activePopup, setActivePopup] = useState(null) // { entity, type: 'project' | 'escalation' }
+  const [activePopup, setActivePopup] = useState(null) // { entity, type: 'project' | 'escalation' | 'sqi' }
   const [activeQualification, setActiveQualification] = useState(null) // qualification opened from the task board
   const [form, setForm] = useState(null)
   const [isEdit, setIsEdit] = useState(false)
@@ -6582,7 +6680,7 @@ export default function App() {
   const loadData = useCallback(async (silent = false) => {
     if (!session) return
     if (!silent) setLoading(true)
-    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }, { data: qualificationsData }, { data: qualificationTemplatesData }, { data: auditsData }, { data: noteTemplatesData }] = await Promise.all([
+    const [{ data: tasksData }, { data: domainsData }, { data: projectsData }, { data: calData }, { data: escalationsData }, { data: notesData }, { data: followUpsData }, { data: teamMembersData }, { data: qualTemplatesData }, { data: noteGroupsData }, { data: calendarsData }, { data: qualificationsData }, { data: qualificationTemplatesData }, { data: auditsData }, { data: noteTemplatesData }, { data: sqiData }] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('domains').select('*').order('sort_order', { ascending: true }),
       supabase.from('projects').select('*').order('sort_order', { ascending: true }),
@@ -6598,12 +6696,14 @@ export default function App() {
       supabase.from('qualification_templates').select('*').order('sort_order', { ascending: true }),
       supabase.from('audits').select('*').order('sort_order', { ascending: true }),
       supabase.from('note_templates').select('*').order('sort_order', { ascending: true }),
+      supabase.from('supplier_quality_issues').select('*').order('sort_order', { ascending: true }),
     ])
     if (tasksData) setTasks(tasksData.map(t => ({ ...t, owners: t.owners||['Levi'], notes: t.notes||[], subtasks: t.subtasks||[] })))
     if (domainsData) { setDomains(domainsData.map(d => d.name)); setDomainRows(domainsData) }
     setProjects((projectsData || []).map(p => ({ ...p, notes: p.notes||[], attachments: p.attachments||[], owners: p.owners||[] })))
     if (calData) setCalEvents(calData)
     setEscalations((escalationsData || []).map(e => ({ ...e, notes: e.notes||[], attachments: e.attachments||[], owners: e.owners||[] })))
+    setSupplierQualityIssues((sqiData || []).map(s => ({ ...s, notes: s.notes||[], attachments: s.attachments||[], owners: s.owners||[] })))
     if (calendarsData) setCalendarList(calendarsData)
     setNotes(notesData || [])
     setFollowUps(followUpsData || [])
@@ -6659,6 +6759,7 @@ export default function App() {
       .on('postgres_changes', { event:'*', schema:'public', table:'note_templates' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'projects' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'escalations' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'supplier_quality_issues' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'follow_ups' }, () => loadData(true))
       .subscribe()
     return () => supabase.removeChannel(ch)
@@ -6722,6 +6823,7 @@ export default function App() {
     payload.waiting_since = status === 'waiting' ? (wasWaiting ? (prior.waiting_since || new Date().toISOString()) : new Date().toISOString()) : null
     if (data.project_id !== undefined) payload.project_id = data.project_id || null
     if (data.escalation_id !== undefined) payload.escalation_id = data.escalation_id || null
+    if (data.supplier_quality_issue_id !== undefined) payload.supplier_quality_issue_id = data.supplier_quality_issue_id || null
     if (data.qualification_id !== undefined) payload.qualification_id = data.qualification_id || null
     // A task under a project/bundle that has a domain inherits it (domain is locked on the task)
     if (payload.project_id) { const proj = projects.find(p => p.id === payload.project_id); if (proj?.domain) payload.domain = proj.domain }
@@ -6964,6 +7066,27 @@ export default function App() {
     const { error } = await supabase.from('escalations').delete().eq('id', id)
     if (error) { console.error('[TASKr] deleteEscalation error', error); alert(`Could not delete escalation: ${error.message}`); return }
     if (activeEscalation === id) setActiveEscalation(null)
+    await loadData(true)
+  }
+
+  const addSupplierQualityIssue = async title => {
+    const { error } = await supabase.from('supplier_quality_issues').insert({ title })
+    if (error) { console.error('[TASKr] addSupplierQualityIssue error', error); alert(`Could not add supplier quality issue: ${error.message}`); return }
+    await loadData(true)
+  }
+
+  const saveSupplierQualityIssue = async (data, id) => {
+    const payload = { title:data.title, status:data.status||'active', domain:data.domain||'', owners:data.owners||['Levi'], due:data.due||'', priority:data.priority||'', color:data.color||'', substatus:data.substatus||'', notes:data.notes||[], attachments:data.attachments||[] }
+    let { error } = await supabase.from('supplier_quality_issues').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) error = (await supabase.from('supplier_quality_issues').update(payload).eq('id', id)).error // fallback if updated_at column not yet added
+    if (error) { console.error('[TASKr] saveSupplierQualityIssue error', error); alert(`Could not save supplier quality issue: ${error.message}`); return }
+    await supabase.from('tasks').update({ color: data.color||'' }).eq('supplier_quality_issue_id', id)
+    await loadData(true)
+  }
+
+  const deleteSupplierQualityIssue = async id => {
+    const { error } = await supabase.from('supplier_quality_issues').delete().eq('id', id)
+    if (error) { console.error('[TASKr] deleteSupplierQualityIssue error', error); alert(`Could not delete supplier quality issue: ${error.message}`); return }
     await loadData(true)
   }
 
@@ -7295,14 +7418,19 @@ export default function App() {
   const entityMap = Object.fromEntries([
     ...projects.map(p => [p.id, { name: p.title, type: 'project', color: p.color, notes: p.notes }]),
     ...escalations.map(e => [e.id, { name: e.title, type: 'escalation', color: e.color, notes: e.notes }]),
+    ...supplierQualityIssues.map(s => [s.id, { name: s.title, type: 'sqi', color: s.color, notes: s.notes }]),
     ...qualifications.map(q => [q.id, { name: q.name, type: 'qualification', color: q.color, notes: q.notes }]),
   ])
 
   const searchQ = taskSearch.trim().toLowerCase()
   const ownerEscalations = filterOwner === 'all' ? escalations : escalations.filter(e => (e.owners||[]).includes(filterOwner))
+  const ownerSupplierQualityIssues = filterOwner === 'all' ? supplierQualityIssues : supplierQualityIssues.filter(s => (s.owners||[]).includes(filterOwner))
   const ownerProjects    = filterOwner === 'all' ? projects    : projects.filter(p => (p.owners||[]).includes(filterOwner))
   const visibleEscalations = ownerEscalations.filter(e =>
     !searchQ || e.title?.toLowerCase().includes(searchQ) || filteredTasks.some(t => t.escalation_id === e.id)
+  )
+  const visibleSupplierQualityIssues = ownerSupplierQualityIssues.filter(s =>
+    !searchQ || s.title?.toLowerCase().includes(searchQ) || filteredTasks.some(t => t.supplier_quality_issue_id === s.id)
   )
   const visibleProjects = ownerProjects.filter(p =>
     !searchQ || p.title?.toLowerCase().includes(searchQ) || filteredTasks.some(t => t.project_id === p.id)
@@ -7398,13 +7526,15 @@ export default function App() {
           memberNames={memberNames} isMobile={isMobile}
           prefs={userPrefs.linear || {}} savePref={(key, value) => savePref('linear', key, value)}
           escalations={visibleEscalations}
+          supplierQualityIssues={visibleSupplierQualityIssues}
           onEdit={t => { setForm({...t}); setIsEdit(true) }} onComplete={quickComplete} onUpdateTasks={updateTasksFields}
           onRestoreTask={restoreTask} onDeleteTask={deleteTaskSilent}
           onAddTask={prefill => { setForm({ status:'active', substatus:'not_started', ...prefill }); setIsEdit(false) }}
           onOpenEscalation={e => setActivePopup({ entity:e, type:'escalation' })}
+          onOpenSupplierQualityIssue={s => setActivePopup({ entity:s, type:'sqi' })}
           onOpenProject={id => { const p = projects.find(x => x.id === id); if (p) setActivePopup({ entity:p, type:'project' }) }}
           onOpenQualification={id => { const q = qualifications.find(x => x.id === id); if (q) setActiveQualification(q) }}
-          onAddEscalation={addEscalation} onOpenClassic={() => switchTab('tasks')}
+          onAddEscalation={addEscalation} onAddSupplierQualityIssue={addSupplierQualityIssue} onOpenClassic={() => switchTab('tasks')}
           onAddDomain={addDomain} onUpdateDomainMeta={updateDomainMeta} />
       )}
 
@@ -7877,8 +8007,8 @@ export default function App() {
           tasks={tasks}
           domains={domains}
           onClose={() => setActivePopup(null)}
-          onDelete={activePopup.type === 'project' ? deleteProject : deleteEscalation}
-          onSaveEntity={activePopup.type === 'project' ? saveProject : saveEscalation}
+          onDelete={activePopup.type === 'project' ? deleteProject : activePopup.type === 'sqi' ? deleteSupplierQualityIssue : deleteEscalation}
+          onSaveEntity={activePopup.type === 'project' ? saveProject : activePopup.type === 'sqi' ? saveSupplierQualityIssue : saveEscalation}
           onSaveTask={saveTaskSilent}
           onDeleteTask={deleteTaskSilent}
           members={memberNames}
