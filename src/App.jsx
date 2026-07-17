@@ -1475,7 +1475,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
 }
 
 // ─── Briefing Tab ─────────────────────────────────────────────────────────────
-function BriefingTab() {
+function BriefingTab({ isMobile = false }) {
   const todayISO = toISODate(new Date())
   const [briefContent, setBriefContent] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1735,6 +1735,17 @@ Important rules:
   const renderInline = text =>
     text.split(/\*\*(.*?)\*\*/g).map((p, i) => i % 2 === 1 ? <strong key={i}>{p}</strong> : p)
 
+  // Card color per section identity — mirrors the accent-dot + tinted-background card pattern used
+  // throughout the rest of the app (SectionCard, EscRow's panel, etc.) for visual consistency.
+  const CARD_STYLE = {
+    today: { bg:'#E6F1FB', border:'#85B7EB', accent:'#378ADD' },
+    needs: { bg:'#fdf2f1', border:'#f2d9d5', accent:'#E24B4A' },
+    worth: { bg:'#FEFCE8', border:'#EAB308', accent:'#EAB308' },
+    quote: { bg:'#ede9fe', border:'#c4b5fd', accent:'#7c3aed' },
+    dyk:   { bg:'#E6F1FB', border:'#85B7EB', accent:'#378ADD' },
+    other: { bg:'#f7f7f5', border:'#e5e5e5', accent:'#999' },
+  }
+
   const renderContent = text => {
     if (!text) return null
     // Split into sections by ## headers
@@ -1749,36 +1760,37 @@ Important rules:
     return sections.filter(s => s.header || s.lines.some(l => l.trim())).map((sec, si) => {
       const h = (sec.header || '').toLowerCase()
       const isGreeting = h.startsWith('good morning')
+      const isTodaySection = h === 'today'
+      const isWorth = h.startsWith('worth a look')
       const isQuote = h === 'quote of the day'
       const isDyk = h.startsWith('did you know')
       const isAction = h.startsWith('needs you')
+      const key = isGreeting ? 'greeting' : isTodaySection ? 'today' : isAction ? 'needs' : isWorth ? 'worth' : isQuote ? 'quote' : isDyk ? 'dyk' : `other-${si}`
 
       // Clean leading/trailing blank lines
       const bodyLines = sec.lines
       while (bodyLines.length && !bodyLines[0].trim()) bodyLines.shift()
       while (bodyLines.length && !bodyLines[bodyLines.length-1].trim()) bodyLines.pop()
 
+      const style = CARD_STYLE[key] || CARD_STYLE.other
       const headerEl = sec.header && (
-        <div style={{
-          fontSize: isGreeting ? 22 : 10,
-          fontWeight: isGreeting ? 700 : 600,
-          color: isGreeting ? '#111' : '#999',
-          marginTop: si === 0 ? 0 : 32,
-          marginBottom: isGreeting ? 10 : 10,
-          letterSpacing: isGreeting ? 0 : '0.08em',
-          textTransform: isGreeting ? 'none' : 'uppercase',
-        }}>
-          {renderInline(sec.header)}
-        </div>
+        isGreeting ? (
+          <div style={{ fontSize:22, fontWeight:700, color:'#111', marginBottom:10 }}>{renderInline(sec.header)}</div>
+        ) : (
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <span style={{ width:7, height:7, borderRadius:'50%', background:style.accent, flexShrink:0 }} />
+            <span style={{ fontSize:11, fontWeight:600, color:style.accent, letterSpacing:'0.06em', textTransform:'uppercase' }}>{renderInline(sec.header)}</span>
+          </div>
+        )
       )
 
       let bodyEl
       if (isQuote || isDyk) {
         bodyEl = (
-          <div style={{ background:'#f8f7f5', borderRadius:8, padding:'14px 18px' }}>
+          <div>
             {bodyLines.map((line, i) => {
               if (!line.trim()) return <div key={i} style={{ height:4 }} />
-              return <p key={i} style={{ fontSize:13, color:'#555', margin:'0 0 2px', lineHeight:1.6, fontStyle: isQuote ? 'italic' : 'normal' }}>{renderInline(line)}</p>
+              return <p key={i} style={{ fontSize:13, color:'#444', margin:'0 0 2px', lineHeight:1.6, fontStyle: isQuote ? 'italic' : 'normal' }}>{renderInline(line)}</p>
             })}
           </div>
         )
@@ -1844,7 +1856,14 @@ Important rules:
         )
       }
 
-      return <div key={si}>{headerEl}{bodyEl}</div>
+      const el = isGreeting ? (
+        <div key={si}>{headerEl}{bodyEl}</div>
+      ) : (
+        <div key={si} style={{ background:style.bg, border:`1px solid ${style.border}`, borderRadius:14, padding:'16px 18px' }}>
+          {headerEl}{bodyEl}
+        </div>
+      )
+      return { key, el }
     })
   }
 
@@ -1853,7 +1872,7 @@ Important rules:
   if (loading) return <div style={{ padding:60, textAlign:'center', color:'#aaa', fontSize:13 }}>Loading briefing...</div>
 
   return (
-    <div style={{ maxWidth:680, margin:'0 auto' }}>
+    <div>
       {/* Toolbar */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', marginBottom:24, gap:8 }}>
         <div ref={histRef} style={{ position:'relative' }}>
@@ -1897,11 +1916,34 @@ Important rules:
         <div style={{ padding:60, textAlign:'center', color:'#aaa', fontSize:13 }}>Generating your briefing...</div>
       )}
 
-      {briefContent && (
-        <div style={{ opacity:generating?0.45:1, transition:'opacity 0.25s' }}>
-          {renderContent(briefContent)}
-        </div>
-      )}
+      {briefContent && (() => {
+        const rendered = renderContent(briefContent) || []
+        const byKey = Object.fromEntries(rendered.map(s => [s.key, s.el]))
+        const otherEls = rendered.filter(s => s.key.startsWith('other-')).map(s => s.el)
+        const colStyle = { flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:20 }
+        const rowStyle = { display:'flex', flexDirection: isMobile ? 'column' : 'row', gap:20, alignItems:'flex-start', marginTop:24 }
+        const sidebar = (byKey.today || byKey.worth) && (
+          <div style={colStyle}>{byKey.today}{byKey.worth}</div>
+        )
+        return (
+          <div style={{ opacity:generating?0.45:1, transition:'opacity 0.25s' }}>
+            {byKey.greeting}
+            {(byKey.needs || sidebar) && (
+              <div style={rowStyle}>
+                {byKey.needs && <div style={colStyle}>{byKey.needs}</div>}
+                {sidebar}
+              </div>
+            )}
+            {(byKey.quote || byKey.dyk) && (
+              <div style={rowStyle}>
+                {byKey.quote && <div style={colStyle}>{byKey.quote}</div>}
+                {byKey.dyk && <div style={colStyle}>{byKey.dyk}</div>}
+              </div>
+            )}
+            {otherEls.length > 0 && <div style={{ display:'flex', flexDirection:'column', gap:20, marginTop:24 }}>{otherEls}</div>}
+          </div>
+        )
+      })()}
 
       {!briefContent && !generating && !error && (
         <div style={{ background:'#f7f7f5', border:'0.5px dashed #ccc', borderRadius:12, padding:'48px 32px', textAlign:'center', color:'#bbb', fontSize:13 }}>
@@ -7541,7 +7583,7 @@ export default function App() {
       </div>
 
       {/* ── Briefing ── */}
-      {tab === 'briefing' && <BriefingTab />}
+      {tab === 'briefing' && <BriefingTab isMobile={isMobile} />}
 
       {/* ── Linear task mockup ── */}
       {tab === 'linear' && (
