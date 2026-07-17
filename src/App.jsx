@@ -1516,12 +1516,15 @@ function BriefingTab() {
       // Delete today's existing row first
       await supabase.from('briefings').delete().eq('date', todayISO)
 
-      const [{ data: tasks }, { data: calRaw }, { data: qualsRaw }, { data: qualTasksRaw }, { data: auditsRaw }] = await Promise.all([
+      const [{ data: tasks }, { data: calRaw }, { data: qualsRaw }, { data: qualTasksRaw }, { data: auditsRaw }, { data: escalationsRaw }, { data: sqiRaw }, { data: notesRaw }] = await Promise.all([
         supabase.from('tasks').select('*').in('status', ['active', 'waiting']),
         supabase.from('calendar_events').select('*'),
         supabase.from('qualifications').select('*'),
         supabase.from('tasks').select('*').not('qualification_id', 'is', null), // unfiltered by status — computeSchedule needs every track task
         supabase.from('audits').select('*').neq('status', 'closed'), // closed audits have no live clock and nothing to report
+        supabase.from('escalations').select('*'),
+        supabase.from('supplier_quality_issues').select('*'),
+        supabase.from('notes').select('*'),
       ])
 
       // Qualification-linked track tasks are represented richly in the Qualifications section below;
@@ -1628,6 +1631,35 @@ function BriefingTab() {
         return parts.join(' | ')
       }).join('\n')
 
+      // Escalations & supplier quality issues share a schema — only open ones (not complete/canceled) are briefing-worthy.
+      const buildEntityLines = list => list.map(e => {
+        const parts = [`- ${e.title}`]
+        if (e.substatus) parts.push(`substatus: ${SUBSTATUS.find(s => s.key === e.substatus)?.label || e.substatus}`)
+        if (e.priority === 'high') parts.push('priority: High')
+        if (e.color) parts.push(`flag: ${e.color}`)
+        if ((e.owners||[]).length) parts.push(`owners: ${e.owners.join(', ')}`)
+        if (e.due) parts.push(`due: ${e.due}`)
+        const days = daysSince(e.updated_at)
+        if (days !== null) parts.push(`updated ${days}d ago`)
+        return parts.join(' | ')
+      }).join('\n')
+      const openEscalations = (escalationsRaw || []).filter(e => e.substatus !== 'complete' && e.substatus !== 'canceled')
+      const escalationLines = buildEntityLines(openEscalations)
+      const openSqis = (sqiRaw || []).filter(s => s.substatus !== 'complete' && s.substatus !== 'canceled')
+      const sqiLines = buildEntityLines(openSqis)
+
+      // Recent notes — freeform content has no due/priority signal, so recency of edit is what's briefing-worthy.
+      const stripHtml = html => { const d = document.createElement('div'); d.innerHTML = html || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim() }
+      const twoDaysAgoISO = new Date(Date.now() - 2 * 86400000).toISOString()
+      const recentNotes = (notesRaw || []).filter(n => n.updated_at && n.updated_at >= twoDaysAgoISO)
+      const noteLines = recentNotes.map(n => {
+        const days = daysSince(n.updated_at)
+        const snippet = stripHtml(n.body).slice(0, 140)
+        const parts = [`- ${n.title || 'Untitled'}`, `updated ${days}d ago`]
+        if (snippet) parts.push(snippet + (stripHtml(n.body).length > 140 ? '…' : ''))
+        return parts.join(' | ')
+      }).join('\n')
+
       const horizonLines = horizonEvents.length
         ? horizonEvents.map(ev => `- ${ev.start_date} ${ev.title}${ev.type==='travel'?' (travel)':''}`).join('\n') : ''
 
@@ -1645,12 +1677,21 @@ Waiting tasks (blocked on someone or something outside Levi's control — each l
 on and how many days it's been waiting; briefing-worthiness is entirely about that day count, not the content.
 A wait of a couple of days is completely normal and not worth mentioning. A wait stretching toward a week or
 more, especially with no owner chasing it, is worth a nudge):
-${waitingLines}${qualLines ? `\n\nSupplier qualifications:\n${qualLines}` : ''}${auditLines ? `\n\nAudits (open, i.e. not yet closed):\n${auditLines}` : ''}${horizonLines ? `\n\nUpcoming (next 14 days):\n${horizonLines}` : ''}
+${waitingLines}${qualLines ? `\n\nSupplier qualifications:\n${qualLines}` : ''}${auditLines ? `\n\nAudits (open, i.e. not yet closed):\n${auditLines}` : ''}${escalationLines ? `\n\nEscalations (open):\n${escalationLines}` : ''}${sqiLines ? `\n\nSupplier quality issues (open):\n${sqiLines}` : ''}${noteLines ? `\n\nRecent notes (updated in the last 2 days):\n${noteLines}` : ''}${horizonLines ? `\n\nUpcoming (next 14 days):\n${horizonLines}` : ''}
 
-Format the briefing exactly in this order with these section headers:
+Format the briefing exactly in this order with these section headers. The overriding rule: every item appears exactly once, placed in the ONE section that matches its urgency — never group or repeat items by type (task/qualification/audit/escalation/SQI/note). A qualification stage, an escalation, and a task with the same urgency sit side by side in the same list, ranked by urgency alone.
 
 ## Good morning, Levi.
 3 to 5 sentences summarizing the day's tone, key priorities, and anything worth flagging. Be specific — reference actual tasks and events by name. If travel is coming up within 3 days, mention it.
+
+## Today
+Only items tied specifically to today: anything due today, today's meetings/events (with time and duration), or a meeting that should be canceled or moved. If nothing is due today and there are no meetings, write "No meetings scheduled — good day to focus." Do not repeat an item here just because it's also urgent — it belongs here only if it's tied to today specifically. Omit this section entirely only if there are no meetings AND nothing is due today.
+
+## Needs you
+A single, urgency-ranked list merging every source — do not group by type. Pull in: tasks flagged red, substatus at_risk, or with open subtasks; qualification stages that are overdue, or any qualification whose projected completion has slipped past its due date (name the critical-path driver stage); audits whose clock is breached or imminent — an overdue report, a CAPA response past its 30-day window, or a CAPA closure date about to be missed (treat "[OVERDUE]" or a small days-remaining figure as high-priority — these are exactly what should wake Levi up); waiting tasks whose wait has stretched unreasonably long (roughly a week or more with no movement, longer if normally slow); and open escalations or supplier quality issues flagged red/high priority, substatus at_risk, or stale with no update in over a week. Rank every item together purely by urgency, most urgent first — regardless of whether it's a task, stage, audit, escalation, or SQI. For each item lead with its name in bold, then one sentence on why it needs attention and the next action — for a stale wait, that's usually "follow up with X." If truly nothing needs action, keep this section but say so in one line rather than omitting it.
+
+## Worth a look
+Non-urgent awareness, merged across every source, not ranked by urgency: patterns worth noticing (e.g. "eight tasks unmoved in over a week"), upcoming-but-not-pressing items (an audit two weeks out, a qualification on track but worth a glance, upcoming travel, a due date in the next 14 days, a recurring deadline like KQM Data Entry or KQM Report), lower-priority escalations or supplier quality issues, and any note from the last two days worth remembering or a light follow-up. This is awareness, not action — never repeat anything already placed in Today or Needs you. Omit this section entirely if there's nothing worth noting.
 
 ## Quote of the day
 One motivational or leadership quote relevant to quality, leadership, or the nature of the day's work. Format as: "Quote text." — Author Name
@@ -1658,28 +1699,11 @@ One motivational or leadership quote relevant to quality, leadership, or the nat
 ## Did you know?
 One genuinely interesting fact on any topic. Keep it to 2-3 sentences. Make it something worth remembering.
 
-## Action required
-Tasks flagged red, substatus at_risk, or with open subtasks; qualification stages that are overdue; any qualification whose projected completion has slipped past its due date; any waiting task whose wait has stretched to an unreasonable length (use judgment — roughly a week or more with no sign of movement, longer if it's waiting on something that's normally slow); and any audit whose clock is breached or imminent — an overdue report, a CAPA response past its 30-day window, or a CAPA closure date about to be missed. These audit clocks are exactly the kind of thing that should wake Levi up in the morning, so treat "[OVERDUE]" or a small days-remaining figure on an audit as high-priority. For each item lead with the task, stage, qualification, or audit name in bold, then one sentence on why it needs attention and what the next action is — for a stale wait, that action is usually "follow up with X." If nothing qualifies, omit this section entirely.
-
-## Qualifications
-Only include this section if supplier qualification data was provided above. Summarize each qualification's status and projected completion, and call out anything overdue or slipping past its due date — reference the critical path driver by name when a qualification's timeline is being driven by a specific stage. If no qualification data was provided, omit this section entirely.
-
-## Audits
-Only include this section if audit data was provided above. Per audit, give its name, type, supplier or business plus site, status, and its live clock with days remaining or overdue. If no clock is currently running for an audit, just note its status. If no audit data was provided, omit this section entirely.
-
-## Suggestions
-3 to 5 opinionated, specific bullets on what Levi should focus on, follow up on, or decide today. Go beyond the active task list — use the "days since last update" figures to call out active tasks that have gone genuinely stale (not just old), use the "waiting N days" figures to flag waits worth a check-in even if they don't rise to Action required, flag a qualification stage or critical path driver worth checking on, flag an audit clock that's getting close even if it hasn't breached yet, note if a team member may need a check-in, or call out a strategic initiative that's stalling. Be direct and useful, not generic.
-
-## On your calendar
-Bullet list of today's events with times and duration. If none, write "No meetings scheduled — good day to focus."
-
-## On the horizon
-Anything with a due date in the next 14 days, upcoming travel, or recurring deadlines (KQM Data Entry, KQM Report). Format as a simple dated list.
-
 Important rules:
-- You MUST include every section above using the exact ## headers shown. Never omit Quote of the day or Did you know — they are always required. Qualifications, Audits, and Action required are the only sections you may omit, and only when their conditions say to.
-- Use actual task, stage, and qualification titles, not generic descriptions.
-- Keep the full briefing under 650 words.`
+- You MUST include every section above using the exact ## headers shown, in the exact order shown. Today and Worth a look are the only sections you may omit, and only when their conditions say to. Needs you should almost always have content — if it's truly empty, keep the header and say so in one line. Never omit Good morning, Quote of the day, or Did you know — they are always required, with Quote of the day and Did you know always last, as a closing footer.
+- Every item appears exactly once. Before finalizing, check that nothing mentioned in Today or Needs you is repeated in Worth a look, and vice versa.
+- Use actual task, stage, qualification, audit, escalation, and supplier quality issue titles, not generic descriptions.
+- Keep the full briefing under 500 words.`
 
       const { data: proxyData, error: proxyError } = await supabase.functions.invoke('anthropic-proxy', {
         body: { systemPrompt, userPrompt, model: 'claude-sonnet-4-6', max_tokens: 1200 },
@@ -1727,7 +1751,7 @@ Important rules:
       const isGreeting = h.startsWith('good morning')
       const isQuote = h === 'quote of the day'
       const isDyk = h.startsWith('did you know')
-      const isAction = h.startsWith('action required')
+      const isAction = h.startsWith('needs you')
 
       // Clean leading/trailing blank lines
       const bodyLines = sec.lines
