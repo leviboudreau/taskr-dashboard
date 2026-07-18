@@ -4,6 +4,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Vite's default modulepreload injection would otherwise add a <link rel="modulepreload"> for the
+    // tiptap chunk into every page load, eagerly fetching it even though it's now behind a React.lazy()
+    // boundary that only triggers when a user opens Notes — defeating the point of the split below.
+    modulePreload: false,
     rollupOptions: {
       output: {
         // Split the two biggest, slowest-changing dependency groups out of the app chunk so they

@@ -9,6 +9,10 @@
 export const COLORS = {
   accent: '#7c3aed',
   accentGradient: 'linear-gradient(135deg,#4f46e5,#7c3aed)',
+  // The TASKr wordmark's own gradient — a 3-stop variant of accentGradient that lingers in violet before
+  // ending in pink. Deliberately distinct from accentGradient (used by buttons/active pills); kept in one
+  // place because it had drifted into two slightly different versions (2-stop pre-login vs. 3-stop in-app).
+  logoGradient: 'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)',
   accentSoft: '#ede9fe',
   accentBorder: '#c4b5fd',
   accentBorderSoft: '#ddd6fe',
@@ -33,5 +37,8 @@ export const COLORS = {
   deleteBorder: '#F09595',
 }
 
-export const RADIUS = { sm: 6, md: 8, lg: 12, xl: 16, pill: 20 }
+// `ctrl` (10) sits between md/lg and covers buttons/pills/inputs specifically — it was already the most
+// common radius in the app (more common than md or lg) without being in this table; adding it rather than
+// migrating ~70 call sites to a value that doesn't match their actual visual weight.
+export const RADIUS = { sm: 6, md: 8, ctrl: 10, lg: 12, xl: 16, pill: 20 }
 export const SPACE = { xs: 4, sm: 8, md: 10, lg: 12, xl: 16 }

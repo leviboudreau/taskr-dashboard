@@ -1,24 +1,14 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, Fragment } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, Fragment, lazy, Suspense } from 'react'
 import { supabase } from './supabase'
-import DOMPurify from 'dompurify'
-import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory, Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight, Flag, ClipboardCheck } from 'lucide-react'
-import { useEditor, EditorContent, Node as TiptapNode, Extension as TiptapExtension } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import { TextStyle, Color, FontSize } from '@tiptap/extension-text-style'
-import Highlight from '@tiptap/extension-highlight'
-import Subscript from '@tiptap/extension-subscript'
-import Superscript from '@tiptap/extension-superscript'
-import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
-import { TaskList, TaskItem } from '@tiptap/extension-list'
-import TiptapImage from '@tiptap/extension-image'
-import TextAlign from '@tiptap/extension-text-align'
-import { Placeholder } from '@tiptap/extensions'
+import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, StickyNote, Factory, Flag, ClipboardCheck } from 'lucide-react'
 import { COLORS, RADIUS, SPACE } from './lib/theme.js'
 import { toISODate, fromISODate, today, isWeekday, addCalDays, calDaysBetween, fmtTs, fmtDateTime, formatDue, parseDueDate } from './lib/dates.js'
 import { computeSchedule } from './lib/schedule.js'
 import { computeAuditClock, clockText, clockPhrase, auditUrgencyKey, auditUrgencyCompare } from './lib/audits.js'
-import { upgradeLegacyNoteHtml } from './lib/noteHtml.js'
-import { tss, capFirst, flagBg, flagBorder } from './lib/format.js'
+import { tss, capFirst, flagBg, flagBorder, manualNoteCmp } from './lib/format.js'
+
+// Tiptap (~615KB) only loads when a user actually opens the note editor, instead of on every page view.
+const RichTextEditor = lazy(() => import('./components/RichTextEditor.jsx'))
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
@@ -233,6 +223,32 @@ function ModalCloseButton({ onClick }) {
         ✕
       </button>
     </div>
+  )
+}
+// Small inline "✕ to remove" button — notes, attachments, subtasks, task-form rows. Was hand-rolled
+// identically (background:none/border:none, #ddd → danger-red on hover) at 9 separate call sites.
+function RemoveButton({ onClick, title, size = 11 }) {
+  return (
+    <button onClick={onClick} title={title}
+      style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:size, padding:0, lineHeight:1, flexShrink:0 }}
+      onMouseEnter={e => e.currentTarget.style.color = '#E24B4A'}
+      onMouseLeave={e => e.currentTarget.style.color = '#ddd'}>✕</button>
+  )
+}
+// Standalone on/off toolbar button (Done/List/Trash/Members-filter, etc.) — border+white when off,
+// accent gradient when on. Was hand-typed ~9 times with drift (26px/no-transition in the Linear board
+// vs 28px/transition in the Classic board); standardized on the fuller Classic version.
+function ToggleChip({ active, onClick, title, children, style = {} }) {
+  return (
+    <button onClick={onClick} title={title}
+      style={{ fontSize:11, padding:'4px 10px', borderRadius:RADIUS.ctrl, cursor:'pointer',
+        border: active ? 'none' : `0.5px solid ${COLORS.accentBorder}`,
+        background: active ? COLORS.accentGradient : 'white',
+        color: active ? 'white' : COLORS.accent,
+        height:28, transition:'background 0.15s, color 0.15s',
+        display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap', ...style }}>
+      {children}
+    </button>
   )
 }
 const FIELD_LABEL = { fontSize:10, fontWeight:600, color:COLORS.label, display:'block', marginBottom:5, textTransform:'uppercase', letterSpacing:'0.06em' }
@@ -717,7 +733,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
                 ) : (
                   <span style={{ flex:1, cursor:'text' }} onClick={() => startEditNote(n)}>{n.text}</span>
                 )}
-                <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+                <RemoveButton onClick={() => removeNote(n.id)} />
               </div>
             ))}
             <div style={{ display:'flex', gap:8, marginTop:4 }}>
@@ -738,7 +754,7 @@ function DetailPopup({ entity, entityType, tasks, domains, onClose, onDelete, on
             <div style={{ fontSize:11, fontWeight:500, color:'#bbb', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>
               Tasks · {linkedTasks.length}
             </div>
-            {linkedTasks.length === 0 && <div style={{ fontSize:12, color:'#ccc', padding:'4px 0 10px' }}>No tasks yet</div>}
+            {linkedTasks.length === 0 && <div style={{ fontSize:12, color:COLORS.textFaint, padding:'4px 0 10px' }}>No tasks yet</div>}
             {linkedTasks.map(t => (
               <div key={t.id} onClick={() => openEditTask(t)}
                 style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:'#f7f7f5', borderRadius:6, border:'0.5px solid #f0f0f0', marginBottom:6, cursor:'pointer', boxSizing:'border-box' }}
@@ -927,7 +943,7 @@ function ProjectsSection({ projects, tasks, onAdd, onOpen, templates = [], noBor
                 </button>
               ))}
             </div>
-            <button onClick={reset} style={{ marginTop:8, width:'100%', fontSize:11, background:'none', border:'none', color:'#bbb', cursor:'pointer', padding:'4px 0' }}>Cancel</button>
+            <button onClick={reset} style={{ ...BTN_GHOST, marginTop:8, width:'100%', fontSize:11, padding:'5px 0' }}>Cancel</button>
           </div>
         )}
 
@@ -1088,392 +1104,6 @@ function EscalationsSection({ escalations, tasks, onAdd, onOpen, onReorder, isOp
   )
 }
 
-// ─── Rich Text Editor ─────────────────────────────────────────────────────────
-// ─── Mention Picker ───────────────────────────────────────────────────────────
-function MentionPicker({ members, onInsert }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef()
-  useEffect(() => {
-    if (!open) return
-    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-  return (
-    <div ref={ref} style={{ position:'relative', display:'inline-flex' }}>
-      <button
-        onMouseDown={e => { e.preventDefault(); setOpen(o => !o) }}
-        title="Tag a team member"
-        style={{ fontSize:12, padding:'3px 8px', border:'0.5px solid #e0e0e0', borderRadius:6, background: open?'#ede9fe':'#f7f7f5', color: open?'#7c3aed':'#555', cursor:'pointer', fontFamily:'inherit', lineHeight:1.4 }}>
-        @ Tag
-      </button>
-      {open && (
-        <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:300, background:'white', border:'0.5px solid #e0e0e0', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', minWidth:140, padding:4 }}>
-          {members.map(name => (
-            <button key={name} onMouseDown={e => { e.preventDefault(); onInsert(name); setOpen(false) }}
-              style={{ width:'100%', textAlign:'left', padding:'6px 10px', background:'none', border:'none', cursor:'pointer', fontSize:12, color:'#333', borderRadius:6, fontFamily:'inherit' }}
-              onMouseEnter={e => e.currentTarget.style.background='#ede9fe'}
-              onMouseLeave={e => e.currentTarget.style.background='none'}>
-              @{name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── TipTap building blocks (engine under the notes editor) ───────────────────
-
-// Inline @mention chip — parses the spans older notes already contain
-const MentionChip = TiptapNode.create({
-  name: 'mention',
-  group: 'inline',
-  inline: true,
-  atom: true,
-  addAttributes() { return { name: { default: '' } } },
-  parseHTML() { return [{ tag: 'span[data-mention]', getAttrs: el => ({ name: el.getAttribute('data-mention') || (el.textContent || '').replace(/^@/, '') }) }] },
-  renderHTML({ node }) { return ['span', { 'data-mention': node.attrs.name, style: 'background:#ede9fe;color:#7c3aed;border-radius:4px;padding:1px 6px;font-weight:500;white-space:nowrap' }, `@${node.attrs.name}`] },
-})
-
-// Image that keeps a persistable width (percent); pasted images stay base64
-const NoteImage = TiptapImage.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      width: {
-        default: null,
-        parseHTML: el => (el.style && el.style.width) || el.getAttribute('width') || null,
-        renderHTML: attrs => attrs.width ? { style: `width:${attrs.width}` } : {},
-      },
-    }
-  },
-}).configure({ allowBase64: true })
-
-// Table cell/header that keep their fill color. Both need this — a <th> (e.g. a table's header row,
-// like the Audit Notes template's gold header) loses its background on parse if only TableCell is
-// extended, since TipTap's base TableHeader node doesn't declare a backgroundColor attribute either.
-const bgColorAttr = {
-  backgroundColor: {
-    default: null,
-    parseHTML: el => (el.style && el.style.backgroundColor) || null,
-    renderHTML: attrs => attrs.backgroundColor ? { style: `background-color:${attrs.backgroundColor}` } : {},
-  },
-}
-const FillTableCell = TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...bgColorAttr } } })
-const FillTableHeader = TableHeader.extend({ addAttributes() { return { ...this.parent?.(), ...bgColorAttr } } })
-
-// Tab indents inside lists (Shift-Tab outdents). In tables the Table extension owns Tab; outside
-// any list we return false so Tab isn't trapped (default focus behaviour) and never injects spaces.
-const TabKeymap = TiptapExtension.create({
-  name: 'tabKeymap',
-  addKeyboardShortcuts() {
-    const inList = () => this.editor.isActive('taskItem') || this.editor.isActive('listItem')
-    return {
-      Tab: () => {
-        if (this.editor.isActive('table') || !inList()) return false
-        this.editor.commands.sinkListItem(this.editor.isActive('taskItem') ? 'taskItem' : 'listItem')
-        return true // consume within a list even when it can't sink (first item) so no spaces get inserted
-      },
-      'Shift-Tab': () => {
-        if (this.editor.isActive('table') || !inList()) return false
-        this.editor.commands.liftListItem(this.editor.isActive('taskItem') ? 'taskItem' : 'listItem')
-        return true
-      },
-    }
-  },
-})
-
-// Canonical note ordering: manual sort_order first (dense, global), then newest-first as a stable tiebreak
-const manualNoteCmp = (a, b) => ((a.sort_order ?? 1e9) - (b.sort_order ?? 1e9)) || (new Date(b.created_at) - new Date(a.created_at))
-
-const NOTE_EDITOR_CSS = `
-.note-editor .ProseMirror,.note-editor [contenteditable="true"]{outline:none;padding:12px 16px;min-height:200px}
-.note-editor p{margin:0 0 2px}
-.note-editor h1{font-size:1.5em;margin:10px 0 4px}
-.note-editor h2{font-size:1.3em;margin:8px 0 3px}
-.note-editor h3{font-size:1.15em;margin:6px 0 2px}
-.note-editor ul,.note-editor ol{padding-left:20px;margin:2px 0}
-.note-editor ul[data-type="taskList"]{list-style:none;padding-left:2px}
-.note-editor ul[data-type="taskList"] li{display:flex;gap:8px;align-items:flex-start;margin:2px 0}
-.note-editor ul[data-type="taskList"] li>label{flex-shrink:0;display:flex;align-items:center;height:1.55em}
-.note-editor ul[data-type="taskList"] li>label input{width:14px;height:14px;cursor:pointer;margin:0}
-.note-editor ul[data-type="taskList"] li>div{flex:1;min-width:0}
-.note-editor ul[data-type="taskList"] li[data-checked="true"]>div{color:#aaa;text-decoration:line-through}
-.note-editor blockquote{border-left:3px solid #ddd6fe;margin:6px 0;padding:2px 12px;color:#555}
-.note-editor pre{background:#f7f7f5;border-radius:8px;padding:10px 12px;font-size:0.9em;overflow-x:auto}
-.note-editor hr{border:none;border-top:1px solid #e5e5e5;margin:10px 0}
-.note-editor a{color:#4f46e5;text-decoration:underline;cursor:pointer}
-.note-editor table{border-collapse:collapse;width:100%;margin:8px 0;table-layout:fixed}
-.note-editor td,.note-editor th{border:1px solid #d1d5db;padding:3px 8px;min-width:40px;vertical-align:top;position:relative;line-height:1.6}
-.note-editor .selectedCell:after{content:'';position:absolute;inset:0;background:rgba(124,58,237,0.08);pointer-events:none}
-.note-editor .column-resize-handle{position:absolute;right:-2px;top:0;bottom:-2px;width:4px;background:#c4b5fd;pointer-events:none}
-.note-editor .resize-cursor{cursor:col-resize}
-.note-editor img{max-width:100%;border-radius:6px;display:block;margin:4px 0}
-.note-editor img.ProseMirror-selectednode{outline:2px solid #7c3aed;outline-offset:2px}
-.note-editor p.is-editor-empty:first-child::before{content:attr(data-placeholder);color:#ccc;float:left;height:0;pointer-events:none}
-`
-
-function RichTextEditor({ initialValue, onChange, isMobile = false, members = [] }) {
-  const [showTablePicker, setShowTablePicker] = useState(false)
-  const [tableHover, setTableHover] = useState([0, 0])
-  const editorRef = useRef(null)
-
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: { openOnClick: false } }),
-      TextStyle, Color, FontSize,
-      Highlight.configure({ multicolor: true }),
-      Subscript, Superscript,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Table.configure({ resizable: true }),
-      TableRow, FillTableHeader, FillTableCell,
-      TaskList, TaskItem.configure({ nested: true }),
-      NoteImage, MentionChip, TabKeymap,
-      Placeholder.configure({ placeholder: 'Start writing…' }),
-    ],
-    content: DOMPurify.sanitize(upgradeLegacyNoteHtml(initialValue || '')),
-    shouldRerenderOnTransaction: true, // toolbar active states track the caret
-    onUpdate: ({ editor: ed }) => onChange(ed.getHTML()),
-    editorProps: {
-      // Pasted images: compress via canvas → base64 (no storage round-trip), same as the old editor
-      handlePaste: (view, event) => {
-        const item = Array.from(event.clipboardData?.items || []).find(i => i.type.startsWith('image/'))
-        if (!item) return false
-        const file = item.getAsFile()
-        if (!file) return false
-        event.preventDefault()
-        const reader = new FileReader()
-        reader.onload = ev => {
-          const imgEl = new window.Image()
-          imgEl.onload = () => {
-            const maxW = 1200
-            const scale = Math.min(1, maxW / imgEl.naturalWidth)
-            const canvas = document.createElement('canvas')
-            canvas.width = Math.round(imgEl.naturalWidth * scale)
-            canvas.height = Math.round(imgEl.naturalHeight * scale)
-            canvas.getContext('2d').drawImage(imgEl, 0, 0, canvas.width, canvas.height)
-            editorRef.current?.chain().focus().setImage({ src: canvas.toDataURL('image/jpeg', 0.82) }).run()
-          }
-          imgEl.src = ev.target.result
-        }
-        reader.readAsDataURL(file)
-        return true
-      },
-    },
-  })
-  editorRef.current = editor
-
-  if (!editor) return null
-  const chain = () => editor.chain().focus()
-  const active = (...a) => editor.isActive(...a)
-
-  // ── Toolbar chrome (ghost buttons, purple hover — the app's language) ──
-  const sep = { width: '1px', height: 16, background: '#ece9f5', margin: '0 5px', flexShrink: 0 }
-  const ghost = { fontSize: 12.5, height: 26, minWidth: 26, padding: '0 7px', border: 'none', borderRadius: 7, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', color: '#555', lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
-  const tbtn = (label, action, opts = {}) => {
-    const on = !!opts.active
-    return (
-      <button key={opts.key} onMouseDown={e => { e.preventDefault(); action() }} title={opts.title} disabled={opts.disabled}
-        style={{ ...ghost, ...(on ? { background: '#ede9fe', color: '#7c3aed' } : {}), opacity: opts.disabled ? 0.35 : 1, ...opts.style }}
-        onMouseEnter={e => { if (!on && !opts.disabled) e.currentTarget.style.background = '#f0edff' }}
-        onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent' }}>
-        {label}
-      </button>
-    )
-  }
-  const rowStyle = { display: 'flex', gap: 2, padding: '5px 8px', background: 'white', flexWrap: 'wrap', alignItems: 'center' }
-
-  // Numeric font size (px) — reads current size at the caret; legacy em values map back through the base size
-  const SIZE_LADDER = [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 36, 48]
-  const baseSize = isMobile ? 16 : 15
-  const curSizePx = (() => {
-    const fs = editor.getAttributes('textStyle').fontSize
-    if (!fs) return baseSize
-    if (String(fs).endsWith('px')) return Math.round(parseFloat(fs))
-    if (String(fs).endsWith('em')) return Math.round(parseFloat(fs) * baseSize)
-    return baseSize
-  })()
-  const applySize = px => {
-    const v = Math.round(px)
-    if (!v || isNaN(v)) return
-    const clamped = Math.max(6, Math.min(96, v))
-    clamped === baseSize ? chain().unsetFontSize().run() : chain().setFontSize(clamped + 'px').run()
-  }
-  const stepSize = dir => {
-    const next = dir > 0 ? SIZE_LADDER.find(s => s > curSizePx) : [...SIZE_LADDER].reverse().find(s => s < curSizePx)
-    if (next) applySize(next)
-  }
-  const editLink = () => {
-    const prev = editor.getAttributes('link').href || ''
-    const url = window.prompt('Link URL (empty to remove)', prev)
-    if (url === null) return
-    if (!url.trim()) { chain().extendMarkRange('link').unsetLink().run(); return }
-    chain().extendMarkRange('link').setLink({ href: /^(https?:|mailto:)/i.test(url) ? url : `https://${url}` }).run()
-  }
-  const insertMention = name => chain().insertContent([{ type: 'mention', attrs: { name } }, { type: 'text', text: ' ' }]).run()
-
-  const COLORS = [
-    '#111111', '#c0392b', '#0C447C', '#27500A', '#7d3c98', '#d35400',
-    '#f1948a', '#85c1e9', '#a9dfbf', '#d7bde2', '#fad7a0', '#a2d9ce', '#f9e79f', '#aab7b8',
-  ]
-  const HIGHLIGHTS = ['#fef08a', '#bbf7d0', '#bae6fd', '#fecdd3', '#fed7aa', '#e9d5ff']
-  const CELL_FILLS = ['', '#fef9c3', '#dbeafe', '#dcfce7', '#fce7f3', '#ffedd5', '#f3f4f6', '#1e293b']
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, position: 'relative' }}>
-      <style>{NOTE_EDITOR_CSS}</style>
-      {/* Toolbar — sticky so it stays above the keyboard on mobile */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 5, background: 'white', border: '0.5px solid #e5e5e5', borderBottom: 'none' }}>
-        {/* Row 1: history · blocks · marks · lists · inserts · size · align */}
-        <div style={{ ...rowStyle, borderBottom: '0.5px solid #f2eff9' }}>
-          {tbtn(<Undo2 size={14} />, () => chain().undo().run(), { title: 'Undo', disabled: !editor.can().undo() })}
-          {tbtn(<Redo2 size={14} />, () => chain().redo().run(), { title: 'Redo', disabled: !editor.can().redo() })}
-          <div style={sep} />
-          {tbtn('B', () => chain().toggleBold().run(), { active: active('bold'), style: { fontWeight: 700 } })}
-          {tbtn('I', () => chain().toggleItalic().run(), { active: active('italic'), style: { fontStyle: 'italic' } })}
-          {tbtn('U', () => chain().toggleUnderline().run(), { active: active('underline'), style: { textDecoration: 'underline' } })}
-          {tbtn('S', () => chain().toggleStrike().run(), { active: active('strike'), style: { textDecoration: 'line-through' } })}
-          {tbtn(<span>x<sup>2</sup></span>, () => chain().toggleSuperscript().run(), { active: active('superscript'), title: 'Superscript' })}
-          {tbtn(<span>x<sub>2</sub></span>, () => chain().toggleSubscript().run(), { active: active('subscript'), title: 'Subscript' })}
-          <div style={sep} />
-          {tbtn('• List', () => chain().toggleBulletList().run(), { active: active('bulletList') })}
-          {tbtn('1. List', () => chain().toggleOrderedList().run(), { active: active('orderedList') })}
-          {tbtn('☑ Check', () => chain().toggleTaskList().run(), { active: active('taskList'), title: 'Checklist' })}
-          {tbtn('→', () => { chain().sinkListItem(active('taskItem') ? 'taskItem' : 'listItem').run() }, { title: 'Indent' })}
-          {tbtn('←', () => { chain().liftListItem(active('taskItem') ? 'taskItem' : 'listItem').run() }, { title: 'Outdent' })}
-          <div style={sep} />
-          {tbtn(<Link2 size={14} />, editLink, { active: active('link'), title: 'Add / edit link' })}
-          {tbtn(<Quote size={13} />, () => chain().toggleBlockquote().run(), { active: active('blockquote'), title: 'Quote' })}
-          {tbtn(<Minus size={14} />, () => chain().setHorizontalRule().run(), { title: 'Divider' })}
-          <div style={{ position: 'relative' }}>
-            <button onMouseDown={e => { e.preventDefault(); setShowTablePicker(v => !v) }}
-              style={{ ...ghost, padding: '0 8px', background: showTablePicker ? '#ede9fe' : 'transparent', color: showTablePicker ? '#7c3aed' : '#555' }}
-              onMouseEnter={e => { if (!showTablePicker) e.currentTarget.style.background = '#f0edff' }} onMouseLeave={e => { if (!showTablePicker) e.currentTarget.style.background = 'transparent' }}>
-              ⊞ Table
-            </button>
-            {showTablePicker && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, background: 'white', border: '0.5px solid #e5e5e5', borderRadius: 8, padding: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 20 }}
-                onMouseLeave={() => setTableHover([0, 0])}>
-                <div style={{ fontSize: 10, color: '#888', marginBottom: 5, textAlign: 'center', minWidth: 120 }}>
-                  {tableHover[0] > 0 ? `${tableHover[0]} × ${tableHover[1]} table` : 'Hover to select'}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 18px)', gap: 2 }}>
-                  {Array.from({ length: 36 }).map((_, i) => {
-                    const r = Math.floor(i / 6) + 1, c = (i % 6) + 1
-                    const on = r <= tableHover[0] && c <= tableHover[1]
-                    return (
-                      <div key={i}
-                        style={{ width: 16, height: 16, background: on ? '#ddd6fe' : '#f0f0f0', border: `1px solid ${on ? '#c4b5fd' : '#e0e0e0'}`, borderRadius: 2, cursor: 'pointer' }}
-                        onMouseEnter={() => setTableHover([r, c])}
-                        onClick={() => { if (tableHover[0] > 0) { chain().insertTable({ rows: tableHover[0], cols: tableHover[1], withHeaderRow: false }).run(); setShowTablePicker(false) } }} />
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-          <div style={sep} />
-          <div style={{ display: 'flex', alignItems: 'center', border: '0.5px solid #e5e2ee', borderRadius: 7, background: '#faf9ff', height: 26, overflow: 'hidden', flexShrink: 0 }} title="Font size (px)">
-            <button onMouseDown={e => { e.preventDefault(); stepSize(-1) }}
-              style={{ ...ghost, height: '100%', minWidth: 22, borderRadius: 0, fontSize: 14 }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f0edff'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>−</button>
-            <input key={curSizePx} type="text" inputMode="numeric" defaultValue={curSizePx}
-              onMouseDown={e => e.stopPropagation()}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applySize(parseInt(e.target.value, 10)) } }}
-              onBlur={e => { const v = parseInt(e.target.value, 10); if (v && v !== curSizePx) applySize(v) }}
-              style={{ width: 26, textAlign: 'center', fontSize: 11.5, border: 'none', outline: 'none', background: 'transparent', color: '#555', fontFamily: 'inherit', padding: 0 }} />
-            <button onMouseDown={e => { e.preventDefault(); stepSize(1) }}
-              style={{ ...ghost, height: '100%', minWidth: 22, borderRadius: 0, fontSize: 13 }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f0edff'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>+</button>
-          </div>
-          {!isMobile && <>
-            <div style={sep} />
-            {tbtn(<AlignLeft size={14} />, () => chain().setTextAlign('left').run(), { active: active({ textAlign: 'left' }), title: 'Align left' })}
-            {tbtn(<AlignCenter size={14} />, () => chain().setTextAlign('center').run(), { active: active({ textAlign: 'center' }), title: 'Center' })}
-            {tbtn(<AlignRight size={14} />, () => chain().setTextAlign('right').run(), { active: active({ textAlign: 'right' }), title: 'Align right' })}
-          </>}
-          <div style={sep} />
-          {tbtn('✕ fmt', () => chain().unsetAllMarks().clearNodes().run(), { title: 'Clear formatting', style: { color: '#aaa', fontSize: 11 } })}
-          {members.length > 0 && <MentionPicker members={members} onInsert={insertMention} />}
-        </div>
-        {/* Row 2: colors — scrollable on mobile */}
-        <div style={{ ...rowStyle, gap: 5, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
-          <span style={{ fontSize: 10, color: '#aaa', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Text</span>
-          <div style={sep} />
-          {COLORS.map(c => (
-            <button key={c} onMouseDown={e => { e.preventDefault(); chain().setColor(c).run() }}
-              style={{ width: isMobile ? 20 : 14, height: isMobile ? 20 : 14, borderRadius: '50%', background: c, border: '1.5px solid transparent', cursor: 'pointer', padding: 0, flexShrink: 0 }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = '#555'}
-              onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'} />
-          ))}
-          <button onMouseDown={e => { e.preventDefault(); chain().unsetColor().run() }}
-            style={{ fontSize: 10, padding: '2px 6px', border: 'none', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#bbb', flexShrink: 0 }}
-            onMouseEnter={e => e.currentTarget.style.background = '#f0edff'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            title="Default color">✕</button>
-          <div style={{ ...sep, margin: '0 5px' }} />
-          <span style={{ fontSize: 10, color: '#aaa', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Highlight</span>
-          <div style={sep} />
-          {HIGHLIGHTS.map(c => (
-            <button key={c} onMouseDown={e => { e.preventDefault(); chain().toggleHighlight({ color: c }).run() }}
-              style={{ width: isMobile ? 22 : 16, height: isMobile ? 20 : 14, borderRadius: 3, background: c, border: '1.5px solid transparent', cursor: 'pointer', padding: 0, flexShrink: 0 }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = '#555'}
-              onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'} />
-          ))}
-          <button onMouseDown={e => { e.preventDefault(); chain().unsetHighlight().run() }}
-            style={{ fontSize: 10, padding: isMobile ? '4px 8px' : '2px 6px', border: 'none', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#bbb', flexShrink: 0 }}
-            onMouseEnter={e => e.currentTarget.style.background = '#f0edff'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            title="Remove highlight">✕</button>
-        </div>
-        {/* Row 3: contextual table controls */}
-        {!isMobile && active('table') && (
-          <div style={{ ...rowStyle, gap: 4, background: '#faf5ff', borderTop: '0.5px solid #f2eff9' }}>
-            <span style={{ fontSize: 10, color: '#7c3aed', fontWeight: 500, marginRight: 2, flexShrink: 0 }}>Table</span>
-            <div style={{ ...sep, background: '#ddd6fe' }} />
-            {tbtn('← Col', () => chain().addColumnBefore().run(), { title: 'Insert column left', style: { fontSize: 11, color: '#7c3aed' } })}
-            {tbtn('Col →', () => chain().addColumnAfter().run(), { title: 'Insert column right', style: { fontSize: 11, color: '#7c3aed' } })}
-            {tbtn('✕ Col', () => chain().deleteColumn().run(), { title: 'Delete column', style: { fontSize: 11, color: '#7c3aed' } })}
-            <div style={{ ...sep, background: '#ddd6fe' }} />
-            {tbtn('↑ Row', () => chain().addRowBefore().run(), { title: 'Insert row above', style: { fontSize: 11, color: '#7c3aed' } })}
-            {tbtn('Row ↓', () => chain().addRowAfter().run(), { title: 'Insert row below', style: { fontSize: 11, color: '#7c3aed' } })}
-            {tbtn('✕ Row', () => chain().deleteRow().run(), { title: 'Delete row', style: { fontSize: 11, color: '#7c3aed' } })}
-            <div style={{ ...sep, background: '#ddd6fe' }} />
-            {tbtn('⊞→', () => chain().mergeCells().run(), { title: 'Merge cells', style: { color: '#7c3aed' } })}
-            {tbtn('⊟', () => chain().splitCell().run(), { title: 'Split cell', style: { color: '#7c3aed' } })}
-            {tbtn('✕ Table', () => chain().deleteTable().run(), { title: 'Delete table', style: { fontSize: 11, color: '#c0392b' } })}
-            <div style={{ ...sep, background: '#ddd6fe' }} />
-            <span style={{ fontSize: 10, color: '#7c3aed', flexShrink: 0 }}>Cell fill</span>
-            {CELL_FILLS.map((c, i) => (
-              <button key={i} onMouseDown={e => { e.preventDefault(); chain().setCellAttribute('backgroundColor', c || null).run() }}
-                title={c || 'Clear fill'}
-                style={{ width: 15, height: 15, borderRadius: 3, background: c || 'white', border: c ? '1.5px solid transparent' : '1.5px solid #d1d5db', cursor: 'pointer', padding: 0, flexShrink: 0, position: 'relative', overflow: 'hidden' }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = '#7c3aed'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = c ? 'transparent' : '#d1d5db'}>
-                {!c && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#bbb', lineHeight: 1 }}>✕</span>}
-              </button>
-            ))}
-          </div>
-        )}
-        {/* Row 3b: contextual image controls */}
-        {active('image') && (
-          <div style={{ ...rowStyle, gap: 4, background: '#faf5ff', borderTop: '0.5px solid #f2eff9' }}>
-            <span style={{ fontSize: 10, color: '#7c3aed', fontWeight: 500, marginRight: 2, flexShrink: 0 }}>Image</span>
-            <div style={{ ...sep, background: '#ddd6fe' }} />
-            {['25%', '50%', '75%', '100%'].map(w => tbtn(w, () => chain().updateAttributes('image', { width: w }).run(), { key: w, title: `Width ${w}`, style: { fontSize: 11, color: '#7c3aed' }, active: editor.getAttributes('image').width === w }))}
-            {tbtn('Auto', () => chain().updateAttributes('image', { width: null }).run(), { title: 'Natural width', style: { fontSize: 11, color: '#7c3aed' } })}
-            <div style={{ ...sep, background: '#ddd6fe' }} />
-            {tbtn('✕ Remove', () => chain().deleteSelection().run(), { title: 'Remove image', style: { fontSize: 11, color: '#c0392b' } })}
-          </div>
-        )}
-      </div>
-      {/* Editing surface */}
-      <EditorContent editor={editor} className="note-editor"
-        style={{ flex: 1, border: '0.5px solid #e5e5e5', borderTop: 'none', overflowY: 'auto', WebkitOverflowScrolling: 'touch', fontSize: isMobile ? 16 : 15, lineHeight: 1.55, color: '#333', minHeight: 200, cursor: 'text' }}
-        onClick={e => { if (e.target === e.currentTarget || e.target.classList?.contains('note-editor')) editor.chain().focus('end').run() }} />
-    </div>
-  )
-}
-
 // ─── Briefing Tab ─────────────────────────────────────────────────────────────
 function BriefingTab({ isMobile = false }) {
   const todayISO = toISODate(new Date())
@@ -1497,14 +1127,16 @@ function BriefingTab({ isMobile = false }) {
   }, [historyOpen])
 
   const loadHistory = async () => {
-    const { data } = await supabase.from('briefings').select('date').order('date', { ascending: false }).limit(60)
+    const { data, error } = await supabase.from('briefings').select('date').order('date', { ascending: false }).limit(60)
+    if (error) { console.error('[TASKr] loadHistory error', error); return }
     if (data) setHistory(data.map(r => r.date))
   }
 
   const checkAndLoad = async () => {
     setLoading(true); setError(null)
     try {
-      const { data } = await supabase.from('briefings').select('content').eq('date', todayISO).maybeSingle()
+      const { data, error } = await supabase.from('briefings').select('content').eq('date', todayISO).maybeSingle()
+      if (error) throw error
       setBriefContent(data?.content || null)
       setLoading(false)
     } catch (e) { setError('Could not load briefing: ' + e.message); setLoading(false) }
@@ -1513,8 +1145,6 @@ function BriefingTab({ isMobile = false }) {
   const generate = async () => {
     setGenerating(true); setError(null)
     try {
-      // Delete today's existing row first
-      await supabase.from('briefings').delete().eq('date', todayISO)
 
       const [{ data: tasks }, { data: calRaw }, { data: qualsRaw }, { data: qualTasksRaw }, { data: auditsRaw }, { data: escalationsRaw }, { data: sqiRaw }, { data: notesRaw }] = await Promise.all([
         supabase.from('tasks').select('*').in('status', ['active', 'waiting']),
@@ -1712,6 +1342,8 @@ Important rules:
       if (proxyData?.error) throw new Error(proxyData.error?.message || proxyData.error)
       const result = proxyData
       const text = result.content[0].text
+      // Only remove the old row once generation has actually succeeded, so a failed call never loses today's briefing
+      await supabase.from('briefings').delete().eq('date', todayISO)
       await supabase.from('briefings').insert({ date: todayISO, content: text })
       setBriefContent(text); setSelectedDate(null)
       await loadHistory()
@@ -1723,7 +1355,8 @@ Important rules:
   const loadHistoryEntry = async date => {
     setHistoryOpen(false)
     taskMetaRef.current = {}
-    const { data } = await supabase.from('briefings').select('content').eq('date', date).maybeSingle()
+    const { data, error } = await supabase.from('briefings').select('content').eq('date', date).maybeSingle()
+    if (error) { console.error('[TASKr] loadHistoryEntry error', error); setError('Could not load that briefing: ' + error.message); return }
     if (data?.content) { setBriefContent(data.content); setSelectedDate(date) }
   }
 
@@ -1874,7 +1507,7 @@ Important rules:
   return (
     <div>
       {/* Toolbar */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', marginBottom:24, gap:8 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', marginBottom:16, gap:8 }}>
         <div ref={histRef} style={{ position:'relative' }}>
           <button onClick={() => setHistoryOpen(o => !o)}
             style={{ fontSize:12, padding:'6px 12px', border:'0.5px solid #e5e5e5', borderRadius:8, background:'white', cursor:'pointer', color:'#555', display:'flex', alignItems:'center', gap:4 }}>
@@ -2098,10 +1731,7 @@ function FollowUpsTab({ followUps, onAdd, onToggle, onDelete, onUpdate, onCreate
             )
           })}
         </div>
-        <button onClick={() => setShowDone(v => !v)}
-          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:showDone?'none':'0.5px solid #c4b5fd', background:showDone?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:showDone?'white':'#7c3aed', height:28, transition:'background 0.15s, color 0.15s' }}>
-          ✓ Done
-        </button>
+        <ToggleChip active={showDone} onClick={() => setShowDone(v => !v)}>✓ Done</ToggleChip>
       </div>
 
       {/* Per-person sections */}
@@ -2946,7 +2576,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
       .filter(t => !colFilters.owner || (t.owners || []).includes(colFilters.owner))
       .slice()
       .sort((a, b) => {
-        const val = t => sortCol === 'status' ? (subStyle(tss(t)).label || '') : sortCol === 'domain' ? (t.domain || '') : sortCol === 'due' ? (t.due || '9999-99-99') : sortCol === 'owner' ? ((t.owners || [])[0] || '') : (t.title || '')
+        const val = t => sortCol === 'status' ? (subStyle(tss(t)).label || '') : sortCol === 'domain' ? (t.domain || '') : sortCol === 'due' ? (t.due ? toISODate(parseDueDate(t.due)) : '9999-99-99') : sortCol === 'owner' ? ((t.owners || [])[0] || '') : (t.title || '')
         const cmp = String(val(a)).localeCompare(String(val(b)), undefined, { numeric:true })
         return sortDir === 'asc' ? cmp : -cmp
       })
@@ -2989,7 +2619,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
               </span>
               <span style={{ fontSize:10, color:ss.tc, background:ss.bg, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'1px 7px', whiteSpace:'nowrap', width:'fit-content' }}>{ss.label||'—'}</span>
               {!isMobile && <span style={{ fontSize:10, color:t.domain?'#0C447C':'#ccc', background:t.domain?'#E6F1FB':'transparent', border:t.domain?'0.5px solid #85B7EB':'none', borderRadius:20, padding:t.domain?'2px 7px':'0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', width:'fit-content' }}>{t.domain||'—'}</span>}
-              <span style={{ fontSize:11, color:t.due?(t.due<today()?'#c0392b':'#888'):'#ccc', whiteSpace:'nowrap' }}>{t.due||'—'}</span>
+              <span style={{ fontSize:11, color:t.due?(toISODate(parseDueDate(t.due))<today()?'#c0392b':'#888'):'#ccc', whiteSpace:'nowrap' }}>{t.due||'—'}</span>
               {!isMobile && <div style={{ display:'flex' }}>{owners.length ? <OwnerStack owners={owners} /> : <span style={{ fontSize:11, color:'#ccc' }}>—</span>}</div>}
             </div>
           )
@@ -3008,10 +2638,9 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
         {/* Member filter — multi-select show/hide (same pattern as the Holidays dropdown) */}
         <div style={{ position:'relative' }}>
           {(() => { const narrowed = hiddenOwners.size > 0; const visibleCount = memberNames.filter(m => !hiddenOwners.has(m)).length; return (
-            <button onClick={() => setOwnerMenuOpen(o => !o)} title="Show/hide members"
-              style={{ fontSize:11, background: narrowed ? 'linear-gradient(135deg,#4f46e5,#7c3aed)' : 'white', border: narrowed ? 'none' : '0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:26, color: narrowed ? 'white' : '#7c3aed', display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap' }}>
+            <ToggleChip active={narrowed} onClick={() => setOwnerMenuOpen(o => !o)} title="Show/hide members">
               <span>👥 Members{narrowed ? ` · ${visibleCount}` : ''}</span><span style={{ fontSize:9, opacity:0.7 }}>▾</span>
-            </button>
+            </ToggleChip>
           )})()}
           {ownerMenuOpen && (
             <>
@@ -3037,14 +2666,8 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
             </>
           )}
         </div>
-        <button onClick={() => setShowDone(v => !v)}
-          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:showDone?'none':'0.5px solid #c4b5fd', background:showDone?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:showDone?'white':'#7c3aed', height:26 }}>
-          ✓ Done
-        </button>
-        <button onClick={() => setListView(v => !v)} title={listView ? 'Board view' : 'List view'}
-          style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:listView?'none':'0.5px solid #c4b5fd', background:listView?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:listView?'white':'#7c3aed', height:26 }}>
-          ☰ List
-        </button>
+        <ToggleChip active={showDone} onClick={() => setShowDone(v => !v)}>✓ Done</ToggleChip>
+        <ToggleChip active={listView} onClick={() => setListView(v => !v)} title={listView ? 'Board view' : 'List view'}>☰ List</ToggleChip>
         {!listView && <button onClick={toggleAll} title={anyOpen ? 'Collapse all' : 'Expand all'}
           style={{ fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:'0.5px solid #c4b5fd', background:'white', color:'#7c3aed', height:26 }}>
           {anyOpen ? '⊟ Collapse all' : '⊞ Expand all'}
@@ -3067,11 +2690,10 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
           </div>
         )}
         {/* Trash toggle */}
-        <button onClick={() => setShowTrash(s => !s)} title="Trash"
-          style={{ position:'relative', fontSize:11, padding:'4px 10px', borderRadius:10, cursor:'pointer', border:showTrash?'none':'0.5px solid #c4b5fd', background:showTrash?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', color:showTrash?'white':'#7c3aed', height:26 }}>
+        <ToggleChip active={showTrash} onClick={() => setShowTrash(s => !s)} title="Trash" style={{ position:'relative' }}>
           🗑
           {trashTasks.length > 0 && <span style={{ position:'absolute', top:-5, right:-5, background:'#ef4444', color:'white', borderRadius:'50%', fontSize:9, minWidth:15, height:15, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, padding:'0 2px' }}>{trashTasks.length}</span>}
-        </button>
+        </ToggleChip>
         {/* Search */}
         <div style={{ position:'relative', display:'flex', alignItems:'center', ...(isMobile ? { flex:'1 1 100%' } : {}) }}>
           <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
@@ -3091,7 +2713,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
             <span style={{ fontSize:11, color:'#bbb' }}>Canceled tasks — restore to recover, or delete permanently.</span>
           </div>
           {trashTasks.length === 0 ? (
-            <div style={{ fontSize:13, color:'#ccc', textAlign:'center', padding:'1.5rem 0' }}>Trash is empty</div>
+            <div style={{ fontSize:13, color:COLORS.textFaint, textAlign:'center', padding:'1.5rem 0' }}>Trash is empty</div>
           ) : (
             <div style={{ display:'grid', gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(240px,1fr))', gap:8 }}>
               {trashTasks.map(t => (
@@ -3143,7 +2765,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
             )
           })()}
           <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
-            <SectionCard label="Escalations" count={visibleEscalations.length} accent="#7c3aed" bg="#ede9fe" border="#c4b5fd" minId="sec:esc" v={v} onAdd={onAddEscalation ? () => setAddingEsc(true) : undefined}>
+            <SectionCard label="Escalations" count={visibleEscalations.length} accent={COLORS.accent} bg={COLORS.accentSoft} border={COLORS.accentBorder} minId="sec:esc" v={v} onAdd={onAddEscalation ? () => setAddingEsc(true) : undefined}>
               {(() => { const el = orderList('escalations', visibleEscalations); return el.map(e => <EscRow key={e.id} e={e} v={v} escList={el} />) })()}
               {visibleEscalations.length === 0 && !addingEsc && <div style={{ fontSize:12, color:'#c9b8e8', textAlign:'center', padding:'8px 0' }}>{q ? 'No escalations match your search' : 'No escalations'}</div>}
               {addingEsc && (
@@ -3161,7 +2783,7 @@ function TaskLinearMockup({ tasks, entityMap = {}, domains = [], domainMeta = {}
             </SectionCard>
           </div>
           <div style={{ flex: isMobile ? '1 1 auto' : 1, minWidth:0, width:isMobile?'100%':undefined }}>
-            <SectionCard label="Supplier Quality Issues" count={visibleSqi.length} accent="#f97316" bg="#FFF0E8" border="#F97316" minId="sec:sqi" v={v} onAdd={onAddSupplierQualityIssue ? () => setAddingSqi(true) : undefined}>
+            <SectionCard label="Supplier Quality Issues" count={visibleSqi.length} accent={flagBorder('orange')} bg={flagBg('orange')} border={flagBorder('orange')} minId="sec:sqi" v={v} onAdd={onAddSupplierQualityIssue ? () => setAddingSqi(true) : undefined}>
               {(() => { const sl = orderList('sqi', visibleSqi); return sl.map(s => <SqiRow key={s.id} s={s} v={v} sqiList={sl} />) })()}
               {visibleSqi.length === 0 && !addingSqi && <div style={{ fontSize:12, color:'#f0b58a', textAlign:'center', padding:'8px 0' }}>{q ? 'No supplier quality issues match your search' : 'No supplier quality issues'}</div>}
               {addingSqi && (
@@ -3289,7 +2911,12 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   const dragNoteRef = useRef(null)
   const dragGroupRef = useRef(null)               // group/subgroup being dragged (sibling reorder)
   const [reorderTarget, setReorderTarget] = useState(null) // { kind:'note'|'group', id, pos }
-  const isMobileNotes = window.innerWidth < 640
+  const [isMobileNotes, setIsMobileNotes] = useState(window.innerWidth < 640)
+  useEffect(() => {
+    const handler = () => setIsMobileNotes(window.innerWidth < 640)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
   // Resizable note-list sidebar (desktop) — width persists per device
   const [sidebarW, setSidebarW] = useState(() => { const v = parseInt(localStorage.getItem('taskr-notes-sidebar-w'), 10); return v >= 160 && v <= 520 ? v : 220 })
   const startSidebarDrag = e => {
@@ -3784,7 +3411,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
         <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
           <div style={{ fontSize:36 }}>📝</div>
           <div style={{ fontSize:13, color:'#bbb' }}>Select a note or create a new one</div>
-          <button onClick={handleNew} style={{ ...BTN_PRIMARY, padding:'10px 20px' }}>+ New Note</button>
+          <button onClick={() => handleNew()} style={{ ...BTN_PRIMARY, padding:'10px 20px' }}>+ New Note</button>
         </div>
       ) : (
         <>
@@ -3882,9 +3509,11 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
               </div>
             )
           })()}
-          <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
-            onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }}
-            members={members} />
+          <Suspense fallback={<div style={{ padding:40, textAlign:'center', color:'#aaa', fontSize:13 }}>Loading editor…</div>}>
+            <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
+              onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }}
+              members={members} />
+          </Suspense>
         </>
       )}
     </div>
@@ -3940,7 +3569,7 @@ function NoteItem({ note, onDelete, onSave }) {
             <button onClick={() => { onSave(note.id, val.trim()); setEditing(false) }} disabled={!val.trim()} style={{ fontSize:11, background: val.trim() ? '#111' : '#ccc', color:'white', border:'none', borderRadius:6, padding:'2px 8px', cursor: val.trim() ? 'pointer' : 'not-allowed' }}>Save</button>
             <button onClick={() => { setVal(note.text); setEditing(false) }} style={{ ...BTN_GHOST, fontSize:11, borderRadius:6, padding:'2px 8px' }}>Cancel</button>
           </> : <button onClick={() => setEditing(true)} style={{ fontSize:11, background:'none', border:'0.5px solid #e0e0e0', borderRadius:6, padding:'2px 7px', cursor:'pointer', color:'#888' }}>Edit</button>}
-          <button onClick={() => onDelete(note.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+          <RemoveButton onClick={() => onDelete(note.id)} size={12} />
         </div>
       </div>
     </div>
@@ -4071,7 +3700,8 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove, compact =
     }
   }
   const handleRemove = async att => {
-    await supabase.storage.from('taskr-attachments').remove([att.path])
+    const { error } = await supabase.storage.from('taskr-attachments').remove([att.path])
+    if (error) { console.error('[TASKr] attachment remove error', error); alert(`Could not remove attachment: ${error.message}`); return }
     onRemove(att.id)
   }
   return (
@@ -4083,7 +3713,7 @@ function AttachmentSection({ attachments, entityPath, onAdd, onRemove, compact =
           <span style={{ fontSize:11, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{att.name}</span>
           {att.size && <span style={{ fontSize:10, color:'#bbb', flexShrink:0 }}>{(att.size/1024).toFixed(0)}KB</span>}
           <button onClick={e => { e.stopPropagation(); openAttachment(att) }} style={{ fontSize:10, color:'#378ADD', flexShrink:0, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0 }}>Open</button>
-          <button onClick={() => handleRemove(att)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+          <RemoveButton onClick={() => handleRemove(att)} size={12} />
         </div>
       ))}
       <input ref={fileRef} type="file" onChange={handleFile} style={{ display:'none' }} />
@@ -4108,9 +3738,7 @@ function SubtaskRow({ st, onChange, onDelete }) {
           color:faded?'#aaa':'#444', textDecoration:faded?'line-through':'none', opacity:st.na?0.6:1 }} />
       <button onClick={() => upd('na', !st.na)}
         style={{ background:'none', border:'none', cursor:'pointer', color:st.na?'#888':'#ccc', fontSize:10, padding:'0 1px', fontWeight:500, lineHeight:1, flexShrink:0 }}>N/A</button>
-      <button onClick={onDelete}
-        style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:12, lineHeight:1, flexShrink:0 }}
-        onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+      <RemoveButton onClick={onDelete} size={12} />
     </div>
   )
 }
@@ -5039,7 +4667,8 @@ function CalendarTab({ events, onSave, onDelete, members = MEMBERS, calendars = 
   }
 
   const handleDelete = async id => {
-    await supabase.from('calendar_events').delete().eq('id', id)
+    const { error } = await supabase.from('calendar_events').delete().eq('id', id)
+    if (error) { alert(`Delete failed: ${error.message}`); return }
     setEventForm(null); setIsEdit(false); onSave()
   }
 
@@ -5184,7 +4813,7 @@ function LoginScreen() {
   return (
     <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4ff', padding:16 }}>
       <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:16, padding:32, boxShadow:'0 4px 24px rgba(124,58,237,0.10)' }}>
-        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:COLORS.logoGradient, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         {mode === 'sent' ? (
           <>
             <p style={{ fontSize:14, color:'#555', marginTop:8 }}>Check your email — a password reset link is on its way to <strong>{email}</strong>.</p>
@@ -5195,7 +4824,7 @@ function LoginScreen() {
             <p style={{ fontSize:13, color:'#777', margin:'6px 0 20px' }}>Enter your email and we'll send a reset link.</p>
             <form onSubmit={handleForgot} style={{ display:'flex', flexDirection:'column', gap:12 }}>
               <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required style={inputStyle} />
-              {error && <div style={{ fontSize:12, color:'#dc2626' }}>{error}</div>}
+              {error && <div style={{ fontSize:12, color:COLORS.danger.text }}>{error}</div>}
               <button type="submit" disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.7 : 1 }}>{loading ? 'Sending…' : 'Send reset link'}</button>
               <button type="button" onClick={() => { setMode('login'); setError('') }} style={{ fontSize:13, background:'none', border:'none', color:'#7c3aed', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit' }}>Back to sign in</button>
             </form>
@@ -5206,7 +4835,7 @@ function LoginScreen() {
             <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:12 }}>
               <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required style={inputStyle} />
               <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} />
-              {error && <div style={{ fontSize:12, color:'#dc2626' }}>{error}</div>}
+              {error && <div style={{ fontSize:12, color:COLORS.danger.text }}>{error}</div>}
               <button type="submit" disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.7 : 1 }}>{loading ? 'Signing in…' : 'Sign in'}</button>
               <button type="button" onClick={() => { setMode('forgot'); setError('') }} style={{ fontSize:12, background:'none', border:'none', color:'#a78bfa', cursor:'pointer', fontFamily:'inherit' }}>Forgot password?</button>
             </form>
@@ -5243,7 +4872,7 @@ function SetNewPasswordScreen({ onDone }) {
   return (
     <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f4ff', padding:16 }}>
       <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:16, padding:32, boxShadow:'0 4px 24px rgba(124,58,237,0.10)' }}>
-        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:'linear-gradient(135deg,#4f46e5,#a855f7)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <h1 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, background:COLORS.logoGradient, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         <p style={{ fontSize:13, color:'#777', margin:'6px 0 20px' }}>Set a new password for your account.</p>
         {done ? (
           <p style={{ fontSize:14, color:'#3a7d44', fontWeight:500 }}>Password updated! Signing you in…</p>
@@ -5251,7 +4880,7 @@ function SetNewPasswordScreen({ onDone }) {
           <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:12 }}>
             <input type="password" placeholder="New password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} />
             <input type="password" placeholder="Confirm new password" value={confirm} onChange={e => setConfirm(e.target.value)} required style={inputStyle} />
-            {error && <div style={{ fontSize:12, color:'#dc2626' }}>{error}</div>}
+            {error && <div style={{ fontSize:12, color:COLORS.danger.text }}>{error}</div>}
             <button type="submit" disabled={loading} style={{ ...btnStyle, opacity: loading ? 0.7 : 1 }}>{loading ? 'Saving…' : 'Set new password'}</button>
           </form>
         )}
@@ -5295,7 +4924,7 @@ function ChangePassword({ onClose }) {
           <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:10 }}>
             <input type="password" placeholder="New password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} />
             <input type="password" placeholder="Confirm new password" value={confirm} onChange={e => setConfirm(e.target.value)} required style={inputStyle} />
-            {error && <div style={{ fontSize:12, color:'#dc2626' }}>{error}</div>}
+            {error && <div style={{ fontSize:12, color:COLORS.danger.text }}>{error}</div>}
             <button type="submit" disabled={loading} style={{ ...BTN_PRIMARY, fontWeight:600, padding:'9px 0', marginTop:4, opacity: loading ? 0.7 : 1 }}>{loading ? 'Saving…' : 'Update password'}</button>
           </form>
         )}
@@ -5797,7 +5426,7 @@ function QualificationForm({ qual, isEdit, templates, domains, members, tasks, o
                 <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
                   <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
                   <span style={{ flex:1 }}>{n.text}</span>
-                  <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+                  <RemoveButton onClick={() => removeNote(n.id)} />
                 </div>
               ))}
               <div style={{ display:'flex', gap:8, marginTop:4 }}>
@@ -6481,7 +6110,7 @@ function AuditForm({ audit, isEdit, members, notes = [], onOpenNote, onSave, onD
                 <div key={n.id} style={{ fontSize:11, color:'#555', marginBottom:6, lineHeight:1.5, display:'flex', gap:8, alignItems:'flex-start' }}>
                   <span style={{ color:'#bbb', fontSize:10, marginTop:1, flexShrink:0 }}>{fmtTs(n.ts)}</span>
                   <span style={{ flex:1 }}>{n.text}</span>
-                  <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ddd', fontSize:11, padding:0, flexShrink:0 }} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#ddd'}>✕</button>
+                  <RemoveButton onClick={() => removeNote(n.id)} />
                 </div>
               ))}
               <div style={{ display:'flex', gap:8, marginTop:4 }}>
@@ -6592,7 +6221,7 @@ function AuditsTab({ audits, notes = [], members, isMobile, onAdd, onSave, onDel
 // Searches by title/name across the four record types that don't already have a way to be found
 // from outside their own tab. Clicking a result switches tabs and opens the record's existing
 // detail view — it doesn't duplicate any of those views itself.
-function GlobalSearch({ tasks, qualifications, audits, notes, onOpenTask, onOpenQualification, onOpenAudit, onOpenNote, isMobile }) {
+function GlobalSearch({ tasks, qualifications, audits, notes, escalations, supplierQualityIssues, projects, onOpenTask, onOpenQualification, onOpenAudit, onOpenNote, onOpenEscalation, onOpenSupplierQualityIssue, onOpenProject, isMobile }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const boxRef = useRef(null)
@@ -6605,19 +6234,25 @@ function GlobalSearch({ tasks, qualifications, audits, notes, onOpenTask, onOpen
 
   const q = query.trim().toLowerCase()
   const MAX = 5
-  const results = !q ? { tasks: [], qualifications: [], audits: [], notes: [] } : {
+  const results = !q ? { tasks: [], qualifications: [], audits: [], notes: [], escalations: [], sqi: [], projects: [] } : {
     tasks: tasks.filter(t => t.title?.toLowerCase().includes(q)).slice(0, MAX),
     qualifications: qualifications.filter(ql => ql.name?.toLowerCase().includes(q)).slice(0, MAX),
     audits: audits.filter(a => (a.name || '').toLowerCase().includes(q)).slice(0, MAX),
     notes: notes.filter(n => n.title?.toLowerCase().includes(q)).slice(0, MAX),
+    escalations: (escalations||[]).filter(e => e.title?.toLowerCase().includes(q)).slice(0, MAX),
+    sqi: (supplierQualityIssues||[]).filter(s => s.title?.toLowerCase().includes(q)).slice(0, MAX),
+    projects: (projects||[]).filter(p => p.title?.toLowerCase().includes(q)).slice(0, MAX),
   }
-  const total = results.tasks.length + results.qualifications.length + results.audits.length + results.notes.length
+  const total = results.tasks.length + results.qualifications.length + results.audits.length + results.notes.length + results.escalations.length + results.sqi.length + results.projects.length
 
   const select = (type, item) => {
     if (type === 'task') onOpenTask(item)
     else if (type === 'qualification') onOpenQualification(item.id)
     else if (type === 'audit') onOpenAudit(item.id)
     else if (type === 'note') onOpenNote(item.id)
+    else if (type === 'escalation') onOpenEscalation(item)
+    else if (type === 'sqi') onOpenSupplierQualityIssue(item)
+    else if (type === 'project') onOpenProject(item)
     setQuery(''); setOpen(false)
   }
 
@@ -6626,6 +6261,9 @@ function GlobalSearch({ tasks, qualifications, audits, notes, onOpenTask, onOpen
     ['qualifications', 'Qualifications', 'qualification', ql => ql.name],
     ['audits', 'Audits', 'audit', a => a.name],
     ['notes', 'Notes', 'note', n => n.title || 'Untitled'],
+    ['escalations', 'Escalations', 'escalation', e => e.title],
+    ['sqi', 'Supplier Quality Issues', 'sqi', s => s.title],
+    ['projects', 'Projects & Bundles', 'project', p => p.title],
   ]
 
   return (
@@ -6827,6 +6465,11 @@ export default function App() {
       .on('postgres_changes', { event:'*', schema:'public', table:'escalations' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'supplier_quality_issues' }, () => loadData(true))
       .on('postgres_changes', { event:'*', schema:'public', table:'follow_ups' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'domains' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'team_members' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'calendars' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'qual_templates' }, () => loadData(true))
+      .on('postgres_changes', { event:'*', schema:'public', table:'qualification_templates' }, () => loadData(true))
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [loadData])
@@ -6844,7 +6487,8 @@ export default function App() {
     })
     let all = existing || []
     if (inserts.length > 0) {
-      const { data: created } = await supabase.from('calendars').insert(inserts).select()
+      const { data: created, error: insertError } = await supabase.from('calendars').insert(inserts).select()
+      if (insertError) console.error('[TASKr] initCalendars insert error', insertError) // holiday-seeding below tolerates missing calendars, but this should still be visible
       all = [...all, ...(created || [])]
       await loadData(true)
     }
@@ -6914,12 +6558,14 @@ export default function App() {
   const saveTaskSilent = async (data, editId = null) => {
     const prior = editId ? tasks.find(t => t.id === editId) : null
     const payload = buildTaskPayload(data, prior)
+    let error
     if (editId) {
-      await supabase.from('tasks').update(payload).eq('id', editId)
+      ({ error } = await supabase.from('tasks').update(payload).eq('id', editId))
     } else {
       const maxOrder = tasks.length ? Math.max(...tasks.map(t => t.sort_order||0)) : 0
-      await supabase.from('tasks').insert({ ...payload, sort_order: maxOrder+1 })
+      ;({ error } = await supabase.from('tasks').insert({ ...payload, sort_order: maxOrder+1 }))
     }
+    if (error) { console.error('[TASKr] saveTaskSilent error', error); return }
     await loadData(true)
   }
 
@@ -6930,7 +6576,8 @@ export default function App() {
   }
 
   const deleteTaskSilent = async id => {
-    await supabase.from('tasks').delete().eq('id', id)
+    const { error } = await supabase.from('tasks').delete().eq('id', id)
+    if (error) { console.error('[TASKr] deleteTaskSilent error', error); return }
     await loadData(true)
   }
 
@@ -7049,6 +6696,17 @@ export default function App() {
       notes: data.notes || [], attachments: data.attachments || [],
     }
   }
+  // Lightweight change history for compliance-relevant records (see supabase/activity_log.sql).
+  // Best-effort: a logging failure shouldn't block the action it's describing, so it only warns.
+  const logActivity = async (entityType, entityId, action, extra = {}) => {
+    const { error } = await supabase.from('activity_log').insert({
+      entity_type: entityType, entity_id: String(entityId), action,
+      actor_email: session?.user?.email || null, actor_name: currentUserName || null,
+      ...extra,
+    })
+    if (error) console.error('[TASKr] logActivity error', error)
+  }
+
   const addAudit = async data => {
     const maxOrder = audits.length ? Math.max(...audits.map(a => a.sort_order||0)) : 0
     const { error } = await supabase.from('audits').insert({ ...buildAuditPayload(data), sort_order: maxOrder+1 })
@@ -7056,13 +6714,27 @@ export default function App() {
     await loadData(true)
   }
   const saveAudit = async (data, id) => {
+    const prior = audits.find(a => a.id === id)
     const { error } = await supabase.from('audits').update({ ...buildAuditPayload(data), updated_at: new Date().toISOString() }).eq('id', id)
     if (error) { console.error('[TASKr] saveAudit error', error); alert(`Could not save audit: ${error.message}`); return }
+    if (prior && prior.status !== data.status) logActivity('audit', id, 'status_changed', { field:'status', old_value:prior.status, new_value:data.status })
     await loadData(true)
   }
   const deleteAudit = async id => {
-    const { error } = await supabase.from('audits').delete().eq('id', id)
+    const { error } = await supabase.from('audits').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) { console.error('[TASKr] deleteAudit error', error); alert(`Could not delete audit: ${error.message}`); return }
+    logActivity('audit', id, 'deleted')
+    await loadData(true)
+  }
+  const restoreAudit = async id => {
+    const { error } = await supabase.from('audits').update({ deleted_at: null }).eq('id', id)
+    if (error) { console.error('[TASKr] restoreAudit error', error); alert(`Could not restore audit: ${error.message}`); return }
+    logActivity('audit', id, 'restored')
+    await loadData(true)
+  }
+  const permanentlyDeleteAudit = async id => {
+    const { error } = await supabase.from('audits').delete().eq('id', id)
+    if (error) { console.error('[TASKr] permanentlyDeleteAudit error', error); alert(`Could not delete audit: ${error.message}`); return }
     await loadData(true)
   }
 
@@ -7129,9 +6801,21 @@ export default function App() {
   }
 
   const deleteEscalation = async id => {
-    const { error } = await supabase.from('escalations').delete().eq('id', id)
+    const { error } = await supabase.from('escalations').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) { console.error('[TASKr] deleteEscalation error', error); alert(`Could not delete escalation: ${error.message}`); return }
     if (activeEscalation === id) setActiveEscalation(null)
+    logActivity('escalation', id, 'deleted')
+    await loadData(true)
+  }
+  const restoreEscalation = async id => {
+    const { error } = await supabase.from('escalations').update({ deleted_at: null }).eq('id', id)
+    if (error) { console.error('[TASKr] restoreEscalation error', error); alert(`Could not restore escalation: ${error.message}`); return }
+    logActivity('escalation', id, 'restored')
+    await loadData(true)
+  }
+  const permanentlyDeleteEscalation = async id => {
+    const { error } = await supabase.from('escalations').delete().eq('id', id)
+    if (error) { console.error('[TASKr] permanentlyDeleteEscalation error', error); alert(`Could not delete escalation: ${error.message}`); return }
     await loadData(true)
   }
 
@@ -7151,8 +6835,20 @@ export default function App() {
   }
 
   const deleteSupplierQualityIssue = async id => {
-    const { error } = await supabase.from('supplier_quality_issues').delete().eq('id', id)
+    const { error } = await supabase.from('supplier_quality_issues').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) { console.error('[TASKr] deleteSupplierQualityIssue error', error); alert(`Could not delete supplier quality issue: ${error.message}`); return }
+    logActivity('sqi', id, 'deleted')
+    await loadData(true)
+  }
+  const restoreSupplierQualityIssue = async id => {
+    const { error } = await supabase.from('supplier_quality_issues').update({ deleted_at: null }).eq('id', id)
+    if (error) { console.error('[TASKr] restoreSupplierQualityIssue error', error); alert(`Could not restore supplier quality issue: ${error.message}`); return }
+    logActivity('sqi', id, 'restored')
+    await loadData(true)
+  }
+  const permanentlyDeleteSupplierQualityIssue = async id => {
+    const { error } = await supabase.from('supplier_quality_issues').delete().eq('id', id)
+    if (error) { console.error('[TASKr] permanentlyDeleteSupplierQualityIssue error', error); alert(`Could not delete supplier quality issue: ${error.message}`); return }
     await loadData(true)
   }
 
@@ -7177,8 +6873,20 @@ export default function App() {
   }
 
   const deleteNote = async id => {
-    const { error } = await supabase.from('notes').delete().eq('id', id)
+    const { error } = await supabase.from('notes').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (error) { console.error('[TASKr] deleteNote error', error); return }
+    logActivity('note', id, 'deleted')
+    await loadData(true)
+  }
+  const restoreNote = async id => {
+    const { error } = await supabase.from('notes').update({ deleted_at: null }).eq('id', id)
+    if (error) { console.error('[TASKr] restoreNote error', error); return }
+    logActivity('note', id, 'restored')
+    await loadData(true)
+  }
+  const permanentlyDeleteNote = async id => {
+    const { error } = await supabase.from('notes').delete().eq('id', id)
+    if (error) { console.error('[TASKr] permanentlyDeleteNote error', error); return }
     await loadData(true)
   }
 
@@ -7280,12 +6988,16 @@ export default function App() {
   // Persist a reordered set of follow-up items (per-person ordering; sort_order is index-based)
   const reorderFollowUps = async updates => {
     setFollowUps(prev => prev.map(f => { const u = updates.find(x => x.id === f.id); return u ? { ...f, sort_order: u.sort_order } : f })) // optimistic
-    await Promise.all(updates.map(u => supabase.from('follow_ups').update({ sort_order: u.sort_order }).eq('id', u.id)))
+    const results = await Promise.all(updates.map(u => supabase.from('follow_ups').update({ sort_order: u.sort_order }).eq('id', u.id)))
+    const err = results.find(r => r.error)
+    if (err) { console.error('[TASKr] reorderFollowUps error', err.error); loadData(true) }
   }
   // Persist reordered task sort_orders (used by follow-up assigned-task up/down)
   const reorderTaskOrders = async updates => {
     setTasks(prev => prev.map(t => { const u = updates.find(x => x.id === t.id); return u ? { ...t, sort_order: u.sort_order } : t })) // optimistic
-    await Promise.all(updates.map(u => supabase.from('tasks').update({ sort_order: u.sort_order }).eq('id', u.id)))
+    const results = await Promise.all(updates.map(u => supabase.from('tasks').update({ sort_order: u.sort_order }).eq('id', u.id)))
+    const err = results.find(r => r.error)
+    if (err) { console.error('[TASKr] reorderTaskOrders error', err.error); loadData(true) }
   }
   const toggleFollowUp = async (id, done) => {
     const { error } = await supabase.from('follow_ups').update({ done }).eq('id', id)
@@ -7305,12 +7017,14 @@ export default function App() {
 
   const restoreTask = async (task) => {
     const subtasks = (task.subtasks||[]).map(s => ({ ...s, done: false }))
-    await supabase.from('tasks').update({ substatus: 'not_started', subtasks, updated_at: new Date().toISOString() }).eq('id', task.id)
+    const { error } = await supabase.from('tasks').update({ substatus: 'not_started', subtasks, updated_at: new Date().toISOString() }).eq('id', task.id)
+    if (error) { console.error('[TASKr] restoreTask error', error); return }
     await loadData(true)
   }
 
   const moveTask = async (id, newSubstatus) => {
-    await supabase.from('tasks').update({ substatus: newSubstatus, updated_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('tasks').update({ substatus: newSubstatus, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) { console.error('[TASKr] moveTask error', error); return }
     await loadData(true)
   }
 
@@ -7319,7 +7033,9 @@ export default function App() {
     const substatus = complete ? 'complete' : (prior?.substatus && prior.substatus !== 'complete' ? prior.substatus : 'not_started')
     const updated_at = new Date().toISOString()
     setTasks(prev => prev.map(t => t.id === id ? { ...t, substatus, updated_at } : t)) // optimistic — no full reload
-    await supabase.from('tasks').update({ substatus, updated_at }).eq('id', id)
+    const { error } = await supabase.from('tasks').update({ substatus, updated_at }).eq('id', id)
+    // A failed write leaves the optimistic state wrong until something else happens to trigger a reload — resync now instead
+    if (error) { console.error('[TASKr] quickComplete error', error); await loadData(true) }
   }
 
   // Apply a field patch to many tasks at once (used by the Linear page drag-to-section)
@@ -7332,14 +7048,17 @@ export default function App() {
       return patch
     }
     setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, ...effPatch(t), updated_at } : t)) // optimistic
-    await Promise.all(ids.map(id => { const t = tasks.find(x => x.id === id); return supabase.from('tasks').update({ ...effPatch(t), updated_at }).eq('id', id) }))
+    const results = await Promise.all(ids.map(id => { const t = tasks.find(x => x.id === id); return supabase.from('tasks').update({ ...effPatch(t), updated_at }).eq('id', id) }))
+    const error = results.find(r => r.error)?.error
+    if (error) { console.error('[TASKr] updateTasksFields error', error); await loadData(true) }
   }
 
 
   const toggleToday = async (id, todayVal) => {
     const updated_at = new Date().toISOString()
     setTasks(prev => prev.map(t => t.id === id ? { ...t, today: todayVal, updated_at } : t)) // optimistic — no full reload
-    await supabase.from('tasks').update({ today: todayVal, updated_at }).eq('id', id)
+    const { error } = await supabase.from('tasks').update({ today: todayVal, updated_at }).eq('id', id)
+    if (error) { console.error('[TASKr] toggleToday error', error); await loadData(true) }
   }
 
   const toggleSubtask = async (taskId, subtaskId, done) => {
@@ -7348,7 +7067,8 @@ export default function App() {
     const subtasks = (task.subtasks||[]).map(s => s.id===subtaskId?{...s,done}:s)
     const updated_at = new Date().toISOString()
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, subtasks, updated_at } : t)) // optimistic — no full reload
-    await supabase.from('tasks').update({ subtasks, updated_at }).eq('id', taskId)
+    const { error } = await supabase.from('tasks').update({ subtasks, updated_at }).eq('id', taskId)
+    if (error) { console.error('[TASKr] toggleSubtask error', error); await loadData(true) }
   }
 
   // Patch a single subtask's fields (duration, na, depends_on, done, completed_date) in the task's subtasks jsonb
@@ -7358,7 +7078,8 @@ export default function App() {
     const subtasks = (task.subtasks||[]).map(s => s.id===subtaskId ? { ...s, ...patch } : s)
     const updated_at = new Date().toISOString()
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, subtasks, updated_at } : t)) // optimistic
-    await supabase.from('tasks').update({ subtasks, updated_at }).eq('id', taskId)
+    const { error } = await supabase.from('tasks').update({ subtasks, updated_at }).eq('id', taskId)
+    if (error) { console.error('[TASKr] updateSubtask error', error); await loadData(true) }
   }
 
   const reorderTask = async (dragId, targetId, position, col) => {
@@ -7372,7 +7093,9 @@ export default function App() {
     colTasks.splice(Math.max(0, adjustedInsert), 0, ...moved)
     const newOrders = Object.fromEntries(colTasks.map((t, i) => [t.id, i+1]))
     setTasks(prev => prev.map(t => newOrders[t.id] !== undefined ? { ...t, sort_order: newOrders[t.id], substatus: col } : t))
-    await Promise.all(colTasks.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, substatus: col, updated_at: new Date().toISOString() }).eq('id', t.id)))
+    const results = await Promise.all(colTasks.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, substatus: col, updated_at: new Date().toISOString() }).eq('id', t.id)))
+    const err = results.find(r => r.error)
+    if (err) { console.error('[TASKr] reorderTask error', err.error); loadData(true) }
   }
 
   const reorderTodayTask = async (dragId, targetId, position) => {
@@ -7386,7 +7109,9 @@ export default function App() {
     list.splice(Math.max(0, adjustedInsert), 0, ...moved)
     const newOrders = Object.fromEntries(list.map((t, i) => [t.id, i+1]))
     setTasks(prev => prev.map(t => newOrders[t.id] !== undefined ? { ...t, sort_order: newOrders[t.id] } : t))
-    await Promise.all(list.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, updated_at: new Date().toISOString() }).eq('id', t.id)))
+    const results = await Promise.all(list.map((t, i) => supabase.from('tasks').update({ sort_order: i+1, updated_at: new Date().toISOString() }).eq('id', t.id)))
+    const err = results.find(r => r.error)
+    if (err) { console.error('[TASKr] reorderTodayTask error', err.error); loadData(true) }
   }
 
   const reorderProject = async (dragId, targetId, position) => {
@@ -7399,7 +7124,9 @@ export default function App() {
     const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
     list.splice(Math.max(0, adjustedInsert), 0, ...moved)
     setProjects(list.map((p, i) => ({ ...p, sort_order: i+1 })))
-    await Promise.all(list.map((p, i) => supabase.from('projects').update({ sort_order: i+1 }).eq('id', p.id)))
+    const results = await Promise.all(list.map((p, i) => supabase.from('projects').update({ sort_order: i+1 }).eq('id', p.id)))
+    const err = results.find(r => r.error)
+    if (err) { console.error('[TASKr] reorderProject error', err.error); loadData(true) }
   }
 
   const reorderEscalation = async (dragId, targetId, position) => {
@@ -7412,7 +7139,9 @@ export default function App() {
     const adjustedInsert = dragIdx < targetIdx ? insertAt - 1 : insertAt
     list.splice(Math.max(0, adjustedInsert), 0, ...moved)
     setEscalations(list.map((e, i) => ({ ...e, sort_order: i+1 })))
-    await Promise.all(list.map((e, i) => supabase.from('escalations').update({ sort_order: i+1 }).eq('id', e.id)))
+    const results = await Promise.all(list.map((e, i) => supabase.from('escalations').update({ sort_order: i+1 }).eq('id', e.id)))
+    const err = results.find(r => r.error)
+    if (err) { console.error('[TASKr] reorderEscalation error', err.error); loadData(true) }
   }
 
   const drop = async (id, col) => {
@@ -7489,8 +7218,12 @@ export default function App() {
   ])
 
   const searchQ = taskSearch.trim().toLowerCase()
-  const ownerEscalations = filterOwner === 'all' ? escalations : escalations.filter(e => (e.owners||[]).includes(filterOwner))
-  const ownerSupplierQualityIssues = filterOwner === 'all' ? supplierQualityIssues : supplierQualityIssues.filter(s => (s.owners||[]).includes(filterOwner))
+  const activeEscalations = escalations.filter(e => !e.deleted_at)
+  const activeSupplierQualityIssues = supplierQualityIssues.filter(s => !s.deleted_at)
+  const activeAudits = audits.filter(a => !a.deleted_at)
+  const activeNotes = notes.filter(n => !n.deleted_at)
+  const ownerEscalations = filterOwner === 'all' ? activeEscalations : activeEscalations.filter(e => (e.owners||[]).includes(filterOwner))
+  const ownerSupplierQualityIssues = filterOwner === 'all' ? activeSupplierQualityIssues : activeSupplierQualityIssues.filter(s => (s.owners||[]).includes(filterOwner))
   const ownerProjects    = filterOwner === 'all' ? projects    : projects.filter(p => (p.owners||[]).includes(filterOwner))
   const visibleEscalations = ownerEscalations.filter(e =>
     !searchQ || e.title?.toLowerCase().includes(searchQ) || filteredTasks.some(t => t.escalation_id === e.id)
@@ -7521,13 +7254,17 @@ export default function App() {
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, marginBottom:isMobile?'0.9rem':'1.25rem', paddingBottom:isMobile?'0.75rem':'1rem' }}>
-        <h1 style={{ fontSize:isMobile?18:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', whiteSpace:'nowrap', background:'linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#a855f7 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
+        <h1 style={{ fontSize:isMobile?18:22, fontWeight:700, margin:0, letterSpacing:'-0.5px', whiteSpace:'nowrap', background:COLORS.logoGradient, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>💪🏻 TASKr</h1>
         <div style={{ display:'flex', alignItems:'center', gap:isMobile?6:10, minWidth:0 }}>
-          <GlobalSearch tasks={tasks} qualifications={qualifications} audits={audits} notes={notes} isMobile={isMobile}
+          <GlobalSearch tasks={tasks} qualifications={qualifications} audits={activeAudits} notes={activeNotes}
+            escalations={activeEscalations} supplierQualityIssues={activeSupplierQualityIssues} projects={projects} isMobile={isMobile}
             onOpenTask={t => { setForm(t); setIsEdit(true) }}
             onOpenQualification={id => { switchTab('qualifications'); setPendingOpen({ type:'qualification', id }) }}
             onOpenAudit={id => { switchTab('audits'); setPendingOpen({ type:'audit', id }) }}
-            onOpenNote={id => { switchTab('notes'); setPendingOpen({ type:'note', id }) }} />
+            onOpenNote={id => { switchTab('notes'); setPendingOpen({ type:'note', id }) }}
+            onOpenEscalation={e => setActivePopup({ entity:e, type:'escalation' })}
+            onOpenSupplierQualityIssue={s => setActivePopup({ entity:s, type:'sqi' })}
+            onOpenProject={p => setActivePopup({ entity:p, type:'project' })} />
           <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:isMobile?1:4 }}>
             <span style={{ fontSize:isMobile?11:12, color:'#7c3aed', whiteSpace:'nowrap' }}>{new Date().toLocaleDateString('en-US', isMobile ? { weekday:'short', month:'short', day:'numeric' } : { weekday:'long', month:'short', day:'numeric', year:'numeric' })}</span>
             <span style={{ fontSize:10, color:'#c4b5fd', whiteSpace:'nowrap' }}>Live · Supabase</span>
@@ -7559,7 +7296,7 @@ export default function App() {
       </div>
 
       {/* Menu + World Clock — unified gradient strip */}
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'stretch', background:'linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a855f7 100%)', borderRadius:14, marginBottom:'1.25rem', overflow:'hidden' }}>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'stretch', background:COLORS.logoGradient, borderRadius:14, marginBottom:'1.25rem', overflow:'hidden' }}>
         <WorldClock style={{ width:'100%', background:'rgba(0,0,0,0.12)' }} />
         <div style={{ height:'1px', margin:'0 8px', background:'rgba(255,255,255,0.2)', flexShrink:0 }} />
         <div style={{ display:'flex', gap:2, padding:5, width:'100%' }}>
@@ -7624,11 +7361,10 @@ export default function App() {
             </div>
             {/* Owner filter */}
             <div style={{ position:'relative' }}>
-              <button onClick={() => setOwnerFilterOpen(o => !o)} title="Filter by owner"
-                style={{ fontSize:11, background: filterOwner!=='all' ? 'linear-gradient(135deg,#4f46e5,#7c3aed)' : 'white', border: filterOwner!=='all' ? 'none' : '0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, color: filterOwner!=='all' ? 'white' : '#7c3aed', transition:'background 0.15s, color 0.15s', display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap' }}>
+              <ToggleChip active={filterOwner !== 'all'} onClick={() => setOwnerFilterOpen(o => !o)} title="Filter by owner">
                 <span>{filterOwner === 'all' ? '👥 All' : filterOwner}</span>
                 <span style={{ fontSize:9, opacity:0.7 }}>▾</span>
-              </button>
+              </ToggleChip>
               {ownerFilterOpen && (
                 <>
                   <div onClick={() => setOwnerFilterOpen(false)} style={{ position:'fixed', inset:0, zIndex:150 }} />
@@ -7647,25 +7383,18 @@ export default function App() {
               )}
             </div>
             {/* List toggle */}
-            <button onClick={() => setListView(v => !v)} title={listView ? 'Board view' : 'List view'}
-              style={{ fontSize:11, background:listView?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', border:listView?'none':'0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, color:listView?'white':'#7c3aed', transition:'background 0.15s, color 0.15s' }}>
-              ☰ List
-            </button>
+            <ToggleChip active={listView} onClick={() => setListView(v => !v)} title={listView ? 'Board view' : 'List view'}>☰ List</ToggleChip>
             {/* Done toggle */}
-            <button onClick={() => setShowCompleted(v => !v)} title={showCompleted ? 'Hide completed' : 'Show completed'}
-              style={{ fontSize:11, background:showCompleted?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', border:showCompleted?'none':'0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, color:showCompleted?'white':'#7c3aed', transition:'background 0.15s, color 0.15s' }}>
-              ✓ Done
-            </button>
+            <ToggleChip active={showCompleted} onClick={() => setShowCompleted(v => !v)} title={showCompleted ? 'Hide completed' : 'Show completed'}>✓ Done</ToggleChip>
             {/* Trash */}
-            <button onClick={() => { setShowTrash(v => { const next=!v; if(next) setTimeout(()=>trashRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),50); return next; }) }} title="Trash"
-              style={{ position:'relative', background:showTrash?'linear-gradient(135deg,#4f46e5,#7c3aed)':'white', border:showTrash?'none':'0.5px solid #c4b5fd', borderRadius:10, padding:'4px 10px', cursor:'pointer', height:28, display:'flex', alignItems:'center', color:showTrash?'white':'#7c3aed' }}>
+            <ToggleChip active={showTrash} onClick={() => { setShowTrash(v => { const next=!v; if(next) setTimeout(()=>trashRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),50); return next; }) }} title="Trash" style={{ position:'relative' }}>
               <span style={{ fontSize:10 }}>🗑️</span>
               {tasks.filter(t=>t.substatus==='canceled').length > 0 && (
                 <span style={{ position:'absolute', top:-4, right:-4, background:'#ef4444', color:'white', borderRadius:'50%', fontSize:9, width:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, lineHeight:1 }}>
                   {tasks.filter(t=>t.substatus==='canceled').length}
                 </span>
               )}
-            </button>
+            </ToggleChip>
             {/* Search — far right */}
             <div style={{ position:'relative', display:'flex', alignItems:'center', ...(isMobile ? { flex:'1 1 100%' } : {}) }}>
               <span style={{ position:'absolute', left:8, fontSize:12, color:'#a78bfa', pointerEvents:'none' }}>🔍</span>
@@ -7808,7 +7537,7 @@ export default function App() {
                   </span>
                   <span style={{ fontSize:10, background:ss.bg, color:ss.tc, border:`0.5px solid ${ss.border}`, borderRadius:20, padding:'2px 7px', whiteSpace:'nowrap', width:'fit-content' }}>{ss.label||'—'}</span>
                   {!isMobile && <span style={{ fontSize:10, color:t.domain?'#0C447C':'#ccc', background:t.domain?'#E6F1FB':'transparent', border:t.domain?'0.5px solid #85B7EB':'none', borderRadius:20, padding:t.domain?'2px 7px':'0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.domain||'—'}</span>}
-                  <span style={{ fontSize:11, color:t.due?(t.due<today()?'#c0392b':'#888'):'#ccc', whiteSpace:'nowrap' }}>{t.due||'—'}</span>
+                  <span style={{ fontSize:11, color:t.due?(toISODate(parseDueDate(t.due))<today()?'#c0392b':'#888'):'#ccc', whiteSpace:'nowrap' }}>{t.due||'—'}</span>
                   {!isMobile && <div style={{ display:'flex', gap:3, flexWrap:'wrap' }}>
                     {owners.length ? owners.map(o => <OwnerPip key={o} name={o} />) : <span style={{ fontSize:11, color:'#ccc' }}>—</span>}
                   </div>}
@@ -7965,7 +7694,7 @@ export default function App() {
                 <span style={{ fontSize:11, fontWeight:500, color:'#888', textTransform:'uppercase', letterSpacing:'0.06em' }}>🗑️ Trash</span>
                 <span style={{ fontSize:11, color:'#bbb' }}>Canceled tasks — click Restore to recover.</span>
               </div>
-              {tasks.filter(t=>t.substatus==='canceled').length === 0 && <div style={{ fontSize:13, color:'#ccc', textAlign:'center', padding:'2rem 0' }}>Trash is empty</div>}
+              {tasks.filter(t=>t.substatus==='canceled').length === 0 && <div style={{ fontSize:13, color:COLORS.textFaint, textAlign:'center', padding:'2rem 0' }}>Trash is empty</div>}
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:10 }}>
                 {tasks.filter(t=>t.substatus==='canceled').map(t => (
                   <div key={t.id} style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, padding:'10px 12px', opacity:0.75 }}>
@@ -8013,8 +7742,8 @@ export default function App() {
       {/* ── Audits ── */}
       {tab === 'audits' && (
         <AuditsTab
-          audits={audits}
-          notes={notes}
+          audits={activeAudits}
+          notes={activeNotes}
           members={memberNames}
           isMobile={isMobile}
           onAdd={addAudit}
@@ -8028,8 +7757,8 @@ export default function App() {
 
       {/* ── Notes ── */}
       {tab === 'notes' && (
-        <NotesSection notes={notes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} onMoveNote={moveNote} onReorderNotes={reorderNotes} onReorderGroups={reorderNoteGroups} onDuplicateNote={duplicateNote} members={memberNames}
-          templates={noteTemplates} audits={audits}
+        <NotesSection notes={activeNotes} onSaveNote={saveNote} onDeleteNote={deleteNote} noteGroups={noteGroups} onSaveGroup={saveNoteGroup} onRenameGroup={renameNoteGroup} onDeleteGroup={deleteNoteGroup} onMoveNote={moveNote} onReorderNotes={reorderNotes} onReorderGroups={reorderNoteGroups} onDuplicateNote={duplicateNote} members={memberNames}
+          templates={noteTemplates} audits={activeAudits}
           onOpenAudit={id => { switchTab('audits'); setPendingOpen({ type:'audit', id }) }}
           openId={pendingOpen?.type === 'note' ? pendingOpen.id : null}
           onOpenIdHandled={() => setPendingOpen(null)} />
@@ -8056,6 +7785,18 @@ export default function App() {
           calendarList={calendarList}
           onUpdate={() => loadData(true)}
           isMobile={isMobile}
+          escalations={escalations}
+          supplierQualityIssues={supplierQualityIssues}
+          audits={audits}
+          notes={notes}
+          onRestoreEscalation={restoreEscalation}
+          onPermanentlyDeleteEscalation={permanentlyDeleteEscalation}
+          onRestoreSqi={restoreSupplierQualityIssue}
+          onPermanentlyDeleteSqi={permanentlyDeleteSupplierQualityIssue}
+          onRestoreAudit={restoreAudit}
+          onPermanentlyDeleteAudit={permanentlyDeleteAudit}
+          onRestoreNote={restoreNote}
+          onPermanentlyDeleteNote={permanentlyDeleteNote}
         />
       )}
 
@@ -8169,11 +7910,13 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
   const saveDraft = async () => {
     if (!draft.name.trim()) return
     const payload = { name: draft.name.trim(), tasks: draft.tasks }
+    let error
     if (editId === 'new') {
-      await supabase.from(table).insert(payload)
+      ;({ error } = await supabase.from(table).insert(payload))
     } else {
-      await supabase.from(table).update(payload).eq('id', editId)
+      ;({ error } = await supabase.from(table).update(payload).eq('id', editId))
     }
+    if (error) { console.error('[TASKr] QualTemplateSettings.saveDraft error', error); alert(`Could not save template: ${error.message}`); return }
     const { data } = await supabase.from(table).select('*').order('created_at', { ascending: true })
     if (data) setTemplates(data)
     onUpdate?.()
@@ -8181,7 +7924,8 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
   }
 
   const deleteTemplate = async id => {
-    await supabase.from(table).delete().eq('id', id)
+    const { error } = await supabase.from(table).delete().eq('id', id)
+    if (error) { console.error('[TASKr] QualTemplateSettings.deleteTemplate error', error); alert(`Could not delete template: ${error.message}`); return }
     setTemplates(ts => ts.filter(t => t.id !== id))
     onUpdate?.()
   }
@@ -8228,7 +7972,7 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
               <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:4 }}>
                 <input value={task.title} onChange={e => updateTaskTitle(ti, e.target.value)}
                   style={{ flex:1, fontSize:13, border:'none', outline:'none', background:'transparent', fontFamily:'inherit', fontWeight:500 }} />
-                <button onClick={() => removeTask(ti)} style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:13 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                <RemoveButton onClick={() => removeTask(ti)} size={13} />
               </div>
               <div style={{ paddingLeft:10 }}>
                 {task.subtasks.map((s, si) => scheduled ? (
@@ -8240,13 +7984,13 @@ function QualTemplateSettings({ onUpdate, table = 'qual_templates', title = 'Bun
                         style={{ width:34, fontSize:10, padding:'1px 3px', border:'0.5px solid #e0e0e0', borderRadius:4, outline:'none' }} />bd
                     </label>
                     <DepPicker deps={s.depends_on || []} options={allTemplateSubs.filter(o => o.id !== s.id)} onChange={dep => updateSub(ti, si, { depends_on: dep })} />
-                    <button onClick={() => removeSubtask(ti, si)} style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:11, flexShrink:0 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                    <RemoveButton onClick={() => removeSubtask(ti, si)} />
                   </div>
                 ) : (
                   <div key={si} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
                     <input value={typeof s === 'string' ? s : (s?.title || '')} onChange={e => setDraft(d => ({ ...d, tasks: d.tasks.map((t,idx) => idx===ti?{...t,subtasks:t.subtasks.map((sub,j)=>j===si?e.target.value:sub)}:t) }))}
                       style={{ flex:1, fontSize:11, border:'none', borderBottom:'0.5px solid #e5e5e5', outline:'none', background:'transparent', fontFamily:'inherit', color:'#555', padding:'1px 0' }} />
-                    <button onClick={() => removeSubtask(ti, si)} style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:11 }} onMouseEnter={e => e.currentTarget.style.color='#E24B4A'} onMouseLeave={e => e.currentTarget.style.color='#ddd'}>✕</button>
+                    <RemoveButton onClick={() => removeSubtask(ti, si)} />
                   </div>
                 ))}
                 <SubtaskAdder onAdd={s => addSubtask(ti, s)} />
@@ -8365,7 +8109,9 @@ function NoteTemplateSettings({ onUpdate, members = [] }) {
 
           <div style={{ fontSize:11, color:'#aaa', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Body</div>
           <div style={{ background:'white', border:'0.5px solid #e5e5e5', borderRadius:8, overflow:'hidden', marginBottom:14 }}>
-            <RichTextEditor key={editId} initialValue={draftBody} onChange={setDraftBody} members={members} />
+            <Suspense fallback={<div style={{ padding:40, textAlign:'center', color:'#aaa', fontSize:13 }}>Loading editor…</div>}>
+              <RichTextEditor key={editId} initialValue={draftBody} onChange={setDraftBody} members={members} />
+            </Suspense>
           </div>
 
           <div style={{ display:'flex', gap:6 }}>
@@ -8804,7 +8550,80 @@ function CalendarSettings({ calendars, onUpdate }) {
 }
 
 // ─── Settings Page ─────────────────────────────────────────────────────────────
-function SettingsPage({ domains, domainRows, onAddDomain, onRenameDomain, onDeleteDomain, onReorderDomain, teamData, calendarList, onUpdate, isMobile = false }) {
+// Deleted escalations/SQI/audits/notes in one place — Restore to recover, or delete permanently.
+// Reads the raw (unfiltered) entity arrays so it's the one place in the app that still sees deleted_at rows.
+function TrashSettings({ escalations, supplierQualityIssues, audits, notes, onRestoreEscalation, onPermanentlyDeleteEscalation, onRestoreSqi, onPermanentlyDeleteSqi, onRestoreAudit, onPermanentlyDeleteAudit, onRestoreNote, onPermanentlyDeleteNote }) {
+  const items = [
+    ...escalations.filter(e => e.deleted_at).map(e => ({ key:`esc-${e.id}`, title: e.title || 'Untitled', type:'Escalation', deleted_at:e.deleted_at, onRestore:() => onRestoreEscalation(e.id), onDelete:() => onPermanentlyDeleteEscalation(e.id) })),
+    ...supplierQualityIssues.filter(s => s.deleted_at).map(s => ({ key:`sqi-${s.id}`, title: s.title || 'Untitled', type:'Supplier Quality Issue', deleted_at:s.deleted_at, onRestore:() => onRestoreSqi(s.id), onDelete:() => onPermanentlyDeleteSqi(s.id) })),
+    ...audits.filter(a => a.deleted_at).map(a => ({ key:`aud-${a.id}`, title: a.name || 'Untitled', type:'Audit', deleted_at:a.deleted_at, onRestore:() => onRestoreAudit(a.id), onDelete:() => onPermanentlyDeleteAudit(a.id) })),
+    ...notes.filter(n => n.deleted_at).map(n => ({ key:`note-${n.id}`, title: n.title || 'Untitled', type:'Note', deleted_at:n.deleted_at, onRestore:() => onRestoreNote(n.id), onDelete:() => onPermanentlyDeleteNote(n.id) })),
+  ].sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at))
+
+  return (
+    <div>
+      <div style={{ fontSize:16, fontWeight:600, marginBottom:4 }}>Trash</div>
+      <div style={{ fontSize:12, color:'#888', marginBottom:16 }}>Deleted escalations, supplier quality issues, audits, and notes. Restore to recover, or delete permanently.</div>
+      {items.length === 0 ? (
+        <div style={{ fontSize:13, color:COLORS.textFaint, textAlign:'center', padding:'2rem 0' }}>Trash is empty</div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {items.map(it => (
+            <div key={it.key} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:8, flexWrap:'wrap' }}>
+              <span style={{ fontSize:10, fontWeight:600, color:'#7c3aed', background:'#ede9fe', padding:'2px 8px', borderRadius:20, flexShrink:0 }}>{it.type}</span>
+              <span style={{ flex:1, minWidth:120, fontSize:13, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it.title}</span>
+              <span style={{ fontSize:11, color:'#aaa', flexShrink:0 }}>{fmtDateTime(it.deleted_at)}</span>
+              <button onClick={it.onRestore} style={{ ...BTN_GHOST, fontSize:11, padding:'4px 10px', flexShrink:0 }}>Restore</button>
+              <ConfirmDeleteButton onConfirm={it.onDelete} style={{ fontSize:11, background:'none', color:COLORS.deleteText, border:`0.5px solid ${COLORS.deleteBorder}`, borderRadius:8, padding:'4px 10px', cursor:'pointer', flexShrink:0 }}>Delete permanently</ConfirmDeleteButton>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Recent changes to compliance-relevant records (deletions/restores/audit status changes) — see
+// supabase/activity_log.sql. Fetched on demand rather than joined into the app-wide load since it's
+// only relevant when this settings section is actually open.
+function ActivityLogSettings() {
+  const [logs, setLogs] = useState(null)
+
+  useEffect(() => {
+    supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(200)
+      .then(({ data, error }) => {
+        if (error) console.error('[TASKr] activity_log load error', error)
+        setLogs(data || [])
+      })
+  }, [])
+
+  const ACTION_LABEL = { deleted: 'deleted', restored: 'restored', status_changed: 'changed status', created: 'created' }
+  const TYPE_LABEL = { escalation: 'Escalation', sqi: 'Supplier Quality Issue', audit: 'Audit', note: 'Note', qualification: 'Qualification' }
+
+  return (
+    <div>
+      <div style={{ fontSize:16, fontWeight:600, marginBottom:4 }}>Activity Log</div>
+      <div style={{ fontSize:12, color:'#888', marginBottom:16 }}>Recent deletions, restores, and audit status changes.</div>
+      {logs === null ? (
+        <div style={{ fontSize:13, color:'#aaa', textAlign:'center', padding:'2rem 0' }}>Loading…</div>
+      ) : logs.length === 0 ? (
+        <div style={{ fontSize:13, color:COLORS.textFaint, textAlign:'center', padding:'2rem 0' }}>No activity recorded yet</div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {logs.map(l => (
+            <div key={l.id} style={{ fontSize:12, color:'#333', padding:'8px 10px', background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:8 }}>
+              <span style={{ fontWeight:600 }}>{TYPE_LABEL[l.entity_type] || l.entity_type}</span>{' '}{ACTION_LABEL[l.action] || l.action}
+              {l.field && <span style={{ color:'#888' }}> — {l.field}: {l.old_value || '—'} → {l.new_value || '—'}</span>}
+              <div style={{ fontSize:10, color:'#aaa', marginTop:2 }}>{l.actor_name || l.actor_email || 'Unknown'} · {fmtDateTime(l.created_at)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SettingsPage({ domains, domainRows, onAddDomain, onRenameDomain, onDeleteDomain, onReorderDomain, teamData, calendarList, onUpdate, isMobile = false, escalations, supplierQualityIssues, audits, notes, onRestoreEscalation, onPermanentlyDeleteEscalation, onRestoreSqi, onPermanentlyDeleteSqi, onRestoreAudit, onPermanentlyDeleteAudit, onRestoreNote, onPermanentlyDeleteNote }) {
   const [section, setSection] = useState('team')
 
   const NAV = [
@@ -8814,6 +8633,8 @@ function SettingsPage({ domains, domainRows, onAddDomain, onRenameDomain, onDele
     { key: 'templates', label: 'Templates', icon: '📋' },
     { key: 'qualtemplates', label: 'Qual Templates', icon: '🏭' },
     { key: 'notetemplates', label: 'Note Templates', icon: '📝' },
+    { key: 'trash',     label: 'Trash',     icon: '🗑' },
+    { key: 'activity',  label: 'Activity Log', icon: '📜' },
   ]
 
   return (
@@ -8843,6 +8664,12 @@ function SettingsPage({ domains, domainRows, onAddDomain, onRenameDomain, onDele
         {section === 'templates' && <QualTemplateSettings onUpdate={onUpdate} />}
         {section === 'qualtemplates' && <QualTemplateSettings onUpdate={onUpdate} table="qualification_templates" title="Qualification Templates" subtitle="Stages, durations and dependencies auto-created when you qualify a supplier." scheduled />}
         {section === 'notetemplates' && <NoteTemplateSettings onUpdate={onUpdate} />}
+        {section === 'trash' && <TrashSettings escalations={escalations} supplierQualityIssues={supplierQualityIssues} audits={audits} notes={notes}
+          onRestoreEscalation={onRestoreEscalation} onPermanentlyDeleteEscalation={onPermanentlyDeleteEscalation}
+          onRestoreSqi={onRestoreSqi} onPermanentlyDeleteSqi={onPermanentlyDeleteSqi}
+          onRestoreAudit={onRestoreAudit} onPermanentlyDeleteAudit={onPermanentlyDeleteAudit}
+          onRestoreNote={onRestoreNote} onPermanentlyDeleteNote={onPermanentlyDeleteNote} />}
+        {section === 'activity' && <ActivityLogSettings />}
       </div>
     </div>
   )

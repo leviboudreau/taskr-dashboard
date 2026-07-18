@@ -40,3 +40,12 @@ body {
   .proj-card { width: calc(50% - 4px); }
 }
 
+/* Keyboard focus ring. Most interactive elements set outline:none inline (for a cleaner look on mouse
+   click), which also silently removed keyboard-focus visibility app-wide. box-shadow sidesteps that
+   inline outline:none without needing !important; :focus-visible keeps it keyboard-only so mouse clicks
+   stay unchanged. */
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px white, 0 0 0 4px #7c3aed;
+}
+
