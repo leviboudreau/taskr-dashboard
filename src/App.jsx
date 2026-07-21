@@ -9,6 +9,9 @@ import { tss, capFirst, flagBg, flagBorder, manualNoteCmp } from './lib/format.j
 
 // Tiptap (~615KB) only loads when a user actually opens the note editor, instead of on every page view.
 const RichTextEditor = lazy(() => import('./components/RichTextEditor.jsx'))
+// NoteCanvas re-imports RichTextEditor itself (same relative path), so Vite still dedupes it into the
+// one Tiptap chunk — opening a canvas note doesn't fetch it until a box is actually clicked into.
+const NoteCanvas = lazy(() => import('./components/NoteCanvas.jsx'))
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEMBERS = ['Levi', 'Margarita', 'Illya', 'Matthew']
@@ -3090,7 +3093,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
   useEffect(() => {
     if (notes.length > 0 && !selectedId) {
       setSelectedId(notes[0].id)
-      setDraft({ title: notes[0].title, body: notes[0].body || '' })
+      setDraft({ title: notes[0].title, body: notes[0].body || '', is_canvas: notes[0].is_canvas || false, canvas_boxes: Array.isArray(notes[0].canvas_boxes) ? notes[0].canvas_boxes : [] })
     }
   }, [notes])
 
@@ -3108,7 +3111,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
 
   const handleSelect = n => {
     if (dirty) onSave(draft, selectedId)
-    setSelectedId(n.id); setDraft({ title: n.title, body: n.body || '', audit_id: n.audit_id || null }); setDirty(false)
+    setSelectedId(n.id); setDraft({ title: n.title, body: n.body || '', is_canvas: n.is_canvas || false, canvas_boxes: Array.isArray(n.canvas_boxes) ? n.canvas_boxes : [], audit_id: n.audit_id || null }); setDirty(false)
     if (isMobileNotes) setMobileView('editor')
   }
 
@@ -3139,6 +3142,15 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
     const newId = await onSave({ title, body: '', group_id: gId, audit_id: null }, null)
     if (newId) { setSelectedId(newId); setDraft({ title, body: '', audit_id: null }); setDirty(false) }
     if (isMobileNotes) setMobileView('editor')
+  }
+
+  // A canvas note: free-form boxes instead of a single body. Hidden on mobile (see NoteCanvas —
+  // move/resize is desktop-pointer-only in v1), so this is only ever called from a desktop affordance.
+  const handleNewCanvas = async (groupId) => {
+    const title = `Canvas — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})}`
+    const gId = groupId !== undefined ? groupId : (activeGroupId === undefined ? null : activeGroupId)
+    const newId = await onSave({ title, body: '', is_canvas: true, canvas_boxes: [], group_id: gId, audit_id: null }, null)
+    if (newId) { setSelectedId(newId); setDraft({ title, body: '', is_canvas: true, canvas_boxes: [], audit_id: null }); setDirty(false) }
   }
 
   // A copy of the template's body — editing the note must never write back to the template, so this
@@ -3217,6 +3229,10 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
           <span style={{ fontSize:12, fontWeight:500, color:'#555' }}>{activeGroupLabel}</span>
           <div style={{ display:'flex', gap:4 }}>
             <button onClick={() => handleNew()} style={{ ...BTN_PRIMARY, fontSize:11, borderRadius:6, padding:'6px 12px' }}>+ New</button>
+            {!isMobileNotes && (
+              <button onClick={() => handleNewCanvas()} title="A free-form page — start note boxes anywhere, like a corkboard"
+                style={{ ...BTN_GHOST, fontSize:11, borderRadius:6, padding:'6px 10px' }}>+ Canvas</button>
+            )}
             {templates.length > 0 && (
               <div ref={templateMenuRef} style={{ position:'relative' }}>
                 <button onClick={() => setTemplateMenuOpen(o => !o)} title="New from template"
@@ -3411,7 +3427,12 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
         <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
           <div style={{ fontSize:36 }}>📝</div>
           <div style={{ fontSize:13, color:'#bbb' }}>Select a note or create a new one</div>
-          <button onClick={() => handleNew()} style={{ ...BTN_PRIMARY, padding:'10px 20px' }}>+ New Note</button>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={() => handleNew()} style={{ ...BTN_PRIMARY, padding:'10px 20px' }}>+ New Note</button>
+            {!isMobileNotes && (
+              <button onClick={() => handleNewCanvas()} style={{ ...BTN_GHOST, padding:'10px 20px' }}>+ Canvas</button>
+            )}
+          </div>
         </div>
       ) : (
         <>
@@ -3454,7 +3475,7 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
                   <button onClick={async () => {
                       if (dirty) { await onSave(draft, selectedId); setDirty(false) }
                       const nid = await onDuplicate(selectedId)
-                      if (nid) { setSelectedId(nid); setDraft({ title: `${draft.title || 'Untitled'} (copy)`, body: draft.body || '' }); setDirty(false); if (isMobileNotes) setMobileView('editor') }
+                      if (nid) { setSelectedId(nid); setDraft({ title: `${draft.title || 'Untitled'} (copy)`, body: draft.body || '', is_canvas: draft.is_canvas || false, canvas_boxes: Array.isArray(draft.canvas_boxes) ? draft.canvas_boxes : [] }); setDirty(false); if (isMobileNotes) setMobileView('editor') }
                     }}
                     title="Duplicate note"
                     style={{ fontSize:11, background:'#f7f7f5', border:'0.5px solid #e5e5e5', borderRadius:6, padding:'6px 10px', cursor:'pointer', color:'#555' }}>
@@ -3510,9 +3531,14 @@ function NotesTab({ notes, onSave, onDelete, groups = [], onSaveGroup, onRenameG
             )
           })()}
           <Suspense fallback={<div style={{ padding:40, textAlign:'center', color:'#aaa', fontSize:13 }}>Loading editor…</div>}>
-            <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
-              onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }}
-              members={members} />
+            {draft.is_canvas ? (
+              <NoteCanvas key={selectedId} boxes={draft.canvas_boxes || []} isMobile={isMobileNotes} members={members}
+                onChange={boxes => { setDraft(p => ({...p, canvas_boxes:boxes})); setDirty(true) }} />
+            ) : (
+              <RichTextEditor key={selectedId} initialValue={draft.body} isMobile={isMobileNotes}
+                onChange={html => { setDraft(p => ({...p, body:html})); setDirty(true) }}
+                members={members} />
+            )}
           </Suspense>
         </>
       )}
@@ -6890,6 +6916,8 @@ export default function App() {
     if ('group_id' in data) payload.group_id = data.group_id ?? null
     if ('attachments' in data) payload.attachments = Array.isArray(data.attachments) ? data.attachments : []
     if ('audit_id' in data) payload.audit_id = data.audit_id || null
+    if ('is_canvas' in data) payload.is_canvas = !!data.is_canvas
+    if ('canvas_boxes' in data) payload.canvas_boxes = Array.isArray(data.canvas_boxes) ? data.canvas_boxes : []
     let newId = null
     if (id) {
       let { error } = await supabase.from('notes').update(payload).eq('id', id)
@@ -6960,7 +6988,7 @@ export default function App() {
   const duplicateNote = async id => {
     const src = notes.find(n => n.id === id)
     if (!src) return null
-    const payload = { title: `${src.title || 'Untitled'} (copy)`, body: src.body || '', group_id: src.group_id ?? null, sort_order: src.sort_order ?? 0, updated_at: new Date().toISOString() }
+    const payload = { title: `${src.title || 'Untitled'} (copy)`, body: src.body || '', is_canvas: src.is_canvas || false, canvas_boxes: Array.isArray(src.canvas_boxes) ? src.canvas_boxes : [], group_id: src.group_id ?? null, sort_order: src.sort_order ?? 0, updated_at: new Date().toISOString() }
     const { data: ins, error } = await supabase.from('notes').insert(payload).select('id').single()
     if (error) { console.error('[TASKr] duplicateNote error', error); alert(`Could not duplicate note: ${error.message}`); return null }
     const newId = ins.id

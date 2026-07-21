@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import DOMPurify from 'dompurify'
 import { Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight, AlignVerticalSpaceBetween } from 'lucide-react'
 import { useEditor, EditorContent, Node as TiptapNode, Extension as TiptapExtension } from '@tiptap/react'
@@ -158,8 +159,12 @@ const TabKeymap = TiptapExtension.create({
   },
 })
 
-const NOTE_EDITOR_CSS = `
+// Exported so NoteCanvas can inject the same rules for its static box previews — those need to render
+// correctly even when no RichTextEditor (and thus no copy of this <style> tag) is currently mounted.
+export const NOTE_EDITOR_CSS = `
 .note-editor .ProseMirror,.note-editor [contenteditable="true"]{outline:none;padding:12px 16px;min-height:200px}
+/* compact: canvas boxes — no reserved empty space, the box grows to fit whatever's actually typed */
+.note-editor.note-editor--compact .ProseMirror,.note-editor.note-editor--compact [contenteditable="true"]{padding:0;min-height:20px}
 .note-editor p{margin:0 0 2px}
 .note-editor h1{font-size:1.5em;margin:10px 0 4px}
 .note-editor h2{font-size:1.3em;margin:8px 0 3px}
@@ -185,7 +190,13 @@ const NOTE_EDITOR_CSS = `
 .note-editor p.is-editor-empty:first-child::before{content:attr(data-placeholder);color:#ccc;float:left;height:0;pointer-events:none}
 `
 
-function RichTextEditor({ initialValue, onChange, isMobile = false, members = [] }) {
+// toolbarPortalTarget: an optional DOM node to render the toolbar into instead of its normal spot above
+// the content — lets a caller (NoteCanvas) dock every box's formatting toolbar in one shared location,
+// the same way the standard single-document note editor's toolbar sits at the top of its panel, rather
+// than a separate cramped copy inside each small box.
+// compact: used inside a NoteCanvas box — no border/scroll of its own (the box wrapper supplies both)
+// and no reserved minimum height, so the box can grow to fit exactly what's typed, not a fixed frame.
+function RichTextEditor({ initialValue, onChange, isMobile = false, members = [], autoFocus = false, toolbarPortalTarget = null, compact = false }) {
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [tableHover, setTableHover] = useState([0, 0])
   const editorRef = useRef(null)
@@ -214,6 +225,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
     // ADD_ATTR: colwidth isn't a standard HTML attribute, so DOMPurify's default allowlist strips it —
     // column widths would resize fine in-session but silently reset to equal-width on the next reload.
     content: DOMPurify.sanitize(upgradeLegacyNoteHtml(initialValue || ''), { ADD_ATTR: ['colwidth'] }),
+    autofocus: autoFocus ? 'end' : false,
     shouldRerenderOnTransaction: true, // toolbar active states track the caret
     onUpdate: ({ editor: ed }) => onChange(ed.getHTML()),
     editorProps: {
@@ -301,11 +313,11 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
   const HIGHLIGHTS = ['#fef08a', '#bbf7d0', '#bae6fd', '#fecdd3', '#fed7aa', '#e9d5ff']
   const CELL_FILLS = ['', '#fef9c3', '#dbeafe', '#dcfce7', '#fce7f3', '#ffedd5', '#f3f4f6', '#1e293b']
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, position: 'relative' }}>
-      <style>{NOTE_EDITOR_CSS}</style>
-      {/* Toolbar — sticky so it stays above the keyboard on mobile */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 5, background: 'white', border: '0.5px solid #e5e5e5', borderBottom: 'none' }}>
+  // Toolbar — sticky so it stays above the keyboard on mobile (a no-op when portaled: sticky only
+  // matters if its actual container scrolls, and the portal target here doesn't). Bare (no border/
+  // background) when portaled — the destination already supplies that chrome.
+  const toolbar = (
+      <div style={{ position: 'sticky', top: 0, zIndex: 5, ...(toolbarPortalTarget ? { background: 'transparent' } : { background: 'white', border: '0.5px solid #e5e5e5', borderBottom: 'none' }) }}>
         {/* Row 1: history · blocks · marks · lists · inserts · size · align */}
         <div style={{ ...rowStyle, borderBottom: '0.5px solid #f2eff9' }}>
           {tbtn(<Undo2 size={14} />, () => chain().undo().run(), { title: 'Undo', disabled: !editor.can().undo() })}
@@ -449,9 +461,17 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
           </div>
         )}
       </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: compact ? 'initial' : 1, minHeight: 0, position: 'relative' }}>
+      <style>{NOTE_EDITOR_CSS}</style>
+      {toolbarPortalTarget ? createPortal(toolbar, toolbarPortalTarget) : toolbar}
       {/* Editing surface */}
-      <EditorContent editor={editor} className="note-editor"
-        style={{ flex: 1, border: '0.5px solid #e5e5e5', borderTop: 'none', overflowY: 'auto', WebkitOverflowScrolling: 'touch', fontSize: isMobile ? 16 : 15, lineHeight, color: '#333', minHeight: 200, cursor: 'text' }}
+      <EditorContent editor={editor} className={`note-editor${compact ? ' note-editor--compact' : ''}`}
+        style={compact
+          ? { fontSize: 13, lineHeight, color: '#333', cursor: 'text' }
+          : { flex: 1, border: '0.5px solid #e5e5e5', borderTop: toolbarPortalTarget ? '0.5px solid #e5e5e5' : 'none', overflowY: 'auto', WebkitOverflowScrolling: 'touch', fontSize: isMobile ? 16 : 15, lineHeight, color: '#333', minHeight: 200, cursor: 'text' }}
         onClick={e => { if (e.target === e.currentTarget || e.target.classList?.contains('note-editor')) editor.chain().focus('end').run() }} />
     </div>
   )
