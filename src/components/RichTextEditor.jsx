@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import DOMPurify from 'dompurify'
-import { Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
+import { Undo2, Redo2, Link2, Quote, Minus, AlignLeft, AlignCenter, AlignRight, AlignVerticalSpaceBetween } from 'lucide-react'
 import { useEditor, EditorContent, Node as TiptapNode, Extension as TiptapExtension } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TextStyle, Color, FontSize } from '@tiptap/extension-text-style'
@@ -43,6 +43,52 @@ function MentionPicker({ members, onInsert }) {
               onMouseEnter={e => e.currentTarget.style.background='#ede9fe'}
               onMouseLeave={e => e.currentTarget.style.background='none'}>
               @{name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Line spacing is a personal reading/writing preference, not part of a note's content — kept in
+// localStorage (like taskr-tab, taskr-minimized-cols) rather than the synced user_prefs table, and
+// applied to every note uniformly rather than stored per-note.
+const LINE_SPACING_KEY = 'taskr-note-line-spacing'
+const LINE_SPACING_OPTIONS = [
+  { key: 'tight', label: 'Tight', value: 1.25 },
+  { key: 'normal', label: 'Normal', value: 1.4 },
+  { key: 'relaxed', label: 'Relaxed', value: 1.6 },
+  { key: 'loose', label: 'Loose', value: 1.85 },
+]
+const DEFAULT_LINE_SPACING = LINE_SPACING_OPTIONS.find(o => o.key === 'normal').value
+
+function LineSpacingPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+  useEffect(() => {
+    if (!open) return
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+  const current = LINE_SPACING_OPTIONS.find(o => o.key === value) || LINE_SPACING_OPTIONS[1]
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+      <button onMouseDown={e => { e.preventDefault(); setOpen(o => !o) }} title={`Line spacing: ${current.label}`}
+        style={{ height: 26, minWidth: 26, padding: '0 7px', border: 'none', borderRadius: 7, background: open ? '#ede9fe' : 'transparent', color: open ? '#7c3aed' : '#555', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center' }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#f0edff' }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent' }}>
+        <AlignVerticalSpaceBetween size={14} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300, background: 'white', border: '0.5px solid #e0e0e0', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', minWidth: 110, padding: 4 }}>
+          {LINE_SPACING_OPTIONS.map(opt => (
+            <button key={opt.key} onMouseDown={e => { e.preventDefault(); onChange(opt.key) }}
+              style={{ width: '100%', textAlign: 'left', padding: '6px 10px', background: opt.key === value ? '#ede9fe' : 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: opt.key === value ? '#7c3aed' : '#333', borderRadius: 6, fontFamily: 'inherit' }}
+              onMouseEnter={e => { if (opt.key !== value) e.currentTarget.style.background = '#f7f7f5' }}
+              onMouseLeave={e => { if (opt.key !== value) e.currentTarget.style.background = 'none' }}>
+              {opt.label}
             </button>
           ))}
         </div>
@@ -143,6 +189,14 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [tableHover, setTableHover] = useState([0, 0])
   const editorRef = useRef(null)
+  const [lineSpacingKey, setLineSpacingKey] = useState(() => {
+    try { return localStorage.getItem(LINE_SPACING_KEY) || 'normal' } catch { return 'normal' }
+  })
+  const lineHeight = LINE_SPACING_OPTIONS.find(o => o.key === lineSpacingKey)?.value || DEFAULT_LINE_SPACING
+  const setLineSpacing = key => {
+    setLineSpacingKey(key)
+    try { localStorage.setItem(LINE_SPACING_KEY, key) } catch {}
+  }
 
   const editor = useEditor({
     extensions: [
@@ -157,7 +211,9 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
       NoteImage, MentionChip, TabKeymap,
       Placeholder.configure({ placeholder: 'Start writing…' }),
     ],
-    content: DOMPurify.sanitize(upgradeLegacyNoteHtml(initialValue || '')),
+    // ADD_ATTR: colwidth isn't a standard HTML attribute, so DOMPurify's default allowlist strips it —
+    // column widths would resize fine in-session but silently reset to equal-width on the next reload.
+    content: DOMPurify.sanitize(upgradeLegacyNoteHtml(initialValue || ''), { ADD_ATTR: ['colwidth'] }),
     shouldRerenderOnTransaction: true, // toolbar active states track the caret
     onUpdate: ({ editor: ed }) => onChange(ed.getHTML()),
     editorProps: {
@@ -319,6 +375,8 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
             {tbtn(<AlignRight size={14} />, () => chain().setTextAlign('right').run(), { active: active({ textAlign: 'right' }), title: 'Align right' })}
           </>}
           <div style={sep} />
+          <LineSpacingPicker value={lineSpacingKey} onChange={setLineSpacing} />
+          <div style={sep} />
           {tbtn('✕ fmt', () => chain().unsetAllMarks().clearNodes().run(), { title: 'Clear formatting', style: { color: '#aaa', fontSize: 11 } })}
           {members.length > 0 && <MentionPicker members={members} onInsert={insertMention} />}
         </div>
@@ -393,7 +451,7 @@ function RichTextEditor({ initialValue, onChange, isMobile = false, members = []
       </div>
       {/* Editing surface */}
       <EditorContent editor={editor} className="note-editor"
-        style={{ flex: 1, border: '0.5px solid #e5e5e5', borderTop: 'none', overflowY: 'auto', WebkitOverflowScrolling: 'touch', fontSize: isMobile ? 16 : 15, lineHeight: 1.55, color: '#333', minHeight: 200, cursor: 'text' }}
+        style={{ flex: 1, border: '0.5px solid #e5e5e5', borderTop: 'none', overflowY: 'auto', WebkitOverflowScrolling: 'touch', fontSize: isMobile ? 16 : 15, lineHeight, color: '#333', minHeight: 200, cursor: 'text' }}
         onClick={e => { if (e.target === e.currentTarget || e.target.classList?.contains('note-editor')) editor.chain().focus('end').run() }} />
     </div>
   )
