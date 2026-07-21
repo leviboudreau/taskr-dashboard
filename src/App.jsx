@@ -4,7 +4,7 @@ import { Newspaper, RefreshCw, NotebookPen, CalendarDays, Settings, LayoutList, 
 import { COLORS, RADIUS, SPACE } from './lib/theme.js'
 import { toISODate, fromISODate, today, isWeekday, addCalDays, calDaysBetween, fmtTs, fmtDateTime, formatDue, parseDueDate } from './lib/dates.js'
 import { computeSchedule } from './lib/schedule.js'
-import { computeAuditClock, clockText, clockPhrase, auditUrgencyKey, auditUrgencyCompare } from './lib/audits.js'
+import { computeAuditClock, clockText, clockPhrase, auditUrgencyKey, auditUrgencyCompare, deriveAuditStatus } from './lib/audits.js'
 import { tss, capFirst, flagBg, flagBorder, manualNoteCmp } from './lib/format.js'
 
 // Tiptap (~615KB) only loads when a user actually opens the note editor, instead of on every page view.
@@ -5900,6 +5900,21 @@ function AuditForm({ audit, isEdit, members, notes = [], onOpenNote, onSave, onD
   const clock = computeAuditClock(f, todayISO)
   const statusMeta = AUDIT_STATUSES.find(s => s.key === f.status)
 
+  // Setting a timeline date reasonably implies the audit has progressed past that stage, but status is
+  // a separate field with nothing keeping it in sync — advance it automatically (forward only, see
+  // deriveAuditStatus) and surface the change so it's never silent; the Status field below still overrides.
+  const [statusAdvanceNote, setStatusAdvanceNote] = useState('')
+  const setDate = (key, value) => {
+    const next = { ...f, [key]: value }
+    const advanced = deriveAuditStatus(next, todayISO)
+    if (advanced !== f.status) {
+      setStatusAdvanceNote(`Status moved to ${AUDIT_STATUSES.find(s => s.key === advanced)?.lbl || advanced}.`)
+      setF({ ...next, status: advanced })
+    } else {
+      setF(next)
+    }
+  }
+
   // ── Identity is derived, not free text (BUG FIX): Supplier = supplier + site, Corporate = site + business.
   // Falls back to whatever's already stored so a pre-existing record never renders a blank title.
   const derivedName = f.type === 'corporate'
@@ -5985,6 +6000,16 @@ function AuditForm({ audit, isEdit, members, notes = [], onOpenNote, onSave, onD
             </div>
           )}
 
+          {/* Auto-advance confirmation — a date entry just moved status; shown here (not just in the
+              collapsed Details section below) so it's visible whether or not that section is expanded. */}
+          {statusAdvanceNote && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'7px 10px', marginBottom:14,
+              borderRadius:8, background:COLORS.accentSoft, border:`0.5px solid ${COLORS.accentBorder}`, fontSize:12, color:'#4c1d95' }}>
+              <span>✓ {statusAdvanceNote} <span style={{ color:'#7c6f9c' }}>You can change it under Details if this isn't right.</span></span>
+              <button onClick={() => setStatusAdvanceNote('')} title="Dismiss" style={{ background:'none', border:'none', cursor:'pointer', color:'#7c6f9c', fontSize:13, padding:0, flexShrink:0 }}>✕</button>
+            </div>
+          )}
+
           {/* 3. Timeline — a progression: past steps are done (✓, click to correct), one live step is the
                 editable input, future steps are just a dimmed label. Never a wall of empty date fields. */}
           <div style={{ marginBottom:14 }}>
@@ -6014,7 +6039,7 @@ function AuditForm({ audit, isEdit, members, notes = [], onOpenNote, onSave, onD
                           {step.dateFields.map((df, di) => (
                             <span key={df.key} style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
                               {di > 0 && <span style={{ color:'#bbb' }}>to</span>}
-                              <InlineDate value={f[df.key]} onChange={v => set(df.key, v)} iso
+                              <InlineDate value={f[df.key]} onChange={v => setDate(df.key, v)} iso
                                 textStyle={{ color:'#555', cursor:'pointer', borderBottom:'1px dotted #ccc' }} />
                             </span>
                           ))}
@@ -6035,7 +6060,7 @@ function AuditForm({ audit, isEdit, members, notes = [], onOpenNote, onSave, onD
                             {step.dateFields.map(df => (
                               <div key={df.key}>
                                 {df.label && <div style={{ fontSize:9, color:'#a99fc0', marginBottom:2, textTransform:'uppercase', letterSpacing:'0.05em' }}>{df.label}</div>}
-                                <DatePickerISO value={f[df.key]} onChange={v => set(df.key, v)} />
+                                <DatePickerISO value={f[df.key]} onChange={v => setDate(df.key, v)} />
                               </div>
                             ))}
                           </div>
@@ -6079,7 +6104,7 @@ function AuditForm({ audit, isEdit, members, notes = [], onOpenNote, onSave, onD
                 <InlineSelect value={f.type} onChange={v => set('type', v)} options={AUDIT_TYPES.map(t => ({ value:t.key, label:t.lbl }))}
                   textStyle={{ display:'block', fontSize:13, color:'#333', padding:'7px 0' }} /></div>
               <div><label style={FIELD_LABEL}>Status</label>
-                <InlineSelect value={f.status} onChange={v => set('status', v)} options={AUDIT_STATUSES.map(s => ({ value:s.key, label:s.lbl }))}
+                <InlineSelect value={f.status} onChange={v => { set('status', v); setStatusAdvanceNote('') }} options={AUDIT_STATUSES.map(s => ({ value:s.key, label:s.lbl }))}
                   textStyle={{ display:'block', fontSize:13, color:'#333', padding:'7px 0' }} /></div>
             </div>
 
@@ -6684,7 +6709,7 @@ export default function App() {
     const business = type === 'corporate' ? (data.business || '') : ''
     const site = data.site || ''
     const derivedName = type === 'corporate' ? [site, business].filter(Boolean).join(' — ') : [supplier.trim(), site].filter(Boolean).join(' — ')
-    return {
+    const base = {
       name: derivedName || data.name || '', type, supplier, business, site,
       status: data.status || 'to_schedule', priority: data.priority || '', color: data.color || '',
       lead_auditor: data.lead_auditor || '', auditors: Array.isArray(data.auditors) ? data.auditors : [],
@@ -6695,6 +6720,10 @@ export default function App() {
       agenda_sent_date: data.agenda_sent_date || null,
       notes: data.notes || [], attachments: data.attachments || [],
     }
+    // Re-derive status here too, not just in AuditForm's date inputs — mirrors how `name` above is
+    // always re-derived rather than trusted as-is, so the auto-advance invariant holds for every save
+    // path (this form, a future bulk edit, anything). Forward-only, so this is always safe to re-run.
+    return { ...base, status: deriveAuditStatus(base, today()) }
   }
   // Lightweight change history for compliance-relevant records (see supabase/activity_log.sql).
   // Best-effort: a logging failure shouldn't block the action it's describing, so it only warns.
@@ -6715,9 +6744,12 @@ export default function App() {
   }
   const saveAudit = async (data, id) => {
     const prior = audits.find(a => a.id === id)
-    const { error } = await supabase.from('audits').update({ ...buildAuditPayload(data), updated_at: new Date().toISOString() }).eq('id', id)
+    const payload = buildAuditPayload(data)
+    const { error } = await supabase.from('audits').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) { console.error('[TASKr] saveAudit error', error); alert(`Could not save audit: ${error.message}`); return }
-    if (prior && prior.status !== data.status) logActivity('audit', id, 'status_changed', { field:'status', old_value:prior.status, new_value:data.status })
+    // Compare against the payload's (possibly auto-advanced) status, not the raw form value, so the log
+    // reflects what was actually written — including advances that happened via buildAuditPayload itself.
+    if (prior && prior.status !== payload.status) logActivity('audit', id, 'status_changed', { field:'status', old_value:prior.status, new_value:payload.status })
     await loadData(true)
   }
   const deleteAudit = async id => {
